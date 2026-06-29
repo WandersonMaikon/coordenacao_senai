@@ -1,0 +1,42 @@
+services:
+  mysql_retencao:
+    image: mysql:8.0
+    container_name: mysql_retencao
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - retencao_db_data:/var/lib/mysql
+    networks:
+      - retencao_net
+
+  node_retencao:
+    build: .
+    container_name: node_retencao
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - mysql_retencao
+    networks:
+      - retencao_net
+
+  cloudflared_retencao:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared_retencao
+    restart: unless-stopped
+    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - node_retencao
+    networks:
+      - retencao_net
+
+networks:
+  retencao_net:
+    driver: bridge
+
+volumes:
+  retencao_db_data:

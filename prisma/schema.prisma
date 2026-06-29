@@ -1,0 +1,81 @@
+// This is your Prisma schema file
+// Documentação: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider     = "mysql"
+  relationMode = "prisma"
+}
+
+// ─────────────────────────────────────────
+// Tabela principal: lançamentos de frequência
+// vindos do Tampermonkey instalado nos professores
+// ─────────────────────────────────────────
+model Lancamento {
+  id             Int      @id @default(autoincrement())
+  matricula      String   @db.VarChar(20)
+  nomeAluno      String?  @map("nome_aluno") @db.VarChar(255)
+  dataAula       String?  @map("data_aula") @db.VarChar(20)
+  idAula         String?  @map("id_aula") @db.VarChar(50)
+  codigoTurma    String?  @map("codigo_turma") @db.VarChar(50)
+  nomeTurma      String?  @map("nome_turma") @db.VarChar(255)
+  uc             String?  @db.VarChar(255)
+  periodoLetivo  String?  @map("periodo_letivo") @db.VarChar(20)
+  professor      String?  @db.VarChar(255)
+  qtdFaltas      Int      @default(1) @map("qtd_faltas")
+  criadoEm       DateTime @default(now()) @map("criado_em")
+  atualizadoEm   DateTime @updatedAt @map("atualizado_em")
+
+  // Relacionamento opcional com a tabela de Alunos (preparando o futuro)
+  aluno   Aluno? @relation(fields: [matricula], references: [matricula])
+
+  // Evita duplicar o mesmo lançamento (mesmo aluno, mesma aula, mesma turma)
+  @@unique([matricula, dataAula, codigoTurma], name: "chave_idempotencia")
+  // relationMode = "prisma" não cria índice automático para FK — criamos manualmente
+  @@index([matricula])
+  @@map("lancamentos")
+}
+
+// ─────────────────────────────────────────
+// Tabela de Alunos — você vai popular isso com
+// o Excel que a secretaria te manda (telefone, etc.)
+// Já deixei pronta pra você não precisar migrar depois
+// ─────────────────────────────────────────
+model Aluno {
+  matricula   String   @id @db.VarChar(20)
+  nome        String?  @db.VarChar(255)
+  telefone    String?  @db.VarChar(20)
+  cpf         String?  @db.VarChar(20)
+  nascimento  DateTime?
+  situacao    String?  @db.VarChar(50)
+  criadoEm    DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  lancamentos Lancamento[]
+  contatos    Contato[]
+
+  @@map("alunos")
+}
+
+// ─────────────────────────────────────────
+// Tabela de Contatos — registro de quando a coordenação
+// entrou em contato com o aluno (WhatsApp, ligação, etc.)
+// Ainda não usada agora, mas a estrutura já fica pronta
+// ─────────────────────────────────────────
+model Contato {
+  id          Int      @id @default(autoincrement())
+  matricula   String   @db.VarChar(20)
+  canal       String?  @db.VarChar(50)   // ex: "whatsapp", "ligacao", "presencial"
+  status      String?  @db.VarChar(50)   // ex: "respondido", "sem_resposta"
+  observacao  String?  @db.Text
+  contatadoPor String? @map("contatado_por") @db.VarChar(255)
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  aluno Aluno @relation(fields: [matricula], references: [matricula])
+
+  @@index([matricula])
+  @@map("contatos")
+}
