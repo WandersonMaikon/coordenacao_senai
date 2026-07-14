@@ -33,7 +33,8 @@ services:
       - node_retencao
     networks:
       - retencao_net
-
+    profiles:
+      - tunnel
 networks:
   retencao_net:
     driver: bridge
