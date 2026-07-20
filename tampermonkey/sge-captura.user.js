@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SGE Novo - Captura Frequência SENAI
 // @namespace    http://tampermonkey.net/
-// @version      3.5
+// @version      3.6
 // @description  Captura frequência do novo SGE (Angular/PO-UI) - resposta otimista, envio rápido, suporta correção, envia só o que mudou
 // @author       Wanderson
 // @match        https://sge.fiero.org.br/*
@@ -10,7 +10,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
-// @connect      retencao.simulador-saep.com.br
+// @connect      app.coor360-senai.com.br
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -21,7 +21,7 @@
     // CONFIGURAÇÃO — cada professor edita aqui
     // ==========================================
     const NOME_PROFESSOR = 'Wanderson Maikon da Silva';
-    const WEBHOOK_URL = 'https://retencao.simulador-saep.com.br/webhook/frequencia';
+    const WEBHOOK_URL = 'https://app.coor360-senai.com.br/webhook/frequencia';
     // ==========================================
 
     const MAX_TENTATIVAS = 3;
