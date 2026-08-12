@@ -110,7 +110,7 @@ app.post('/webhook/frequencia', async (req, res) => {
 
 // ─────────────────────────────────────────
 // Rota auxiliar — listar lançamentos (útil para conferir se está salvando)
-// ─────────────────────────────────────────
+// ────────────────────────────────────────
 app.get('/lancamentos', async (req, res) => {
     try {
         const lancamentos = await prisma.lancamento.findMany({
