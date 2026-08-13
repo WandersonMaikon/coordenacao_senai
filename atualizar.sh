@@ -15,4 +15,10 @@ echo "======================================"
 docker compose --profile tunnel up -d --build
 
 echo ""
+echo "======================================"
+echo "👤 3. Garantindo usuário de acesso ao painel..."
+echo "======================================"
+docker compose exec -T node_retencao npm run seed-admin
+
+echo ""
 echo "✅ Atualização concluída com sucesso!"
