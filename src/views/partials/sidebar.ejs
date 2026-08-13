@@ -1,0 +1,32 @@
+<aside class="app-menubar" id="menubar">
+  <div class="app-navbar-brand">
+    <a class="navbar-brand-logo" href="/painel">
+      <img src="/images/logo.svg" alt="logo">
+    </a>
+    <a class="navbar-brand-mini" href="/painel">
+      <img src="/images/logo-text-white.svg" alt="logo">
+    </a>
+  </div>
+  <nav class="app-navbar" data-simplebar>
+    <ul class="menubar">
+      <li class="menu-item">
+        <a class="menu-link <%= paginaAtual === 'painel' ? 'active' : '' %>" href="/painel">
+          <i class="bi bi-grid-1x2-fill"></i>
+          <span class="menu-label">Painel</span>
+        </a>
+      </li>
+      <li class="menu-item">
+        <a class="menu-link <%= paginaAtual === 'faltas' ? 'active' : '' %>" href="/faltas">
+          <i class="bi bi-calendar-x-fill"></i>
+          <span class="menu-label">Faltas</span>
+        </a>
+      </li>
+    </ul>
+  </nav>
+  <div class="app-footer">
+    <a href="javascript:void(0);" id="btnSairMenu" class="btn btn-outline-white waves-effect btn-app-nav w-100">
+      <i class="bi bi-box-arrow-right"></i>
+      <span class="nav-text">Sair</span>
+    </a>
+  </div>
+</aside>

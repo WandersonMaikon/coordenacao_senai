@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <%- include('../partials/head', { titulo: 'Login' }) %>
+</head>
+
+<body>
+  <div class="page-layout">
+    <div class="auth-frame-wrapper bg-white">
+      <div class="row g-0 h-100 justify-content-center">
+        <div class="col-lg-7 d-none d-lg-block">
+          <div class="auth-frame" style="background-image: url(/images/auth/auth-frame.webp);"></div>
+        </div>
+        <div class="col-lg-5 align-self-center">
+          <div class="p-4 p-sm-5 maxw-450px m-auto">
+            <div class="mb-4 text-center">
+              <img src="/images/logo.svg" alt="Logo" width="52" height="52">
+            </div>
+            <div class="text-center mb-5">
+              <h4 class="mb-2 fw-bold">Coordenação de Educação</h4>
+              <p class="text-muted mb-0">SENAI Ji-Paraná — Retenção e Resgate de Alunos</p>
+            </div>
+
+            <div id="loginErro" class="alert alert-danger d-none" role="alert"></div>
+
+            <form id="formLogin" novalidate>
+              <div class="mb-4">
+                <label class="form-label" for="loginUsuario">Usuário</label>
+                <input type="text" class="form-control" id="loginUsuario" autocomplete="username" required>
+              </div>
+              <div class="mb-2">
+                <label class="form-label" for="loginSenha">Senha</label>
+                <input type="password" class="form-control" id="loginSenha" autocomplete="current-password" required>
+              </div>
+              <div class="mb-4 text-end">
+                <a href="#" class="small text-decoration-none" tabindex="-1">Esqueceu a senha?</a>
+              </div>
+              <div class="mb-3">
+                <button type="submit" class="btn btn-primary w-100" id="btnLogin">Entrar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('formLogin');
+    const erroBox = document.getElementById('loginErro');
+    const botao = document.getElementById('btnLogin');
+
+    form.addEventListener('submit', async (evento) => {
+      evento.preventDefault();
+      erroBox.classList.add('d-none');
+      botao.disabled = true;
+      botao.textContent = 'Entrando...';
+
+      try {
+        const resposta = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            usuario: document.getElementById('loginUsuario').value,
+            senha: document.getElementById('loginSenha').value
+          })
+        });
+
+        const dados = await resposta.json();
+
+        if (!resposta.ok) {
+          throw new Error(dados.mensagem || 'Não foi possível entrar');
+        }
+
+        localStorage.setItem('coor360_token', dados.token);
+        window.location.href = '/painel';
+
+      } catch (erro) {
+        erroBox.textContent = erro.message;
+        erroBox.classList.remove('d-none');
+      } finally {
+        botao.disabled = false;
+        botao.textContent = 'Entrar';
+      }
+    });
+  </script>
+</body>
+
+</html>

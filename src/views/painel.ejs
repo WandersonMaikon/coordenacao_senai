@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <%- include('partials/head', { titulo: 'Painel' }) %>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+</head>
+
+<body>
+  <div class="page-layout">
+
+    <%- include('partials/header') %>
+
+    <%- include('partials/sidebar', { paginaAtual: 'painel' }) %>
+
+    <main class="app-wrapper">
+      <div class="container-fluid">
+
+        <div class="app-page-head d-flex flex-wrap gap-3 align-items-center justify-content-between">
+          <div class="clearfix">
+            <h1 class="app-page-title">Painel da Coordenação</h1>
+            <span>Retenção e Resgate — SENAI Ji-Paraná</span>
+          </div>
+        </div>
+
+        <div id="statusCarregamento" class="alert alert-info">Carregando dados...</div>
+
+        <div id="conteudoPainel" class="d-none">
+
+          <div class="row">
+            <div class="col-xxl-3 col-md-6">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex flex-column mb-3">
+                    <h6 class="text-body text-uppercase text-2xs mb-1">Alunos em risco</h6>
+                    <h2 class="mb-0" id="kpiAlunosRisco">—</h2>
+                  </div>
+                  <div class="avatar bg-danger bg-opacity-10 shadow-info rounded-circle avatar-xl text-danger mb-0 mx-auto">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                  </div>
+                </div>
+                <div class="card-footer border-0">
+                  <span>4 ou mais faltas acumuladas</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-xxl-3 col-md-6">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex flex-column mb-3">
+                    <h6 class="text-body text-uppercase text-2xs mb-1">Faltas (recentes)</h6>
+                    <h2 class="mb-0" id="kpiFaltas">—</h2>
+                  </div>
+                  <div class="avatar bg-warning bg-opacity-10 shadow-info rounded-circle avatar-xl text-warning mb-0 mx-auto">
+                    <i class="bi bi-calendar-x-fill"></i>
+                  </div>
+                </div>
+                <div class="card-footer border-0">
+                  <span>Soma dos últimos lançamentos</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-xxl-3 col-md-6">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex flex-column mb-3">
+                    <h6 class="text-body text-uppercase text-2xs mb-1">Lançamentos</h6>
+                    <h2 class="mb-0" id="kpiLancamentos">—</h2>
+                  </div>
+                  <div class="avatar bg-primary bg-opacity-10 shadow-info rounded-circle avatar-xl text-primary mb-0 mx-auto">
+                    <i class="bi bi-journal-text"></i>
+                  </div>
+                </div>
+                <div class="card-footer border-0">
+                  <span>Últimos capturados pelo userscript</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-xxl-3 col-md-6">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex flex-column mb-3">
+                    <h6 class="text-body text-uppercase text-2xs mb-1">Critério de risco</h6>
+                    <h2 class="mb-0">4</h2>
+                  </div>
+                  <div class="avatar bg-info bg-opacity-10 shadow-info rounded-circle avatar-xl text-info mb-0 mx-auto">
+                    <i class="bi bi-shield-exclamation"></i>
+                  </div>
+                </div>
+                <div class="card-footer border-0">
+                  <span>Faltas somadas para alerta</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </main>
+
+    <%- include('partials/footer') %>
+
+  </div>
+
+  <script>
+    const token = localStorage.getItem('coor360_token');
+
+    if (!token) {
+      window.location.href = '/login';
+    }
+
+    function sair() {
+      localStorage.removeItem('coor360_token');
+      window.location.href = '/login';
+    }
+    document.getElementById('btnSair').addEventListener('click', sair);
+    document.getElementById('btnSairMenu').addEventListener('click', sair);
+
+    const html = document.documentElement;
+
+    // Abaixo de 1200px o menu fica escondido (abre por cima do conteúdo);
+    // acima disso ele fica sempre visível, e o botão só encolhe pra modo mini (ícones).
+    document.getElementById('btnToggleMenu').addEventListener('click', function () {
+      this.classList.toggle('active');
+      if (window.matchMedia('(max-width: 1199.98px)').matches) {
+        document.getElementById('menubar').classList.toggle('open');
+      } else if (html.getAttribute('data-app-sidebar') === 'mini') {
+        html.removeAttribute('data-app-sidebar');
+      } else {
+        html.setAttribute('data-app-sidebar', 'mini');
+      }
+    });
+
+    // Tema claro/escuro — preferência salva no navegador
+    const btnTema = document.getElementById('btnTema');
+    function aplicarTema(tema) {
+      html.setAttribute('data-bs-theme', tema);
+      btnTema.classList.toggle('active', tema === 'dark');
+    }
+    aplicarTema(localStorage.getItem('coor360_tema') || 'light');
+    btnTema.addEventListener('click', () => {
+      const atual = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+      aplicarTema(atual);
+      localStorage.setItem('coor360_tema', atual);
+    });
+
+    async function chamarApi(caminho) {
+      const resposta = await fetch(caminho, { headers: { Authorization: 'Bearer ' + token } });
+      if (resposta.status === 401) {
+        localStorage.removeItem('coor360_token');
+        window.location.href = '/login';
+        throw new Error('Sessão expirada');
+      }
+      return resposta.json();
+    }
+
+    async function carregarPainel() {
+      try {
+        const [risco, lancamentos] = await Promise.all([
+          chamarApi('/alunos-risco'),
+          chamarApi('/lancamentos')
+        ]);
+
+        document.getElementById('kpiAlunosRisco').textContent = risco.total;
+        document.getElementById('kpiLancamentos').textContent = lancamentos.total;
+
+        const somaFaltas = lancamentos.dados.reduce((soma, item) => soma + (item.qtdFaltas || 0), 0);
+        document.getElementById('kpiFaltas').textContent = somaFaltas;
+
+        document.getElementById('statusCarregamento').classList.add('d-none');
+        document.getElementById('conteudoPainel').classList.remove('d-none');
+
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          const status = document.getElementById('statusCarregamento');
+          status.className = 'alert alert-warning';
+          status.textContent = 'Não foi possível carregar os dados do painel agora.';
+        }
+      }
+    }
+
+    carregarPainel();
+  </script>
+</body>
+
+</html>

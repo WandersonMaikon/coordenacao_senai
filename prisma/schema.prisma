@@ -11,6 +11,20 @@ datasource db {
 }
 
 // ─────────────────────────────────────────
+// Tabela de usuários da coordenação com acesso ao painel
+// ─────────────────────────────────────────
+model Usuario {
+  id        Int      @id @default(autoincrement())
+  usuario   String   @unique @db.VarChar(50)
+  senhaHash String   @map("senha_hash") @db.VarChar(255)
+  nome      String?  @db.VarChar(255)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  @@map("usuarios")
+}
+
+// ─────────────────────────────────────────
 // Tabela principal: lançamentos de frequência
 // vindos do Tampermonkey instalado nos professores
 // ─────────────────────────────────────────
