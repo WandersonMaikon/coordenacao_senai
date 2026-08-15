@@ -30,6 +30,12 @@
                 <input type="date" class="form-control" id="filtroData">
               </div>
               <div class="col-auto">
+                <label class="form-label" for="filtroTurma">Turma</label>
+                <select class="form-select" id="filtroTurma">
+                  <option value="">Todas</option>
+                </select>
+              </div>
+              <div class="col-auto">
                 <button type="submit" class="btn btn-primary">
                   <i class="bi bi-filter me-1"></i> Filtrar
                 </button>
@@ -130,7 +136,22 @@
       return resposta.json();
     }
 
-    async function carregarFaltas(data) {
+    async function carregarTurmas() {
+      try {
+        const resposta = await chamarApi('/turmas');
+        const select = document.getElementById('filtroTurma');
+        resposta.dados.forEach((turma) => {
+          const opcao = document.createElement('option');
+          opcao.value = turma.codigoTurma;
+          opcao.textContent = turma.nomeTurma || turma.codigoTurma;
+          select.appendChild(opcao);
+        });
+      } catch (erro) {
+        console.error('Não foi possível carregar a lista de turmas:', erro);
+      }
+    }
+
+    async function carregarFaltas(data, turma) {
       const statusEl = document.getElementById('statusCarregamento');
       const cardResultado = document.getElementById('cardResultado');
       statusEl.className = 'alert alert-info';
@@ -139,7 +160,11 @@
       cardResultado.classList.add('d-none');
 
       try {
-        const caminho = data ? `/lancamentos?data=${data}` : '/lancamentos';
+        const params = new URLSearchParams();
+        if (data) params.set('data', data);
+        if (turma) params.set('turma', turma);
+        const query = params.toString();
+        const caminho = query ? `/lancamentos?${query}` : '/lancamentos';
         const resposta = await chamarApi(caminho);
 
         const tabela = document.getElementById('tabelaFaltas');
@@ -157,7 +182,7 @@
           `).join('');
         }
 
-        document.getElementById('totalResultado').textContent = `(${resposta.total}${!data && resposta.total >= 100 ? '+ — mostrando os 100 mais recentes' : ''})`;
+        document.getElementById('totalResultado').textContent = `(${resposta.total}${!data && !turma && resposta.total >= 100 ? '+ — mostrando os 100 mais recentes' : ''})`;
 
         statusEl.classList.add('d-none');
         cardResultado.classList.remove('d-none');
@@ -172,15 +197,17 @@
 
     document.getElementById('formFiltro').addEventListener('submit', (evento) => {
       evento.preventDefault();
-      carregarFaltas(document.getElementById('filtroData').value);
+      carregarFaltas(document.getElementById('filtroData').value, document.getElementById('filtroTurma').value);
     });
 
     document.getElementById('btnLimparFiltro').addEventListener('click', () => {
       document.getElementById('filtroData').value = '';
-      carregarFaltas('');
+      document.getElementById('filtroTurma').value = '';
+      carregarFaltas('', '');
     });
 
-    carregarFaltas('');
+    carregarTurmas();
+    carregarFaltas('', '');
   </script>
 </body>
 

@@ -78,10 +78,11 @@ async function receberWebhook(req, res) {
 }
 
 // Lista os lançamentos mais recentes (debug/conferência), ou os de uma data
-// específica quando ?data=AAAA-MM-DD é informado (filtro usado na tela de faltas)
+// específica quando ?data=AAAA-MM-DD é informado, e/ou de uma turma específica
+// quando ?turma=<codigoTurma> é informado (filtros usados na tela de faltas)
 async function listar(req, res) {
     try {
-        const { data } = req.query;
+        const { data, turma } = req.query;
         const where = {};
 
         if (data) {
@@ -92,10 +93,14 @@ async function listar(req, res) {
             where.dataAula = `${dia}/${mes}/${ano}`;
         }
 
+        if (turma) {
+            where.codigoTurma = turma;
+        }
+
         const lancamentos = await prisma.lancamento.findMany({
             where,
             orderBy: { criadoEm: 'desc' },
-            take: data ? undefined : 100
+            take: (data || turma) ? undefined : 100
         });
         res.json({ status: 'ok', total: lancamentos.length, dados: lancamentos });
     } catch (erro) {
@@ -103,4 +108,20 @@ async function listar(req, res) {
     }
 }
 
-module.exports = { receberWebhook, listar };
+// Lista as turmas distintas já lançadas (código + nome), pra popular o
+// dropdown de filtro na tela de faltas
+async function listarTurmas(req, res) {
+    try {
+        const turmas = await prisma.lancamento.findMany({
+            where: { codigoTurma: { not: null } },
+            distinct: ['codigoTurma'],
+            select: { codigoTurma: true, nomeTurma: true },
+            orderBy: { codigoTurma: 'asc' }
+        });
+        res.json({ status: 'ok', dados: turmas });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+module.exports = { receberWebhook, listar, listarTurmas };

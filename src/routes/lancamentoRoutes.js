@@ -1,5 +1,5 @@
 const express = require('express');
-const { receberWebhook, listar } = require('../controllers/lancamentoController');
+const { receberWebhook, listar, listarTurmas } = require('../controllers/lancamentoController');
 const { autenticar } = require('../middlewares/auth');
 
 const router = express.Router();
@@ -8,5 +8,6 @@ const router = express.Router();
 router.post('/webhook/frequencia', receberWebhook);
 
 router.get('/lancamentos', autenticar, listar);
+router.get('/turmas', autenticar, listarTurmas);
 
 module.exports = router;
