@@ -54,12 +54,10 @@
               <thead>
                 <tr>
                   <th>Aluno</th>
-                  <th>Matrícula</th>
                   <th>Turma</th>
                   <th>Data da aula</th>
                   <th class="text-end">Faltas</th>
                   <th>Professor</th>
-                  <th>Registrado em</th>
                 </tr>
               </thead>
               <tbody id="tabelaFaltas"></tbody>
@@ -113,6 +111,15 @@
       localStorage.setItem('coor360_tema', atual);
     });
 
+    // Cada dia de aula tem 4 aulas — o SGE conta falta por aula, então
+    // convertemos pra "dias" dividindo por 4 (0,5 dia = faltou 2 das 4 aulas).
+    const AULAS_POR_DIA = 4;
+    function formatarDiasFalta(qtdFaltas) {
+      const dias = qtdFaltas / AULAS_POR_DIA;
+      const diasTexto = dias.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+      return `${diasTexto} ${dias === 1 ? 'dia' : 'dias'}`;
+    }
+
     async function chamarApi(caminho) {
       const resposta = await fetch(caminho, { headers: { Authorization: 'Bearer ' + token } });
       if (resposta.status === 401) {
@@ -121,11 +128,6 @@
         throw new Error('Sessão expirada');
       }
       return resposta.json();
-    }
-
-    function formatarData(iso) {
-      if (!iso) return '—';
-      return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     }
 
     async function carregarFaltas(data) {
@@ -142,17 +144,15 @@
 
         const tabela = document.getElementById('tabelaFaltas');
         if (resposta.dados.length === 0) {
-          tabela.innerHTML = '<tr><td colspan="7" class="text-center text-body py-4">Nenhum lançamento encontrado' + (data ? ' para essa data.' : '.') + '</td></tr>';
+          tabela.innerHTML = '<tr><td colspan="5" class="text-center text-body py-4">Nenhum lançamento encontrado' + (data ? ' para essa data.' : '.') + '</td></tr>';
         } else {
           tabela.innerHTML = resposta.dados.map((item) => `
             <tr>
               <td>${item.nomeAluno || '—'}</td>
-              <td>${item.matricula}</td>
               <td>${item.nomeTurma || '—'}</td>
               <td>${item.dataAula || '—'}</td>
-              <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning">${item.qtdFaltas}</span></td>
+              <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning">${formatarDiasFalta(item.qtdFaltas)}</span></td>
               <td>${item.professor || '—'}</td>
-              <td>${formatarData(item.criadoEm)}</td>
             </tr>
           `).join('');
         }

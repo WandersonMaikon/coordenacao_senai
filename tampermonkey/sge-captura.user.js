@@ -349,29 +349,28 @@
     // INTERCEPTADOR DO BOTÃO SALVAR
     // ─────────────────────────────────────────
 
+    // Delegado em document (em vez de preso a um botão específico) porque o
+    // Angular re-renderiza a grade e troca o nó do botão Salvar — um listener
+    // preso ao elemento antigo fica "órfão" e para de disparar, silenciosamente,
+    // até a página ser recarregada. Delegação sobrevive a esses re-renders.
     function instalarInterceptador() {
-        let botaoSalvar = null;
+        document.addEventListener('click', function (evento) {
+            const alvo = evento.target.closest('button, po-button, [class*="po-button"]');
+            if (!alvo) return;
 
-        document.querySelectorAll('button, po-button, [class*="po-button"]').forEach(btn => {
-            const texto = (btn.innerText || btn.textContent || '').trim();
-            if (texto === 'Salvar') botaoSalvar = btn;
-        });
+            const texto = (alvo.innerText || alvo.textContent || '').trim();
+            if (texto !== 'Salvar') return;
 
-        if (botaoSalvar) {
-            console.log('[SGE-v3.4] Botão Salvar encontrado.');
-            botaoSalvar.addEventListener('click', function () {
-                // Captura é instantânea (leitura de DOM), não precisa de delay artificial
-                const mudancas = capturarMudancas();
-                if (!mudancas) {
-                    console.log('[SGE-v3.4] Nenhuma mudança de frequência detectada (nada a enviar).');
-                    return;
-                }
-                console.log('[SGE-v3.4] Detectada(s)', mudancas.length, 'mudança(s) (faltas novas + correções). Enviando...');
-                enviarOtimista(mudancas);
-            }, true);
-        } else {
-            setTimeout(instalarInterceptador, 2000);
-        }
+            const mudancas = capturarMudancas();
+            if (!mudancas) {
+                console.log('[SGE-v3.4] Nenhuma mudança de frequência detectada (nada a enviar).');
+                return;
+            }
+            console.log('[SGE-v3.4] Detectada(s)', mudancas.length, 'mudança(s) (faltas novas + correções). Enviando...');
+            enviarOtimista(mudancas);
+        }, true);
+
+        console.log('[SGE-v3.4] Interceptador de clique instalado (delegado em document).');
     }
 
     // ─────────────────────────────────────────
