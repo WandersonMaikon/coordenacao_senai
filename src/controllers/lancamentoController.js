@@ -122,7 +122,8 @@ async function listar(req, res) {
         const lancamentos = await prisma.lancamento.findMany({
             where,
             orderBy: { criadoEm: 'desc' },
-            take: (dataInicio || turma) ? undefined : 100
+            take: (dataInicio || turma) ? undefined : 100,
+            include: { aluno: { select: { telefone: true } } }
         });
         res.json({ status: 'ok', total: lancamentos.length, dados: lancamentos });
     } catch (erro) {

@@ -180,7 +180,7 @@
             const alunos = turmas.get(chaveTurma).alunos;
             const chaveAluno = item.matricula || item.nomeAluno || '—';
             if (!alunos.has(chaveAluno)) {
-              alunos.set(chaveAluno, { nome: item.nomeAluno || '—', totalFaltas: 0 });
+              alunos.set(chaveAluno, { nome: item.nomeAluno || '—', telefone: item.aluno?.telefone || '', totalFaltas: 0 });
             }
             alunos.get(chaveAluno).totalFaltas += item.qtdFaltas || 0;
           });
@@ -193,7 +193,10 @@
             if (listaAlunos.length === 0) return '';
             const linhas = listaAlunos.map((aluno) => `
               <tr>
-                <td>${aluno.nome}</td>
+                <td>
+                  ${aluno.nome}
+                  ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp"><i class="bi bi-whatsapp"></i></a>` : ''}
+                </td>
                 <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning">${formatarDiasFalta(aluno.totalFaltas)}</span></td>
               </tr>
             `).join('');

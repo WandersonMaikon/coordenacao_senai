@@ -23,7 +23,9 @@
     "ejs": "^6.0.1",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "mysql2": "^3.22.5"
+    "multer": "^2.2.0",
+    "mysql2": "^3.22.5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.14",

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <%- include('partials/head', { titulo: 'Importar contatos' }) %>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+</head>
+<body>
+  <div class="page-layout">
+
+    <%- include('partials/header') %>
+
+    <%- include('partials/sidebar', { paginaAtual: 'importar-telefones' }) %>
+
+    <main class="app-wrapper">
+      <div class="container-fluid">
+
+        <div class="app-page-head d-flex flex-wrap gap-3 align-items-center justify-content-between">
+          <div class="clearfix">
+            <h1 class="app-page-title">Importar contatos</h1>
+            <span>Envie a planilha da secretaria (colunas "Matricula" e "Telefone") pra vincular o telefone de cada aluno</span>
+          </div>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-body">
+            <form id="formImportar">
+              <div class="mb-3">
+                <label class="form-label" for="arquivoExcel">Planilha Excel (.xlsx)</label>
+                <input type="file" class="form-control" id="arquivoExcel" accept=".xlsx,.xls" required>
+                <div class="form-text">Só as colunas "Matricula" e "Telefone" são usadas — o resto da planilha é ignorado.</div>
+              </div>
+              <button type="submit" class="btn btn-primary" id="btnImportar">
+                <i class="bi bi-upload me-1"></i> Importar
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <div id="resultadoImportacao" class="alert d-none"></div>
+
+      </div>
+    </main>
+
+    <%- include('partials/footer') %>
+
+  </div>
+
+  <script>
+    const token = localStorage.getItem('coor360_token');
+
+    if (!token) {
+      window.location.href = '/login';
+    }
+
+    function sair() {
+      localStorage.removeItem('coor360_token');
+      window.location.href = '/login';
+    }
+    document.getElementById('btnSair').addEventListener('click', sair);
+    document.getElementById('btnSairMenu').addEventListener('click', sair);
+
+    const html = document.documentElement;
+
+    document.getElementById('btnToggleMenu').addEventListener('click', function () {
+      this.classList.toggle('active');
+      if (window.matchMedia('(max-width: 1199.98px)').matches) {
+        document.getElementById('menubar').classList.toggle('open');
+      } else if (html.getAttribute('data-app-sidebar') === 'mini') {
+        html.removeAttribute('data-app-sidebar');
+      } else {
+        html.setAttribute('data-app-sidebar', 'mini');
+      }
+    });
+
+    const btnTema = document.getElementById('btnTema');
+    function aplicarTema(tema) {
+      html.setAttribute('data-bs-theme', tema);
+      btnTema.classList.toggle('active', tema === 'dark');
+    }
+    aplicarTema(localStorage.getItem('coor360_tema') || 'light');
+    btnTema.addEventListener('click', () => {
+      const atual = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+      aplicarTema(atual);
+      localStorage.setItem('coor360_tema', atual);
+    });
+
+    document.getElementById('formImportar').addEventListener('submit', async (evento) => {
+      evento.preventDefault();
+
+      const input = document.getElementById('arquivoExcel');
+      const resultado = document.getElementById('resultadoImportacao');
+      const btn = document.getElementById('btnImportar');
+
+      if (!input.files.length) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Importando...';
+      resultado.className = 'alert alert-info';
+      resultado.textContent = 'Importando planilha...';
+      resultado.classList.remove('d-none');
+
+      try {
+        const formData = new FormData();
+        formData.append('arquivo', input.files[0]);
+
+        const resposta = await fetch('/alunos/importar-telefones', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + token },
+          body: formData
+        });
+
+        if (resposta.status === 401) {
+          localStorage.removeItem('coor360_token');
+          window.location.href = '/login';
+          return;
+        }
+
+        const dados = await resposta.json();
+
+        resultado.className = `alert ${dados.status === 'ok' ? 'alert-success' : 'alert-warning'}`;
+        resultado.textContent = dados.mensagem;
+
+        if (dados.status === 'ok') {
+          document.getElementById('formImportar').reset();
+        }
+      } catch (erro) {
+        resultado.className = 'alert alert-warning';
+        resultado.textContent = 'Não foi possível importar a planilha agora.';
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-upload me-1"></i> Importar';
+      }
+    });
+  </script>
+</body>
+
+</html>

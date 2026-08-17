@@ -10,4 +10,8 @@ function paginaFaltas(req, res) {
     res.render('faltas');
 }
 
-module.exports = { paginaLogin, paginaPainel, paginaFaltas };
+function paginaImportarTelefones(req, res) {
+    res.render('importar-telefones');
+}
+
+module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaImportarTelefones };
