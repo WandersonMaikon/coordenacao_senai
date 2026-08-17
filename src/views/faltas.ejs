@@ -225,7 +225,7 @@
           }).join('');
         }
 
-        document.getElementById('totalResultado').textContent = `(${resposta.total}${!data && !turma && resposta.total >= 100 ? '+ — mostrando os 100 mais recentes' : ''})`;
+        document.getElementById('totalResultado').textContent = `(${resposta.total}${!dataInicio && !turma && resposta.total >= 100 ? '+ — mostrando os 100 mais recentes' : ''})`;
 
         statusEl.classList.add('d-none');
         cardResultado.classList.remove('d-none');

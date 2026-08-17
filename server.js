@@ -16,6 +16,10 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'src/views'));
 
+// Os dados de faltas mudam a cada lançamento — sem isso, o navegador cacheia
+// a resposta JSON via ETag e pode devolver 304 (corpo vazio) pro fetch().
+app.disable('etag');
+
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
