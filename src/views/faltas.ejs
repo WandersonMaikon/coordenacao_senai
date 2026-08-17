@@ -201,7 +201,7 @@
               <tr>
                 <td>
                   ${aluno.nome}
-                  ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2 text-decoration-none" title="Chamar no WhatsApp"><i class="bi bi-whatsapp me-1"></i>${formatarTelefone(aluno.telefone)}</a>` : ''}
+                  ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
                 </td>
                 <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning">${formatarDiasFalta(aluno.totalFaltas)}</span></td>
               </tr>
