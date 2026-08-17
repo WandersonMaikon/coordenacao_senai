@@ -141,7 +141,7 @@
         resposta.dados.forEach((turma) => {
           const opcao = document.createElement('option');
           opcao.value = turma.codigoTurma;
-          opcao.textContent = turma.nomeTurma || turma.codigoTurma;
+          opcao.textContent = turma.nomeTurma ? `${turma.nomeTurma} (${turma.codigoTurma})` : turma.codigoTurma;
           select.appendChild(opcao);
         });
       } catch (erro) {
