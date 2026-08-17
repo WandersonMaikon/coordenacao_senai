@@ -26,8 +26,12 @@
           <div class="card-body">
             <form id="formFiltro" class="row g-3 align-items-end">
               <div class="col-auto">
-                <label class="form-label" for="filtroData">Data da aula</label>
-                <input type="date" class="form-control" id="filtroData">
+                <label class="form-label" for="filtroDataInicio">Data da aula — início</label>
+                <input type="date" class="form-control" id="filtroDataInicio">
+              </div>
+              <div class="col-auto">
+                <label class="form-label" for="filtroDataFim">Data da aula — fim</label>
+                <input type="date" class="form-control" id="filtroDataFim">
               </div>
               <div class="col-auto">
                 <label class="form-label" for="filtroTurma">Turma</label>
@@ -115,6 +119,11 @@
       return `${diasTexto} ${dias === 1 ? 'dia' : 'dias'}`;
     }
 
+    function nomeCurto(nomeCompleto) {
+      if (!nomeCompleto) return '—';
+      return nomeCompleto.trim().split(/\s+/).slice(0, 2).join(' ');
+    }
+
     async function chamarApi(caminho) {
       const resposta = await fetch(caminho, { headers: { Authorization: 'Bearer ' + token } });
       if (resposta.status === 401) {
@@ -140,7 +149,7 @@
       }
     }
 
-    async function carregarFaltas(data, turma) {
+    async function carregarFaltas(dataInicio, dataFim, turma) {
       const statusEl = document.getElementById('statusCarregamento');
       const cardResultado = document.getElementById('cardResultado');
       statusEl.className = 'alert alert-info';
@@ -150,7 +159,8 @@
 
       try {
         const params = new URLSearchParams();
-        if (data) params.set('data', data);
+        if (dataInicio) params.set('dataInicio', dataInicio);
+        if (dataFim) params.set('dataFim', dataFim);
         if (turma) params.set('turma', turma);
         const query = params.toString();
         const caminho = query ? `/lancamentos?${query}` : '/lancamentos';
@@ -158,12 +168,12 @@
 
         const accordion = document.getElementById('accordionFaltas');
         if (resposta.dados.length === 0) {
-          accordion.innerHTML = `<p class="text-center text-body py-4 mb-0">Nenhum lançamento encontrado${data ? ' para essa data.' : '.'}</p>`;
+          accordion.innerHTML = `<p class="text-center text-body py-4 mb-0">Nenhum lançamento encontrado${dataInicio ? ' para esse período.' : '.'}</p>`;
         } else {
           const turmas = new Map();
           resposta.dados.forEach((item) => {
             const chaveTurma = item.codigoTurma || item.nomeTurma || '—';
-            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, alunos: new Map() });
+            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professor: item.professor || '—', alunos: new Map() });
 
             // Soma as faltas de todos os lançamentos do aluno nessa turma (um
             // lançamento por dia de aula), em vez de mostrar cada dia isolado.
@@ -177,7 +187,10 @@
 
           accordion.innerHTML = Array.from(turmas.entries()).map(([codigo, turma], indice) => {
             const idColapso = `colapsoTurma${indice}`;
-            const listaAlunos = Array.from(turma.alunos.values()).sort((a, b) => b.totalFaltas - a.totalFaltas);
+            const listaAlunos = Array.from(turma.alunos.values())
+              .filter((aluno) => aluno.totalFaltas > 0)
+              .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+            if (listaAlunos.length === 0) return '';
             const linhas = listaAlunos.map((aluno) => `
               <tr>
                 <td>${aluno.nome}</td>
@@ -189,7 +202,7 @@
               <div class="accordion-item">
                 <h2 class="accordion-header">
                   <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${idColapso}">
-                    ${turma.nome} <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${listaAlunos.length}</span>
+                    ${turma.nome} - Professor: ${nomeCurto(turma.professor)} <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${listaAlunos.length}</span>
                   </button>
                 </h2>
                 <div id="${idColapso}" class="accordion-collapse collapse" data-bs-parent="#accordionFaltas">
@@ -243,19 +256,38 @@
       }
     });
 
+    // Padrão: do dia 1 do mês atual até hoje.
+    function dataIsoLocal(date) {
+      const ano = date.getFullYear();
+      const mes = String(date.getMonth() + 1).padStart(2, '0');
+      const dia = String(date.getDate()).padStart(2, '0');
+      return `${ano}-${mes}-${dia}`;
+    }
+    function definirPeriodoPadrao() {
+      const hoje = new Date();
+      const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      document.getElementById('filtroDataInicio').value = dataIsoLocal(inicioMes);
+      document.getElementById('filtroDataFim').value = dataIsoLocal(hoje);
+    }
+
     document.getElementById('formFiltro').addEventListener('submit', (evento) => {
       evento.preventDefault();
-      carregarFaltas(document.getElementById('filtroData').value, document.getElementById('filtroTurma').value);
+      carregarFaltas(
+        document.getElementById('filtroDataInicio').value,
+        document.getElementById('filtroDataFim').value,
+        document.getElementById('filtroTurma').value
+      );
     });
 
     document.getElementById('btnLimparFiltro').addEventListener('click', () => {
-      document.getElementById('filtroData').value = '';
+      definirPeriodoPadrao();
       document.getElementById('filtroTurma').value = '';
-      carregarFaltas('', '');
+      carregarFaltas(document.getElementById('filtroDataInicio').value, document.getElementById('filtroDataFim').value, '');
     });
 
     carregarTurmas();
-    carregarFaltas('', '');
+    definirPeriodoPadrao();
+    carregarFaltas(document.getElementById('filtroDataInicio').value, document.getElementById('filtroDataFim').value, '');
   </script>
 </body>
 

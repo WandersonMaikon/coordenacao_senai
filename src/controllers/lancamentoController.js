@@ -77,20 +77,42 @@ async function receberWebhook(req, res) {
     }
 }
 
-// Lista os lançamentos mais recentes (debug/conferência), ou os de uma data
-// específica quando ?data=AAAA-MM-DD é informado, e/ou de uma turma específica
-// quando ?turma=<codigoTurma> é informado (filtros usados na tela de faltas)
+// dataAula é gravada como string "dd/mm/aaaa" (formato do SGE), então um
+// intervalo não dá pra filtrar com gte/lte direto — geramos a lista de todas
+// as datas do intervalo nesse formato e filtramos com "in".
+function gerarDatasIntervalo(dataInicioIso, dataFimIso) {
+    const datas = [];
+    const atual = new Date(dataInicioIso + 'T00:00:00');
+    const fim = new Date(dataFimIso + 'T00:00:00');
+
+    while (atual <= fim) {
+        const dia = String(atual.getDate()).padStart(2, '0');
+        const mes = String(atual.getMonth() + 1).padStart(2, '0');
+        const ano = atual.getFullYear();
+        datas.push(`${dia}/${mes}/${ano}`);
+        atual.setDate(atual.getDate() + 1);
+    }
+
+    return datas;
+}
+
+// Lista os lançamentos mais recentes (debug/conferência), ou os de um
+// intervalo de datas quando ?dataInicio=AAAA-MM-DD&dataFim=AAAA-MM-DD é
+// informado, e/ou de uma turma específica quando ?turma=<codigoTurma> é
+// informado (filtros usados na tela de faltas)
 async function listar(req, res) {
     try {
-        const { data, turma } = req.query;
+        const { dataInicio, dataFim, turma } = req.query;
         const where = {};
 
-        if (data) {
-            const [ano, mes, dia] = data.split('-');
-            if (!ano || !mes || !dia) {
+        if (dataInicio || dataFim) {
+            if (!dataInicio || !dataFim) {
+                return res.status(400).json({ status: 'erro', mensagem: 'Informe dataInicio e dataFim juntas, no formato AAAA-MM-DD' });
+            }
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicio) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFim)) {
                 return res.status(400).json({ status: 'erro', mensagem: 'Data inválida, use o formato AAAA-MM-DD' });
             }
-            where.dataAula = `${dia}/${mes}/${ano}`;
+            where.dataAula = { in: gerarDatasIntervalo(dataInicio, dataFim) };
         }
 
         if (turma) {
@@ -100,7 +122,7 @@ async function listar(req, res) {
         const lancamentos = await prisma.lancamento.findMany({
             where,
             orderBy: { criadoEm: 'desc' },
-            take: (data || turma) ? undefined : 100
+            take: (dataInicio || turma) ? undefined : 100
         });
         res.json({ status: 'ok', total: lancamentos.length, dados: lancamentos });
     } catch (erro) {
