@@ -55,19 +55,8 @@
           <div class="card-header d-flex align-items-center justify-content-between border-0 pb-0">
             <h6 class="card-title mb-0">Lançamentos <span class="text-body fw-normal" id="totalResultado"></span></h6>
           </div>
-          <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-              <thead>
-                <tr>
-                  <th>Aluno</th>
-                  <th>Turma</th>
-                  <th>Data da aula</th>
-                  <th class="text-end">Faltas</th>
-                  <th>Professor</th>
-                </tr>
-              </thead>
-              <tbody id="tabelaFaltas"></tbody>
-            </table>
+          <div class="card-body">
+            <div class="accordion accordion-custom-button accordion-primary" id="accordionFaltas"></div>
           </div>
         </div>
 
@@ -167,19 +156,60 @@
         const caminho = query ? `/lancamentos?${query}` : '/lancamentos';
         const resposta = await chamarApi(caminho);
 
-        const tabela = document.getElementById('tabelaFaltas');
+        const accordion = document.getElementById('accordionFaltas');
         if (resposta.dados.length === 0) {
-          tabela.innerHTML = '<tr><td colspan="5" class="text-center text-body py-4">Nenhum lançamento encontrado' + (data ? ' para essa data.' : '.') + '</td></tr>';
+          accordion.innerHTML = `<p class="text-center text-body py-4 mb-0">Nenhum lançamento encontrado${data ? ' para essa data.' : '.'}</p>`;
         } else {
-          tabela.innerHTML = resposta.dados.map((item) => `
-            <tr>
-              <td>${item.nomeAluno || '—'}</td>
-              <td>${item.nomeTurma || '—'}</td>
-              <td>${item.dataAula || '—'}</td>
-              <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning">${formatarDiasFalta(item.qtdFaltas)}</span></td>
-              <td>${item.professor || '—'}</td>
-            </tr>
-          `).join('');
+          const turmas = new Map();
+          resposta.dados.forEach((item) => {
+            const chaveTurma = item.codigoTurma || item.nomeTurma || '—';
+            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, alunos: new Map() });
+
+            // Soma as faltas de todos os lançamentos do aluno nessa turma (um
+            // lançamento por dia de aula), em vez de mostrar cada dia isolado.
+            const alunos = turmas.get(chaveTurma).alunos;
+            const chaveAluno = item.matricula || item.nomeAluno || '—';
+            if (!alunos.has(chaveAluno)) {
+              alunos.set(chaveAluno, { nome: item.nomeAluno || '—', totalFaltas: 0 });
+            }
+            alunos.get(chaveAluno).totalFaltas += item.qtdFaltas || 0;
+          });
+
+          accordion.innerHTML = Array.from(turmas.entries()).map(([codigo, turma], indice) => {
+            const idColapso = `colapsoTurma${indice}`;
+            const listaAlunos = Array.from(turma.alunos.values()).sort((a, b) => b.totalFaltas - a.totalFaltas);
+            const linhas = listaAlunos.map((aluno) => `
+              <tr>
+                <td>${aluno.nome}</td>
+                <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning">${formatarDiasFalta(aluno.totalFaltas)}</span></td>
+              </tr>
+            `).join('');
+
+            return `
+              <div class="accordion-item">
+                <h2 class="accordion-header">
+                  <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${idColapso}">
+                    ${turma.nome} <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${listaAlunos.length}</span>
+                  </button>
+                </h2>
+                <div id="${idColapso}" class="accordion-collapse collapse" data-bs-parent="#accordionFaltas">
+                  <div class="accordion-body p-0">
+                    <div class="table-responsive">
+                      <table class="table table-hover align-middle mb-0">
+                        <thead>
+                          <tr>
+                            <th>Aluno</th>
+                            <th class="text-end">Total de faltas</th>
+                          </tr>
+                        </thead>
+                        <tbody>${linhas}</tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('');
         }
 
         document.getElementById('totalResultado').textContent = `(${resposta.total}${!data && !turma && resposta.total >= 100 ? '+ — mostrando os 100 mais recentes' : ''})`;
@@ -194,6 +224,24 @@
         }
       }
     }
+
+    // O projeto não carrega o bootstrap.bundle.js (só o CSS), então o toggle
+    // do accordion precisa ser feito manualmente aqui.
+    document.getElementById('accordionFaltas').addEventListener('click', (evento) => {
+      const botao = evento.target.closest('.accordion-button');
+      if (!botao) return;
+
+      const alvo = document.querySelector(botao.getAttribute('data-bs-target'));
+      const jaAberto = botao.classList.contains('collapsed') === false;
+
+      document.querySelectorAll('#accordionFaltas .accordion-button').forEach((b) => b.classList.add('collapsed'));
+      document.querySelectorAll('#accordionFaltas .accordion-collapse').forEach((c) => c.classList.remove('show'));
+
+      if (!jaAberto) {
+        botao.classList.remove('collapsed');
+        alvo.classList.add('show');
+      }
+    });
 
     document.getElementById('formFiltro').addEventListener('submit', (evento) => {
       evento.preventDefault();
