@@ -124,6 +124,12 @@
       return nomeCompleto.trim().split(/\s+/).slice(0, 2).join(' ');
     }
 
+    // Formata "69993408643" como "(69) 99340-8643"
+    function formatarTelefone(telefone) {
+      if (telefone.length !== 11) return telefone;
+      return `(${telefone.slice(0, 2)}) ${telefone.slice(2, 7)}-${telefone.slice(7)}`;
+    }
+
     async function chamarApi(caminho) {
       const resposta = await fetch(caminho, { headers: { Authorization: 'Bearer ' + token } });
       if (resposta.status === 401) {
@@ -195,7 +201,7 @@
               <tr>
                 <td>
                   ${aluno.nome}
-                  ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp"><i class="bi bi-whatsapp"></i></a>` : ''}
+                  ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2 text-decoration-none" title="Chamar no WhatsApp"><i class="bi bi-whatsapp me-1"></i>${formatarTelefone(aluno.telefone)}</a>` : ''}
                 </td>
                 <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning">${formatarDiasFalta(aluno.totalFaltas)}</span></td>
               </tr>
