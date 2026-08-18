@@ -311,6 +311,8 @@
           turmas.get(chaveTurma).alunos.push({ ...aluno, indice });
         });
 
+        turmas.forEach((turma) => turma.alunos.sort((a, b) => (a.nomeAluno || '').localeCompare(b.nomeAluno || '', 'pt-BR')));
+
         const accordion = document.getElementById('accordionRisco');
         accordion.innerHTML = Array.from(turmas.entries()).map(([codigo, turma], indiceTurma) => {
           const idColapso = `colapsoRiscoTurma${indiceTurma}`;

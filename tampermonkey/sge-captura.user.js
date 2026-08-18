@@ -72,13 +72,19 @@
 
     // Compara o estado completo da tela com o cache e devolve só os
     // registros que mudaram desde o último envio confirmado:
-    // - nunca enviado antes E tem falta marcada (>0)  -> falta nova
+    // - nunca enviado antes (dia novo) -> sempre envia, mesmo com 0 faltas.
+    //   Precisa registrar presença também, não só falta: é o único jeito do
+    //   backend saber que o aluno voltou depois de faltar (ver /alunos-risco,
+    //   que reseta a sequência de faltas em aberto quando aparece um
+    //   lançamento de presença mais recente). Continua enviando só uma vez
+    //   por dia de aula (não a cada clique em "Salvar"), porque depois do
+    //   primeiro envio confirmado o valor entra no cache.
     // - já enviado antes E o valor é diferente do cache -> correção
     function calcularDelta(estadoCompleto) {
         const cache = lerCacheEstado();
         return estadoCompleto.filter(item => {
             const valorCache = cache[chaveItem(item)];
-            if (valorCache === undefined) return item.qtd_faltas > 0;
+            if (valorCache === undefined) return true;
             return item.qtd_faltas !== valorCache;
         });
     }
