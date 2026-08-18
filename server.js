@@ -6,6 +6,7 @@ const cors = require('cors');
 const authRoutes = require('./src/routes/authRoutes');
 const lancamentoRoutes = require('./src/routes/lancamentoRoutes');
 const alunoRoutes = require('./src/routes/alunoRoutes');
+const contatoRoutes = require('./src/routes/contatoRoutes');
 const viewRoutes = require('./src/routes/viewRoutes');
 const prisma = require('./src/config/prisma');
 
@@ -34,6 +35,7 @@ app.use(viewRoutes);
 app.use('/auth', authRoutes);
 app.use(lancamentoRoutes);
 app.use(alunoRoutes);
+app.use(contatoRoutes);
 
 app.listen(PORT, () => {
     console.log(`✅ Servidor rodando em http://localhost:${PORT}`);

@@ -1,21 +1,98 @@
 const XLSX = require('xlsx');
 const prisma = require('../config/prisma');
 
-// Limiar de faltas acumuladas para considerar o aluno em risco (decisão do usuário: mínimo 4)
-const LIMITE_FALTAS_RISCO = 4;
+// Nº de aulas seguidas com falta (sem nenhuma presença no meio) que colocam o
+// aluno em risco. Não é mais soma acumulada do período todo: assim que o aluno
+// tem presença num lançamento posterior, entende-se que ele voltou e some da
+// lista — mesmo que o total de faltas do semestre continue alto.
+// Vale tanto pra turma diária (2 dias seguidos = 8 em qtd_faltas, já que cada
+// dia soma 4 aulas) quanto pra turma semi-presencial (1 aula/semana — 2
+// lançamentos seguidos com falta, ex: 06/08 e 13/08), sem precisar diferenciar
+// o tipo de turma: a régua é sempre "lançamento", não dia do calendário.
+const LANCAMENTOS_CONSECUTIVOS_RISCO = 2;
 
-// Agrupa lançamentos por aluno e filtra quem já atingiu o limite de faltas
+function converterDataAula(dataAula) {
+    if (!dataAula) return 0;
+    const [dia, mes, ano] = dataAula.split('/').map(Number);
+    return new Date(ano, (mes || 1) - 1, dia || 1).getTime();
+}
+
+// Agrupa lançamentos por (aluno, turma) e verifica a sequência de faltas em
+// aberto, do lançamento mais recente pra trás, parando na primeira presença.
 async function listarEmRisco(req, res) {
     try {
-        const resultado = await prisma.lancamento.groupBy({
-            by: ['matricula', 'nomeAluno'],
-            _sum: { qtdFaltas: true },
-            having: {
-                qtdFaltas: { _sum: { gte: LIMITE_FALTAS_RISCO } }
-            },
-            orderBy: { _sum: { qtdFaltas: 'desc' } }
+        const { turma } = req.query;
+
+        const lancamentos = await prisma.lancamento.findMany({
+            select: { matricula: true, nomeAluno: true, codigoTurma: true, nomeTurma: true, dataAula: true, qtdFaltas: true }
         });
-        res.json({ status: 'ok', total: resultado.length, dados: resultado });
+
+        const grupos = new Map();
+        for (const item of lancamentos) {
+            const chave = `${item.matricula}||${item.codigoTurma || ''}`;
+            if (!grupos.has(chave)) grupos.set(chave, []);
+            grupos.get(chave).push(item);
+        }
+
+        let resultado = [];
+        for (const registros of grupos.values()) {
+            registros.sort((a, b) => converterDataAula(a.dataAula) - converterDataAula(b.dataAula));
+
+            let sequencia = 0;
+            let faltasNaSequencia = 0;
+            for (let i = registros.length - 1; i >= 0 && (registros[i].qtdFaltas || 0) > 0; i--) {
+                sequencia++;
+                faltasNaSequencia += registros[i].qtdFaltas || 0;
+            }
+
+            if (sequencia < LANCAMENTOS_CONSECUTIVOS_RISCO) continue;
+
+            const ultimo = registros[registros.length - 1];
+            resultado.push({
+                matricula: ultimo.matricula,
+                nomeAluno: ultimo.nomeAluno,
+                codigoTurma: ultimo.codigoTurma,
+                nomeTurma: ultimo.nomeTurma,
+                totalFaltas: faltasNaSequencia
+            });
+        }
+
+        if (turma) {
+            resultado = resultado.filter((item) => item.codigoTurma === turma);
+        }
+
+        resultado.sort((a, b) => b.totalFaltas - a.totalFaltas);
+
+        const matriculas = resultado.map((item) => item.matricula);
+
+        const [alunos, contatos] = await Promise.all([
+            prisma.aluno.findMany({
+                where: { matricula: { in: matriculas } },
+                select: { matricula: true, telefone: true }
+            }),
+            // Já vem ordenado por mais recente; guardamos só o primeiro encontro de
+            // cada matrícula pra ter o último contato sem precisar de outra query.
+            prisma.contato.findMany({
+                where: { matricula: { in: matriculas } },
+                orderBy: { criadoEm: 'desc' }
+            })
+        ]);
+
+        const telefonePorMatricula = new Map(alunos.map((aluno) => [aluno.matricula, aluno.telefone]));
+        const ultimoContatoPorMatricula = new Map();
+        for (const contato of contatos) {
+            if (!ultimoContatoPorMatricula.has(contato.matricula)) {
+                ultimoContatoPorMatricula.set(contato.matricula, contato);
+            }
+        }
+
+        const dados = resultado.map((item) => ({
+            ...item,
+            telefone: telefonePorMatricula.get(item.matricula) || null,
+            ultimoContato: ultimoContatoPorMatricula.get(item.matricula) || null
+        }));
+
+        res.json({ status: 'ok', total: dados.length, dados });
     } catch (erro) {
         res.status(500).json({ status: 'erro', mensagem: erro.message });
     }
@@ -96,4 +173,4 @@ async function importarTelefones(req, res) {
     }
 }
 
-module.exports = { listarEmRisco, importarTelefones, LIMITE_FALTAS_RISCO };
+module.exports = { listarEmRisco, importarTelefones, LANCAMENTOS_CONSECUTIVOS_RISCO };

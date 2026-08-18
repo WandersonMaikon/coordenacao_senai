@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <%- include('partials/head', { titulo: 'Alunos em risco' }) %>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+</head>
+<body>
+  <div class="page-layout">
+
+    <%- include('partials/header') %>
+
+    <%- include('partials/sidebar', { paginaAtual: 'risco' }) %>
+
+    <main class="app-wrapper">
+      <div class="container-fluid">
+
+        <div class="app-page-head d-flex flex-wrap gap-3 align-items-center justify-content-between">
+          <div class="clearfix">
+            <h1 class="app-page-title">Alunos em risco</h1>
+            <span>2 aulas seguidas sem presença — registre o contato feito com cada aluno</span>
+          </div>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-body">
+            <form id="formFiltro" class="row g-3 align-items-end">
+              <div class="col-auto">
+                <label class="form-label" for="filtroTurma">Turma</label>
+                <select class="form-select" id="filtroTurma">
+                  <option value="">Todas</option>
+                </select>
+              </div>
+              <div class="col-auto">
+                <button type="submit" class="btn btn-primary">
+                  <i class="bi bi-filter me-1"></i> Filtrar
+                </button>
+              </div>
+              <div class="col-auto">
+                <button type="button" class="btn btn-outline-light" id="btnLimparFiltro">
+                  Limpar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div id="statusCarregamento" class="alert alert-info">Carregando dados...</div>
+
+        <div class="card d-none" id="cardResultado">
+          <div class="card-header d-flex align-items-center justify-content-between border-0 pb-0">
+            <h6 class="card-title mb-0">Alunos <span class="text-body fw-normal" id="totalResultado"></span></h6>
+          </div>
+          <div class="card-body">
+            <div class="accordion accordion-custom-button accordion-primary" id="accordionRisco"></div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <%- include('partials/footer') %>
+
+  </div>
+
+  <script>
+    const token = localStorage.getItem('coor360_token');
+
+    if (!token) {
+      window.location.href = '/login';
+    }
+
+    function sair() {
+      localStorage.removeItem('coor360_token');
+      window.location.href = '/login';
+    }
+    document.getElementById('btnSair').addEventListener('click', sair);
+    document.getElementById('btnSairMenu').addEventListener('click', sair);
+
+    const html = document.documentElement;
+
+    document.getElementById('btnToggleMenu').addEventListener('click', function () {
+      this.classList.toggle('active');
+      if (window.matchMedia('(max-width: 1199.98px)').matches) {
+        document.getElementById('menubar').classList.toggle('open');
+      } else if (html.getAttribute('data-app-sidebar') === 'mini') {
+        html.removeAttribute('data-app-sidebar');
+      } else {
+        html.setAttribute('data-app-sidebar', 'mini');
+      }
+    });
+
+    const btnTema = document.getElementById('btnTema');
+    function aplicarTema(tema) {
+      html.setAttribute('data-bs-theme', tema);
+      btnTema.classList.toggle('active', tema === 'dark');
+    }
+    aplicarTema(localStorage.getItem('coor360_tema') || 'light');
+    btnTema.addEventListener('click', () => {
+      const atual = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+      aplicarTema(atual);
+      localStorage.setItem('coor360_tema', atual);
+    });
+
+    const CANAIS = { whatsapp: 'WhatsApp', ligacao: 'Ligação', presencial: 'Presencial' };
+    const STATUS = { respondido: 'Respondido', sem_resposta: 'Sem resposta' };
+    const MOTIVOS = {
+      transporte: 'Transporte',
+      trabalho: 'Trabalho',
+      saude: 'Saúde',
+      financeiro: 'Financeiro',
+      desmotivacao_curso: 'Desmotivação com o curso',
+      problema_familiar: 'Problema familiar',
+      outro: 'Outro / não informado'
+    };
+
+    // Cada dia de aula tem 4 aulas — o SGE conta falta por aula (mesmo critério de faltas.ejs).
+    const AULAS_POR_DIA = 4;
+    function formatarDiasFalta(qtdFaltas) {
+      const dias = qtdFaltas / AULAS_POR_DIA;
+      const diasTexto = dias.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+      return `${diasTexto} ${dias === 1 ? 'dia' : 'dias'}`;
+    }
+
+    // Formata "69993408643" como "(69) 99340-8643"
+    function formatarTelefone(telefone) {
+      if (telefone.length !== 11) return telefone;
+      return `(${telefone.slice(0, 2)}) ${telefone.slice(2, 7)}-${telefone.slice(7)}`;
+    }
+
+    function formatarDataHora(dataIso) {
+      return new Date(dataIso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function formatarDataRelativa(dataIso) {
+      const diffDias = Math.floor((Date.now() - new Date(dataIso).getTime()) / 86400000);
+      if (diffDias <= 0) return 'hoje';
+      if (diffDias === 1) return 'ontem';
+      if (diffDias < 30) return `há ${diffDias} dias`;
+      return new Date(dataIso).toLocaleDateString('pt-BR');
+    }
+
+    function badgeUltimoContato(ultimoContato) {
+      if (!ultimoContato) {
+        return '<span class="badge bg-danger bg-opacity-10 text-danger">Nunca contatado</span>';
+      }
+      const canal = CANAIS[ultimoContato.canal] || ultimoContato.canal || '—';
+      const status = STATUS[ultimoContato.status] || ultimoContato.status || '—';
+      return `<span class="badge bg-success bg-opacity-10 text-success" title="${formatarDataHora(ultimoContato.criadoEm)}">${canal} · ${status} · ${formatarDataRelativa(ultimoContato.criadoEm)}</span>`;
+    }
+
+    async function carregarTurmas() {
+      try {
+        const resposta = await chamarApi('/turmas');
+        const select = document.getElementById('filtroTurma');
+        resposta.dados.forEach((turma) => {
+          const opcao = document.createElement('option');
+          opcao.value = turma.codigoTurma;
+          opcao.textContent = turma.nomeTurma ? `${turma.nomeTurma} (${turma.codigoTurma})` : turma.codigoTurma;
+          select.appendChild(opcao);
+        });
+      } catch (erro) {
+        console.error('Não foi possível carregar a lista de turmas:', erro);
+      }
+    }
+
+    async function chamarApi(caminho, opcoes = {}) {
+      const resposta = await fetch(caminho, {
+        ...opcoes,
+        headers: {
+          Authorization: 'Bearer ' + token,
+          ...(opcoes.body ? { 'Content-Type': 'application/json' } : {}),
+          ...opcoes.headers
+        }
+      });
+      if (resposta.status === 401) {
+        localStorage.removeItem('coor360_token');
+        window.location.href = '/login';
+        throw new Error('Sessão expirada');
+      }
+      return resposta.json();
+    }
+
+    function linhaDetalheHtml(indice, aluno) {
+      const opcoesMotivo = Object.entries(MOTIVOS).map(([valor, rotulo]) => `<option value="${valor}">${rotulo}</option>`).join('');
+      return `
+        <tr class="linha-detalhe d-none" id="detalhe-${indice}">
+          <td colspan="5">
+            <div class="row g-4 py-2">
+              <div class="col-lg-6">
+                <h6 class="mb-2">Histórico de contatos</h6>
+                <div id="historico-${indice}" class="text-body">Carregando...</div>
+              </div>
+              <div class="col-lg-6">
+                <h6 class="mb-2">Registrar novo contato</h6>
+                <form class="formContato row g-2" data-matricula="${aluno.matricula}" data-nome="${aluno.nomeAluno || ''}" data-indice="${indice}">
+                  <div class="col-sm-6">
+                    <label class="form-label">Canal</label>
+                    <select class="form-select" name="canal" required>
+                      <option value="whatsapp">WhatsApp</option>
+                      <option value="ligacao">Ligação</option>
+                      <option value="presencial">Presencial</option>
+                    </select>
+                  </div>
+                  <div class="col-sm-6">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" name="status" required>
+                      <option value="respondido">Respondido</option>
+                      <option value="sem_resposta">Sem resposta</option>
+                    </select>
+                  </div>
+                  <div class="col-sm-6">
+                    <label class="form-label">Motivo da falta</label>
+                    <select class="form-select" name="motivo">
+                      <option value="">—</option>
+                      ${opcoesMotivo}
+                    </select>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label">Observação</label>
+                    <textarea class="form-control" name="observacao" rows="2"></textarea>
+                  </div>
+                  <div class="col-12">
+                    <button type="submit" class="btn btn-primary btn-sm">Salvar contato</button>
+                    <span class="statusFormContato ms-2"></span>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+
+    function linhaHistoricoHtml(contato) {
+      const canal = CANAIS[contato.canal] || contato.canal || '—';
+      const status = STATUS[contato.status] || contato.status || '—';
+      const motivo = MOTIVOS[contato.motivo] || contato.motivo;
+      return `
+        <div class="border-bottom pb-2 mb-2">
+          <div><strong>${canal}</strong> · ${status}${motivo ? ` · ${motivo}` : ''}</div>
+          ${contato.observacao ? `<div class="text-body">${contato.observacao}</div>` : ''}
+          <div class="text-body text-2xs">${formatarDataHora(contato.criadoEm)} — ${contato.contatadoPor || '—'}</div>
+        </div>
+      `;
+    }
+
+    async function carregarHistorico(indice, matricula) {
+      const container = document.getElementById(`historico-${indice}`);
+      try {
+        const resposta = await chamarApi(`/contatos?matricula=${encodeURIComponent(matricula)}`);
+        if (!resposta.dados || resposta.dados.length === 0) {
+          container.innerHTML = '<p class="text-body mb-0">Nenhum contato registrado ainda.</p>';
+        } else {
+          container.innerHTML = resposta.dados.map(linhaHistoricoHtml).join('');
+        }
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          container.innerHTML = '<p class="text-warning mb-0">Não foi possível carregar o histórico agora.</p>';
+        }
+      }
+    }
+
+    function linhaAlunoHtml(aluno, indice) {
+      return `
+        <tr>
+          <td>
+            ${aluno.nomeAluno || '—'}
+            ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
+          </td>
+          <td>${aluno.matricula}</td>
+          <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning">${formatarDiasFalta(aluno.totalFaltas)}</span></td>
+          <td id="badge-contato-${indice}">${badgeUltimoContato(aluno.ultimoContato)}</td>
+          <td class="text-end">
+            <button type="button" class="btn btn-outline-primary btn-sm btnContato" data-indice="${indice}" data-matricula="${aluno.matricula}">
+              <i class="bi bi-chat-dots me-1"></i>Contato
+            </button>
+          </td>
+        </tr>
+        ${linhaDetalheHtml(indice, aluno)}
+      `;
+    }
+
+    async function carregarRisco(turma) {
+      const statusEl = document.getElementById('statusCarregamento');
+      const cardResultado = document.getElementById('cardResultado');
+      statusEl.className = 'alert alert-info';
+      statusEl.textContent = 'Carregando dados...';
+      statusEl.classList.remove('d-none');
+      cardResultado.classList.add('d-none');
+
+      try {
+        const params = new URLSearchParams();
+        if (turma) params.set('turma', turma);
+        const query = params.toString();
+        const resposta = await chamarApi(query ? `/alunos-risco?${query}` : '/alunos-risco');
+
+        if (resposta.dados.length === 0) {
+          document.getElementById('totalResultado').textContent = '(0)';
+          statusEl.className = 'alert alert-success';
+          statusEl.textContent = 'Nenhum aluno em risco no momento.';
+          statusEl.classList.remove('d-none');
+          cardResultado.classList.add('d-none');
+          return;
+        }
+
+        const turmas = new Map();
+        resposta.dados.forEach((aluno, indice) => {
+          const chaveTurma = aluno.codigoTurma || aluno.nomeTurma || '—';
+          if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: aluno.nomeTurma || chaveTurma, alunos: [] });
+          turmas.get(chaveTurma).alunos.push({ ...aluno, indice });
+        });
+
+        const accordion = document.getElementById('accordionRisco');
+        accordion.innerHTML = Array.from(turmas.entries()).map(([codigo, turma], indiceTurma) => {
+          const idColapso = `colapsoRiscoTurma${indiceTurma}`;
+          const linhas = turma.alunos.map((aluno) => linhaAlunoHtml(aluno, aluno.indice)).join('');
+
+          return `
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${idColapso}">
+                  ${turma.nome} (${codigo}) <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${turma.alunos.length}</span>
+                </button>
+              </h2>
+              <div id="${idColapso}" class="accordion-collapse collapse" data-bs-parent="#accordionRisco">
+                <div class="accordion-body p-0">
+                  <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                      <thead>
+                        <tr>
+                          <th>Aluno</th>
+                          <th>Matrícula</th>
+                          <th class="text-end">Faltas</th>
+                          <th>Último contato</th>
+                          <th class="text-end">Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody>${linhas}</tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        document.getElementById('totalResultado').textContent = `(${resposta.total})`;
+
+        statusEl.classList.add('d-none');
+        cardResultado.classList.remove('d-none');
+
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          statusEl.className = 'alert alert-warning';
+          statusEl.textContent = 'Não foi possível carregar os alunos em risco agora.';
+        }
+      }
+    }
+
+    // O projeto não carrega o bootstrap.bundle.js (só o CSS), então o toggle
+    // do accordion precisa ser feito manualmente aqui.
+    document.getElementById('accordionRisco').addEventListener('click', (evento) => {
+      const botaoContato = evento.target.closest('.btnContato');
+      if (botaoContato) {
+        const indice = botaoContato.dataset.indice;
+        const linha = document.getElementById(`detalhe-${indice}`);
+        const abrindo = linha.classList.contains('d-none');
+
+        linha.classList.toggle('d-none');
+
+        if (abrindo) {
+          carregarHistorico(indice, botaoContato.dataset.matricula);
+        }
+        return;
+      }
+
+      const botaoAccordion = evento.target.closest('.accordion-button');
+      if (!botaoAccordion) return;
+
+      const alvo = document.querySelector(botaoAccordion.getAttribute('data-bs-target'));
+      const jaAberto = botaoAccordion.classList.contains('collapsed') === false;
+
+      document.querySelectorAll('#accordionRisco .accordion-button').forEach((b) => b.classList.add('collapsed'));
+      document.querySelectorAll('#accordionRisco .accordion-collapse').forEach((c) => c.classList.remove('show'));
+
+      if (!jaAberto) {
+        botaoAccordion.classList.remove('collapsed');
+        alvo.classList.add('show');
+      }
+    });
+
+    document.getElementById('accordionRisco').addEventListener('submit', async (evento) => {
+      const form = evento.target.closest('.formContato');
+      if (!form) return;
+      evento.preventDefault();
+
+      const indice = form.dataset.indice;
+      const statusForm = form.querySelector('.statusFormContato');
+      const botaoSalvar = form.querySelector('button[type="submit"]');
+
+      const corpo = {
+        matricula: form.dataset.matricula,
+        nomeAluno: form.dataset.nome,
+        canal: form.canal.value,
+        status: form.status.value,
+        motivo: form.motivo.value,
+        observacao: form.observacao.value
+      };
+
+      botaoSalvar.disabled = true;
+      statusForm.className = 'statusFormContato ms-2 text-body';
+      statusForm.textContent = 'Salvando...';
+
+      try {
+        const resposta = await chamarApi('/contatos', { method: 'POST', body: JSON.stringify(corpo) });
+
+        if (resposta.status !== 'ok') {
+          throw new Error(resposta.mensagem || 'Erro ao salvar');
+        }
+
+        statusForm.className = 'statusFormContato ms-2 text-success';
+        statusForm.textContent = 'Contato registrado.';
+        form.reset();
+
+        document.getElementById(`badge-contato-${indice}`).innerHTML = badgeUltimoContato(resposta.dados);
+        carregarHistorico(indice, corpo.matricula);
+
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          statusForm.className = 'statusFormContato ms-2 text-warning';
+          statusForm.textContent = 'Não foi possível salvar agora.';
+        }
+      } finally {
+        botaoSalvar.disabled = false;
+      }
+    });
+
+    document.getElementById('formFiltro').addEventListener('submit', (evento) => {
+      evento.preventDefault();
+      carregarRisco(document.getElementById('filtroTurma').value);
+    });
+
+    document.getElementById('btnLimparFiltro').addEventListener('click', () => {
+      document.getElementById('filtroTurma').value = '';
+      carregarRisco('');
+    });
+
+    carregarTurmas();
+    carregarRisco();
+  </script>
+</body>
+
+</html>

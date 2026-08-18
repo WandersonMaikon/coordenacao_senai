@@ -84,6 +84,7 @@ model Contato {
   matricula   String   @db.VarChar(20)
   canal       String?  @db.VarChar(50)   // ex: "whatsapp", "ligacao", "presencial"
   status      String?  @db.VarChar(50)   // ex: "respondido", "sem_resposta"
+  motivo      String?  @db.VarChar(50)   // ex: "transporte", "trabalho", "saude", "financeiro", "desmotivacao_curso", "problema_familiar", "outro"
   observacao  String?  @db.Text
   contatadoPor String? @map("contatado_por") @db.VarChar(255)
   criadoEm    DateTime @default(now()) @map("criado_em")
