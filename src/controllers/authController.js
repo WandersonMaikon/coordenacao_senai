@@ -16,7 +16,11 @@ async function login(req, res) {
         return res.status(401).json({ status: 'erro', mensagem: 'Usuário ou senha inválidos' });
     }
 
-    const token = jwt.sign({ usuario: usuarioEncontrado.usuario }, process.env.JWT_SECRET, { expiresIn: '12h' });
+    const token = jwt.sign(
+        { usuario: usuarioEncontrado.usuario, admin: usuarioEncontrado.admin },
+        process.env.JWT_SECRET,
+        { expiresIn: '12h' }
+    );
     return res.json({ status: 'ok', token });
 }
 

@@ -22,7 +22,7 @@ async function main() {
     }
 
     const senhaHash = bcrypt.hashSync(SEED_ADMIN_PASSWORD, 10);
-    await prisma.usuario.create({ data: { usuario: SEED_ADMIN_USER, senhaHash } });
+    await prisma.usuario.create({ data: { usuario: SEED_ADMIN_USER, senhaHash, admin: true } });
     console.log(`[seed-admin] Usuário "${SEED_ADMIN_USER}" criado.`);
 }
 

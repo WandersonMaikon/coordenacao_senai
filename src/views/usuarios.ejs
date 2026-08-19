@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <%- include('partials/head', { titulo: 'Usuários' }) %>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+</head>
+<body>
+  <div class="page-layout">
+
+    <%- include('partials/header') %>
+
+    <%- include('partials/sidebar', { paginaAtual: 'usuarios' }) %>
+
+    <main class="app-wrapper">
+      <div class="container-fluid">
+
+        <div class="app-page-head d-flex flex-wrap gap-3 align-items-center justify-content-between">
+          <div class="clearfix">
+            <h1 class="app-page-title">Usuários</h1>
+            <span>Pessoas da coordenação com acesso ao painel</span>
+          </div>
+          <button type="button" class="btn btn-primary" id="btnNovoUsuario">
+            <i class="bi bi-person-plus-fill me-1"></i> Novo usuário
+          </button>
+        </div>
+
+        <div class="card mb-4 d-none" id="cardNovoUsuario">
+          <div class="card-header d-flex align-items-center justify-content-between border-0 pb-0">
+            <h6 class="card-title mb-0">Novo usuário</h6>
+          </div>
+          <div class="card-body">
+            <form id="formNovoUsuario" class="row g-3">
+              <div class="col-sm-6">
+                <label class="form-label" for="campoNome">Nome</label>
+                <input type="text" class="form-control" id="campoNome" name="nome">
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label" for="campoUsuario">Usuário (login)</label>
+                <input type="text" class="form-control" id="campoUsuario" name="usuario" required>
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label" for="campoSenha">Senha</label>
+                <input type="password" class="form-control" id="campoSenha" name="senha" minlength="6" required>
+                <div class="form-text">Pelo menos 6 caracteres.</div>
+              </div>
+              <div class="col-12">
+                <button type="submit" class="btn btn-primary" id="btnSalvarUsuario">Salvar</button>
+                <button type="button" class="btn btn-outline-light" id="btnCancelarUsuario">Cancelar</button>
+                <span class="statusFormUsuario ms-2"></span>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div id="statusCarregamento" class="alert alert-info">Carregando dados...</div>
+
+        <div class="card d-none" id="cardResultado">
+          <div class="card-header d-flex align-items-center justify-content-between border-0 pb-0">
+            <h6 class="card-title mb-0">Usuários cadastrados <span class="text-body fw-normal" id="totalResultado"></span></h6>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Usuário</th>
+                    <th>Cadastrado em</th>
+                  </tr>
+                </thead>
+                <tbody id="corpoTabelaUsuarios"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <%- include('partials/footer') %>
+
+  </div>
+
+  <script>
+    const token = localStorage.getItem('coor360_token');
+
+    if (!token) {
+      window.location.href = '/login';
+    }
+
+    // Tela restrita ao admin — quem não for admin nem chega a ver a listagem
+    // (a API em /auth/usuarios também recusa com 403, essa é só a guarda de tela)
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (!payload.admin) {
+        window.location.href = '/painel';
+      }
+    } catch (erro) {
+      window.location.href = '/login';
+    }
+
+    function sair() {
+      localStorage.removeItem('coor360_token');
+      window.location.href = '/login';
+    }
+    document.getElementById('btnSair').addEventListener('click', sair);
+    document.getElementById('btnSairMenu').addEventListener('click', sair);
+
+    const html = document.documentElement;
+
+    document.getElementById('btnToggleMenu').addEventListener('click', function () {
+      this.classList.toggle('active');
+      if (window.matchMedia('(max-width: 1199.98px)').matches) {
+        document.getElementById('menubar').classList.toggle('open');
+      } else if (html.getAttribute('data-app-sidebar') === 'mini') {
+        html.removeAttribute('data-app-sidebar');
+      } else {
+        html.setAttribute('data-app-sidebar', 'mini');
+      }
+    });
+
+    const btnTema = document.getElementById('btnTema');
+    function aplicarTema(tema) {
+      html.setAttribute('data-bs-theme', tema);
+      btnTema.classList.toggle('active', tema === 'dark');
+    }
+    aplicarTema(localStorage.getItem('coor360_tema') || 'light');
+    btnTema.addEventListener('click', () => {
+      const atual = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+      aplicarTema(atual);
+      localStorage.setItem('coor360_tema', atual);
+    });
+
+    async function chamarApi(caminho, opcoes = {}) {
+      const resposta = await fetch(caminho, {
+        ...opcoes,
+        headers: {
+          Authorization: 'Bearer ' + token,
+          ...(opcoes.body ? { 'Content-Type': 'application/json' } : {}),
+          ...opcoes.headers
+        }
+      });
+      if (resposta.status === 401) {
+        localStorage.removeItem('coor360_token');
+        window.location.href = '/login';
+        throw new Error('Sessão expirada');
+      }
+      return resposta.json();
+    }
+
+    function formatarDataHora(dataIso) {
+      return new Date(dataIso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function linhaUsuarioHtml(usuario) {
+      return `
+        <tr>
+          <td>${usuario.nome || '—'}</td>
+          <td>${usuario.usuario}</td>
+          <td>${formatarDataHora(usuario.criadoEm)}</td>
+        </tr>
+      `;
+    }
+
+    async function carregarUsuarios() {
+      const statusEl = document.getElementById('statusCarregamento');
+      const cardResultado = document.getElementById('cardResultado');
+      statusEl.className = 'alert alert-info';
+      statusEl.textContent = 'Carregando dados...';
+      statusEl.classList.remove('d-none');
+      cardResultado.classList.add('d-none');
+
+      try {
+        const resposta = await chamarApi('/auth/usuarios');
+
+        if (resposta.dados.length === 0) {
+          statusEl.className = 'alert alert-warning';
+          statusEl.textContent = 'Nenhum usuário cadastrado.';
+          return;
+        }
+
+        document.getElementById('corpoTabelaUsuarios').innerHTML = resposta.dados.map(linhaUsuarioHtml).join('');
+        document.getElementById('totalResultado').textContent = `(${resposta.dados.length})`;
+
+        statusEl.classList.add('d-none');
+        cardResultado.classList.remove('d-none');
+
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          statusEl.className = 'alert alert-warning';
+          statusEl.textContent = 'Não foi possível carregar os usuários agora.';
+        }
+      }
+    }
+
+    function alternarFormNovoUsuario(mostrar) {
+      document.getElementById('cardNovoUsuario').classList.toggle('d-none', !mostrar);
+      if (!mostrar) {
+        document.getElementById('formNovoUsuario').reset();
+        document.querySelector('.statusFormUsuario').textContent = '';
+      }
+    }
+
+    document.getElementById('btnNovoUsuario').addEventListener('click', () => alternarFormNovoUsuario(true));
+    document.getElementById('btnCancelarUsuario').addEventListener('click', () => alternarFormNovoUsuario(false));
+
+    document.getElementById('formNovoUsuario').addEventListener('submit', async (evento) => {
+      evento.preventDefault();
+
+      const form = evento.target;
+      const statusForm = form.querySelector('.statusFormUsuario');
+      const botaoSalvar = document.getElementById('btnSalvarUsuario');
+
+      const corpo = {
+        nome: form.nome.value,
+        usuario: form.usuario.value,
+        senha: form.senha.value
+      };
+
+      botaoSalvar.disabled = true;
+      statusForm.className = 'statusFormUsuario ms-2 text-body';
+      statusForm.textContent = 'Salvando...';
+
+      try {
+        const resposta = await chamarApi('/auth/usuarios', { method: 'POST', body: JSON.stringify(corpo) });
+
+        if (resposta.status !== 'ok') {
+          throw new Error(resposta.mensagem || 'Erro ao salvar');
+        }
+
+        alternarFormNovoUsuario(false);
+        carregarUsuarios();
+
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          statusForm.className = 'statusFormUsuario ms-2 text-warning';
+          statusForm.textContent = erro.message || 'Não foi possível salvar agora.';
+        }
+      } finally {
+        botaoSalvar.disabled = false;
+      }
+    });
+
+    carregarUsuarios();
+  </script>
+</body>
+
+</html>

@@ -18,4 +18,8 @@ function paginaImportarTelefones(req, res) {
     res.render('importar-telefones');
 }
 
-module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaImportarTelefones };
+function paginaUsuarios(req, res) {
+    res.render('usuarios');
+}
+
+module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaImportarTelefones, paginaUsuarios };

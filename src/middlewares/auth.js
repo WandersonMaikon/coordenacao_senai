@@ -17,4 +17,13 @@ function autenticar(req, res, next) {
     }
 }
 
-module.exports = { autenticar };
+// Restringe a rota a usuários com admin = true no token (gestão de usuários) —
+// use sempre depois de autenticar, que é quem popula req.usuario
+function exigirAdmin(req, res, next) {
+    if (!req.usuario || !req.usuario.admin) {
+        return res.status(403).json({ status: 'erro', mensagem: 'Acesso restrito ao administrador' });
+    }
+    next();
+}
+
+module.exports = { autenticar, exigirAdmin };

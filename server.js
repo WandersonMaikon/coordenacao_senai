@@ -7,6 +7,7 @@ const authRoutes = require('./src/routes/authRoutes');
 const lancamentoRoutes = require('./src/routes/lancamentoRoutes');
 const alunoRoutes = require('./src/routes/alunoRoutes');
 const contatoRoutes = require('./src/routes/contatoRoutes');
+const usuarioRoutes = require('./src/routes/usuarioRoutes');
 const viewRoutes = require('./src/routes/viewRoutes');
 const prisma = require('./src/config/prisma');
 
@@ -33,6 +34,7 @@ app.get('/', (req, res) => {
 
 app.use(viewRoutes);
 app.use('/auth', authRoutes);
+app.use('/auth', usuarioRoutes);
 app.use(lancamentoRoutes);
 app.use(alunoRoutes);
 app.use(contatoRoutes);

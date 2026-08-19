@@ -33,6 +33,12 @@
           <span class="menu-label">Importar contatos</span>
         </a>
       </li>
+      <li class="menu-item" id="menuUsuarios">
+        <a class="menu-link <%= paginaAtual === 'usuarios' ? 'active' : '' %>" href="/usuarios">
+          <i class="bi bi-people-fill"></i>
+          <span class="menu-label">Usuários</span>
+        </a>
+      </li>
     </ul>
   </nav>
   <div class="app-footer">
@@ -42,3 +48,19 @@
     </a>
   </div>
 </aside>
+
+<script>
+  // Item "Usuários" só aparece pro admin — o token carrega esse flag desde o login
+  (function () {
+    const tokenSidebar = localStorage.getItem('coor360_token');
+    if (!tokenSidebar) return;
+    try {
+      const payload = JSON.parse(atob(tokenSidebar.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (!payload.admin) {
+        document.getElementById('menuUsuarios').remove();
+      }
+    } catch (erro) {
+      // token inválido — as próprias chamadas fetch() da página vão redirecionar pro /login
+    }
+  })();
+</script>
