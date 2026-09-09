@@ -119,6 +119,12 @@
       sem_resposta: 'warning',
       nunca_contato: 'danger'
     };
+    // Usado tanto no filtro por turma quanto no formulário de contato — um mapa só
+    // evita a lista de status divergir entre os dois lugares.
+    const opcoesStatus = Object.entries(STATUS)
+      .map(([valor, rotulo]) => `<option value="${valor}">${rotulo}</option>`)
+      .join('');
+
     const MOTIVOS = {
       transporte: 'Transporte',
       trabalho: 'Trabalho',
@@ -232,10 +238,7 @@
                   <div class="col-sm-6">
                     <label class="form-label">Status</label>
                     <select class="form-select" name="status" required>
-                      <option value="respondido">Respondido</option>
-                      <option value="sem_resposta">Sem resposta</option>
-                      <option value="acompanhar">Acompanhar</option>
-                      <option value="nunca_contato">Nunca contato</option>
+                      ${opcoesStatus}
                     </select>
                   </div>
                   <div class="col-sm-6">
@@ -311,6 +314,12 @@
         // o badge da linha mostra — importante depois de editar um contato.
         const badge = document.getElementById(`badge-contato-${indice}`);
         if (badge) badge.innerHTML = badgeUltimoContato(contatos[0] || null);
+
+        // Mantém a linha filtrável pelo status novo. De propósito não reaplica o
+        // filtro aqui: a linha sumiria debaixo do olho de quem acabou de
+        // registrar o contato. Ela se ajusta no próximo uso do filtro.
+        const linha = document.querySelector(`tr.linha-aluno[data-indice="${indice}"]`);
+        if (linha) linha.dataset.status = contatos[0] ? contatos[0].status : 'sem_contato';
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           container.innerHTML = '<p class="text-warning mb-0">Não foi possível carregar o histórico agora.</p>';
@@ -341,6 +350,39 @@
       form.canal.focus();
     }
 
+    // Filtra as linhas de uma turma pelo status do último contato. A linha de
+    // detalhe do aluno escondido é fechada junto, senão um painel aberto ficaria
+    // solto na tabela sem a linha dona dele.
+    function aplicarFiltroStatus(indiceTurma) {
+      const select = document.getElementById(`filtroStatus-${indiceTurma}`);
+      if (!select) return;
+
+      const escolhido = select.value;
+      const corpo = select.closest('.accordion-body');
+      let visiveis = 0;
+
+      corpo.querySelectorAll('tr.linha-aluno').forEach((linha) => {
+        const combina = !escolhido || linha.dataset.status === escolhido;
+        linha.classList.toggle('d-none', !combina);
+
+        const detalhe = document.getElementById(`detalhe-${linha.dataset.indice}`);
+        if (detalhe && !combina) detalhe.classList.add('d-none');
+
+        if (combina) visiveis++;
+      });
+
+      const contador = document.getElementById(`contadorTurma-${indiceTurma}`);
+      if (contador) contador.textContent = visiveis;
+
+      const aviso = corpo.querySelector('.semResultadoFiltro');
+      if (aviso) aviso.classList.toggle('d-none', visiveis > 0);
+    }
+
+    document.getElementById('accordionRisco').addEventListener('change', (evento) => {
+      const filtro = evento.target.closest('.filtroStatus');
+      if (filtro) aplicarFiltroStatus(filtro.dataset.turma);
+    });
+
     function alternarDetalhe(indice, matricula) {
       const linha = document.getElementById(`detalhe-${indice}`);
       const abrindo = linha.classList.contains('d-none');
@@ -361,7 +403,8 @@
 
     function linhaAlunoHtml(aluno, indice) {
       return `
-        <tr class="linha-aluno" style="cursor: pointer" data-indice="${indice}" data-matricula="${aluno.matricula}">
+        <tr class="linha-aluno" style="cursor: pointer" data-indice="${indice}" data-matricula="${aluno.matricula}"
+            data-status="${aluno.ultimoContato ? aluno.ultimoContato.status : 'sem_contato'}">
           <td>
             ${aluno.nomeAluno || '—'}
             ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
@@ -420,11 +463,20 @@
             <div class="accordion-item">
               <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${idColapso}">
-                  ${turma.nome} (${codigo}) <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${turma.alunos.length}</span>
+                  ${turma.nome} (${codigo}) <span class="badge border ms-2" id="contadorTurma-${indiceTurma}" style="color: inherit; border-color: currentColor !important;">${turma.alunos.length}</span>
                 </button>
               </h2>
               <div id="${idColapso}" class="accordion-collapse collapse" data-bs-parent="#accordionRisco">
                 <div class="accordion-body p-0">
+                  <div class="d-flex justify-content-end align-items-center gap-2 px-3 py-2 border-bottom">
+                    <label class="form-label mb-0 small" for="filtroStatus-${indiceTurma}">Filtrar por status:</label>
+                    <select class="form-select form-select-sm filtroStatus" id="filtroStatus-${indiceTurma}"
+                            data-turma="${indiceTurma}" style="max-width: 220px">
+                      <option value="">Todos</option>
+                      <option value="sem_contato">Nunca contatado</option>
+                      ${opcoesStatus}
+                    </select>
+                  </div>
                   <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                       <thead>
@@ -438,6 +490,9 @@
                       </thead>
                       <tbody>${linhas}</tbody>
                     </table>
+                    <p class="semResultadoFiltro text-body text-center py-3 mb-0 d-none">
+                      Nenhum aluno com esse status nesta turma.
+                    </p>
                   </div>
                 </div>
               </div>
