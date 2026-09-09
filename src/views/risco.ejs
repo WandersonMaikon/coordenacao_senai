@@ -32,6 +32,13 @@
                 </select>
               </div>
               <div class="col-auto">
+                <label class="form-label" for="filtroStatus">Status do contato</label>
+                <select class="form-select" id="filtroStatus">
+                  <option value="">Todos</option>
+                  <option value="sem_contato">Nunca contatado</option>
+                </select>
+              </div>
+              <div class="col-auto">
                 <button type="submit" class="btn btn-primary">
                   <i class="bi bi-filter me-1"></i> Filtrar
                 </button>
@@ -314,12 +321,6 @@
         // o badge da linha mostra — importante depois de editar um contato.
         const badge = document.getElementById(`badge-contato-${indice}`);
         if (badge) badge.innerHTML = badgeUltimoContato(contatos[0] || null);
-
-        // Mantém a linha filtrável pelo status novo. De propósito não reaplica o
-        // filtro aqui: a linha sumiria debaixo do olho de quem acabou de
-        // registrar o contato. Ela se ajusta no próximo uso do filtro.
-        const linha = document.querySelector(`tr.linha-aluno[data-indice="${indice}"]`);
-        if (linha) linha.dataset.status = contatos[0] ? contatos[0].status : 'sem_contato';
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           container.innerHTML = '<p class="text-warning mb-0">Não foi possível carregar o histórico agora.</p>';
@@ -350,39 +351,6 @@
       form.canal.focus();
     }
 
-    // Filtra as linhas de uma turma pelo status do último contato. A linha de
-    // detalhe do aluno escondido é fechada junto, senão um painel aberto ficaria
-    // solto na tabela sem a linha dona dele.
-    function aplicarFiltroStatus(indiceTurma) {
-      const select = document.getElementById(`filtroStatus-${indiceTurma}`);
-      if (!select) return;
-
-      const escolhido = select.value;
-      const corpo = select.closest('.accordion-body');
-      let visiveis = 0;
-
-      corpo.querySelectorAll('tr.linha-aluno').forEach((linha) => {
-        const combina = !escolhido || linha.dataset.status === escolhido;
-        linha.classList.toggle('d-none', !combina);
-
-        const detalhe = document.getElementById(`detalhe-${linha.dataset.indice}`);
-        if (detalhe && !combina) detalhe.classList.add('d-none');
-
-        if (combina) visiveis++;
-      });
-
-      const contador = document.getElementById(`contadorTurma-${indiceTurma}`);
-      if (contador) contador.textContent = visiveis;
-
-      const aviso = corpo.querySelector('.semResultadoFiltro');
-      if (aviso) aviso.classList.toggle('d-none', visiveis > 0);
-    }
-
-    document.getElementById('accordionRisco').addEventListener('change', (evento) => {
-      const filtro = evento.target.closest('.filtroStatus');
-      if (filtro) aplicarFiltroStatus(filtro.dataset.turma);
-    });
-
     function alternarDetalhe(indice, matricula) {
       const linha = document.getElementById(`detalhe-${indice}`);
       const abrindo = linha.classList.contains('d-none');
@@ -403,8 +371,7 @@
 
     function linhaAlunoHtml(aluno, indice) {
       return `
-        <tr class="linha-aluno" style="cursor: pointer" data-indice="${indice}" data-matricula="${aluno.matricula}"
-            data-status="${aluno.ultimoContato ? aluno.ultimoContato.status : 'sem_contato'}">
+        <tr class="linha-aluno" style="cursor: pointer" data-indice="${indice}" data-matricula="${aluno.matricula}">
           <td>
             ${aluno.nomeAluno || '—'}
             ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
@@ -422,7 +389,10 @@
       `;
     }
 
-    async function carregarRisco(turma) {
+    // status: '' = todos, 'sem_contato' = nunca contatado, ou um valor de STATUS.
+    // O filtro é aplicado aqui no client porque /alunos-risco já devolve o último
+    // contato de cada aluno — não vale um parâmetro novo na API só pra isso.
+    async function carregarRisco(turma, status) {
       const statusEl = document.getElementById('statusCarregamento');
       const cardResultado = document.getElementById('cardResultado');
       statusEl.className = 'alert alert-info';
@@ -436,17 +406,23 @@
         const query = params.toString();
         const resposta = await chamarApi(query ? `/alunos-risco?${query}` : '/alunos-risco');
 
-        if (resposta.dados.length === 0) {
+        const alunos = status
+          ? resposta.dados.filter((aluno) => (aluno.ultimoContato ? aluno.ultimoContato.status : 'sem_contato') === status)
+          : resposta.dados;
+
+        if (alunos.length === 0) {
           document.getElementById('totalResultado').textContent = '(0)';
           statusEl.className = 'alert alert-success';
-          statusEl.textContent = 'Nenhum aluno em risco no momento.';
+          statusEl.textContent = status
+            ? 'Nenhum aluno em risco com esse status de contato.'
+            : 'Nenhum aluno em risco no momento.';
           statusEl.classList.remove('d-none');
           cardResultado.classList.add('d-none');
           return;
         }
 
         const turmas = new Map();
-        resposta.dados.forEach((aluno, indice) => {
+        alunos.forEach((aluno, indice) => {
           const chaveTurma = aluno.codigoTurma || aluno.nomeTurma || '—';
           if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: aluno.nomeTurma || chaveTurma, alunos: [] });
           turmas.get(chaveTurma).alunos.push({ ...aluno, indice });
@@ -463,20 +439,11 @@
             <div class="accordion-item">
               <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${idColapso}">
-                  ${turma.nome} (${codigo}) <span class="badge border ms-2" id="contadorTurma-${indiceTurma}" style="color: inherit; border-color: currentColor !important;">${turma.alunos.length}</span>
+                  ${turma.nome} (${codigo}) <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${turma.alunos.length}</span>
                 </button>
               </h2>
               <div id="${idColapso}" class="accordion-collapse collapse" data-bs-parent="#accordionRisco">
                 <div class="accordion-body p-0">
-                  <div class="d-flex justify-content-end align-items-center gap-2 px-3 py-2 border-bottom">
-                    <label class="form-label mb-0 small" for="filtroStatus-${indiceTurma}">Filtrar por status:</label>
-                    <select class="form-select form-select-sm filtroStatus" id="filtroStatus-${indiceTurma}"
-                            data-turma="${indiceTurma}" style="max-width: 220px">
-                      <option value="">Todos</option>
-                      <option value="sem_contato">Nunca contatado</option>
-                      ${opcoesStatus}
-                    </select>
-                  </div>
                   <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                       <thead>
@@ -490,9 +457,6 @@
                       </thead>
                       <tbody>${linhas}</tbody>
                     </table>
-                    <p class="semResultadoFiltro text-body text-center py-3 mb-0 d-none">
-                      Nenhum aluno com esse status nesta turma.
-                    </p>
                   </div>
                 </div>
               </div>
@@ -500,7 +464,7 @@
           `;
         }).join('');
 
-        document.getElementById('totalResultado').textContent = `(${resposta.total})`;
+        document.getElementById('totalResultado').textContent = `(${alunos.length})`;
 
         statusEl.classList.add('d-none');
         cardResultado.classList.remove('d-none');
@@ -618,13 +582,21 @@
 
     document.getElementById('formFiltro').addEventListener('submit', (evento) => {
       evento.preventDefault();
-      carregarRisco(document.getElementById('filtroTurma').value);
+      carregarRisco(
+        document.getElementById('filtroTurma').value,
+        document.getElementById('filtroStatus').value
+      );
     });
 
     document.getElementById('btnLimparFiltro').addEventListener('click', () => {
       document.getElementById('filtroTurma').value = '';
-      carregarRisco('');
+      document.getElementById('filtroStatus').value = '';
+      carregarRisco('', '');
     });
+
+    // O filtro de status sai do mesmo mapa que rotula os badges — uma lista só,
+    // pra não divergir quando um status novo for criado.
+    document.getElementById('filtroStatus').insertAdjacentHTML('beforeend', opcoesStatus);
 
     carregarTurmas();
     carregarRisco();
