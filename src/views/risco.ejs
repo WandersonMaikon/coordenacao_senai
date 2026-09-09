@@ -171,12 +171,8 @@
       return new Date(dataIso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     }
 
-    function formatarDataRelativa(dataIso) {
-      const diffDias = Math.floor((Date.now() - new Date(dataIso).getTime()) / 86400000);
-      if (diffDias <= 0) return 'hoje';
-      if (diffDias === 1) return 'ontem';
-      if (diffDias < 30) return `há ${diffDias} dias`;
-      return new Date(dataIso).toLocaleDateString('pt-BR');
+    function formatarData(dataIso) {
+      return new Date(dataIso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     }
 
     function badgeUltimoContato(ultimoContato) {
@@ -186,7 +182,7 @@
       const canal = CANAIS[ultimoContato.canal] || ultimoContato.canal || '—';
       const status = STATUS[ultimoContato.status] || ultimoContato.status || '—';
       const cor = COR_STATUS[ultimoContato.status] || 'success';
-      return `<span class="badge bg-${cor} bg-opacity-10 text-${cor}" title="${formatarDataHora(ultimoContato.criadoEm)}">${canal} · ${status} · ${formatarDataRelativa(ultimoContato.criadoEm)}</span>`;
+      return `<span class="badge bg-${cor} bg-opacity-10 text-${cor}" title="${formatarDataHora(ultimoContato.criadoEm)}">${canal} · ${status} · ${formatarData(ultimoContato.criadoEm)}</span>`;
     }
 
     async function carregarTurmas() {
