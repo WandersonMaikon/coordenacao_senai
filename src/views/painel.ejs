@@ -27,7 +27,29 @@
 
         <div id="conteudoPainel" class="d-none">
 
+          <div id="avisoSemImportacao" class="alert alert-warning d-none">
+            Nenhum aluno importado ainda — os números abaixo só ficam completos depois que a
+            planilha da secretaria for enviada em <a href="/importar-telefones">Importar contatos</a>.
+          </div>
+
           <div class="row">
+            <div class="col-xxl-3 col-md-6">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex flex-column mb-3">
+                    <h6 class="text-body text-uppercase text-2xs mb-1">Alunos ativos</h6>
+                    <h2 class="mb-0" id="kpiAlunosAtivos">—</h2>
+                  </div>
+                  <div class="avatar bg-success bg-opacity-10 shadow-info rounded-circle avatar-xl text-success mb-0 mx-auto">
+                    <i class="bi bi-people-fill"></i>
+                  </div>
+                </div>
+                <div class="card-footer border-0">
+                  <span id="rodapeAtivos">Matriculados na planilha da secretaria</span>
+                </div>
+              </div>
+            </div>
+
             <div class="col-xxl-3 col-md-6">
               <div class="card">
                 <div class="card-body">
@@ -40,7 +62,7 @@
                   </div>
                 </div>
                 <div class="card-footer border-0">
-                  <a href="/risco">4 ou mais faltas acumuladas — ver alunos <i class="bi bi-arrow-right"></i></a>
+                  <a href="/risco"><span id="rodapeRisco">Faltando há dias seguidos</span> — ver alunos <i class="bi bi-arrow-right"></i></a>
                 </div>
               </div>
             </div>
@@ -49,32 +71,15 @@
               <div class="card">
                 <div class="card-body">
                   <div class="d-flex flex-column mb-3">
-                    <h6 class="text-body text-uppercase text-2xs mb-1">Faltas (recentes)</h6>
-                    <h2 class="mb-0" id="kpiFaltas">—</h2>
+                    <h6 class="text-body text-uppercase text-2xs mb-1">Sem telefone</h6>
+                    <h2 class="mb-0" id="kpiSemTelefone">—</h2>
                   </div>
                   <div class="avatar bg-warning bg-opacity-10 shadow-info rounded-circle avatar-xl text-warning mb-0 mx-auto">
-                    <i class="bi bi-calendar-x-fill"></i>
+                    <i class="bi bi-telephone-x-fill"></i>
                   </div>
                 </div>
                 <div class="card-footer border-0">
-                  <span>Soma dos últimos lançamentos</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="col-xxl-3 col-md-6">
-              <div class="card">
-                <div class="card-body">
-                  <div class="d-flex flex-column mb-3">
-                    <h6 class="text-body text-uppercase text-2xs mb-1">Lançamentos</h6>
-                    <h2 class="mb-0" id="kpiLancamentos">—</h2>
-                  </div>
-                  <div class="avatar bg-primary bg-opacity-10 shadow-info rounded-circle avatar-xl text-primary mb-0 mx-auto">
-                    <i class="bi bi-journal-text"></i>
-                  </div>
-                </div>
-                <div class="card-footer border-0">
-                  <span>Últimos capturados pelo userscript</span>
+                  <a href="/importar-telefones">Não dá pra contatar — importar planilha <i class="bi bi-arrow-right"></i></a>
                 </div>
               </div>
             </div>
@@ -84,14 +89,14 @@
                 <div class="card-body">
                   <div class="d-flex flex-column mb-3">
                     <h6 class="text-body text-uppercase text-2xs mb-1">Critério de risco</h6>
-                    <h2 class="mb-0">4</h2>
+                    <h2 class="mb-0" id="kpiCriterio">—</h2>
                   </div>
                   <div class="avatar bg-info bg-opacity-10 shadow-info rounded-circle avatar-xl text-info mb-0 mx-auto">
                     <i class="bi bi-shield-exclamation"></i>
                   </div>
                 </div>
                 <div class="card-footer border-0">
-                  <span>Faltas somadas para alerta</span>
+                  <span>Dias de aula seguidos com falta para entrar na lista</span>
                 </div>
               </div>
             </div>
@@ -158,18 +163,35 @@
       return resposta.json();
     }
 
+    function formatarData(dataIso) {
+      return new Date(dataIso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
+
     async function carregarPainel() {
       try {
-        const [risco, lancamentos] = await Promise.all([
-          chamarApi('/alunos-risco'),
-          chamarApi('/lancamentos')
-        ]);
+        const resumo = (await chamarApi('/alunos/resumo')).dados;
 
-        document.getElementById('kpiAlunosRisco').textContent = risco.total;
-        document.getElementById('kpiLancamentos').textContent = lancamentos.total;
+        document.getElementById('kpiAlunosAtivos').textContent = resumo.ativos;
+        document.getElementById('kpiAlunosRisco').textContent = resumo.emRisco;
+        document.getElementById('kpiSemTelefone').textContent = resumo.semTelefone;
+        document.getElementById('kpiCriterio').textContent = resumo.criterioRisco;
 
-        const somaFaltas = lancamentos.dados.reduce((soma, item) => soma + (item.qtdFaltas || 0), 0);
-        document.getElementById('kpiFaltas').textContent = somaFaltas;
+        // Sem aluno importado, "0 ativos" parece um dado e não é — é a ausência
+        // dele. O aviso manda a coordenação pra tela de importação.
+        if (resumo.ativos === 0) {
+          document.getElementById('avisoSemImportacao').classList.remove('d-none');
+        }
+
+        document.getElementById('rodapeAtivos').textContent = resumo.importadosEm
+          ? `Matriculados na planilha da secretaria — importada em ${formatarData(resumo.importadosEm)}`
+          : 'Matriculados na planilha da secretaria';
+
+        // A porcentagem é o que dá escala ao número: 8 em risco é muito diferente
+        // em uma escola de 30 alunos e em uma de 400.
+        const percentual = resumo.ativos > 0 ? Math.round((resumo.emRisco / resumo.ativos) * 100) : null;
+        document.getElementById('rodapeRisco').textContent = percentual !== null
+          ? `${percentual}% dos alunos ativos`
+          : `${resumo.criterioRisco} dias de aula seguidos sem vir`;
 
         document.getElementById('statusCarregamento').classList.add('d-none');
         document.getElementById('conteudoPainel').classList.remove('d-none');

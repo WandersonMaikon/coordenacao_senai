@@ -10,6 +10,30 @@ const prisma = require('../config/prisma');
 // turma: a régua é "dia de aula lançado", não intervalo de calendário.
 const DIAS_AULA_CONSECUTIVOS_RISCO = 2;
 
+// Valores da coluna "Situação" da planilha da secretaria que contam como aluno
+// ativo no painel. A comparação ignora acento e maiúscula porque a planilha não
+// é consistente. Se a secretaria passar a usar outro termo, é só acrescentar
+// aqui — o valor cru fica salvo em `alunos.situacao`, então a reclassificação
+// não exige reimportar nada.
+const SITUACOES_ATIVAS = ['matriculado', 'matriculada', 'cursando', 'ativo', 'ativa'];
+
+function normalizarTexto(texto) {
+    return (texto || '')
+        .toString()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .trim()
+        .toLowerCase();
+}
+
+// Aluno sem situação preenchida conta como ativo: são os importados antes da
+// planilha passar a trazer essa coluna. Tratá-los como inativos derrubaria o
+// número do painel até cada turma ser reimportada.
+function ehSituacaoAtiva(situacao) {
+    if (!situacao) return true;
+    return SITUACOES_ATIVAS.includes(normalizarTexto(situacao));
+}
+
 function converterDataAula(dataAula) {
     if (!dataAula) return 0;
     const [dia, mes, ano] = dataAula.split('/').map(Number);
@@ -18,95 +42,105 @@ function converterDataAula(dataAula) {
 
 // Agrupa lançamentos por (aluno, turma) e verifica a sequência de faltas em
 // aberto, do dia mais recente pra trás, parando no primeiro dia com presença.
+// Devolve uma linha por (aluno, turma) — quem estuda em duas turmas aparece
+// duas vezes, então quem precisa de "quantos alunos" (e não "quantos casos")
+// tem que contar matrículas distintas.
+async function calcularAlunosEmRisco() {
+    const lancamentos = await prisma.lancamento.findMany({
+        select: { matricula: true, nomeAluno: true, codigoTurma: true, nomeTurma: true, dataAula: true, qtdFaltas: true }
+    });
+
+    const grupos = new Map();
+    // Dia de aula mais recente lançado em cada turma (por qualquer aluno, não só
+    // os em risco) — a tela mostra no cabeçalho da turma pra deixar claro até
+    // quando a frequência daquela turma está atualizada.
+    const ultimaAulaPorTurma = new Map();
+    for (const item of lancamentos) {
+        const chave = `${item.matricula}||${item.codigoTurma || ''}`;
+        if (!grupos.has(chave)) grupos.set(chave, []);
+        grupos.get(chave).push(item);
+
+        const chaveTurma = item.codigoTurma || '';
+        const atual = ultimaAulaPorTurma.get(chaveTurma);
+        if (!atual || converterDataAula(item.dataAula) > converterDataAula(atual)) {
+            ultimaAulaPorTurma.set(chaveTurma, item.dataAula);
+        }
+    }
+
+    const resultado = [];
+    for (const registros of grupos.values()) {
+        registros.sort((a, b) => converterDataAula(a.dataAula) - converterDataAula(b.dataAula));
+
+        // Um mesmo dia pode ter mais de um lançamento, um por UC, quando dois
+        // professores dão aula pra turma no mesmo dia. As faltas do dia somam,
+        // mas presença em qualquer UC significa que o aluno veio: o dia inteiro
+        // conta como presença e a sequência de risco reseta.
+        const porDia = new Map();
+        for (const item of registros) {
+            const dia = item.dataAula || '';
+            if (!porDia.has(dia)) {
+                porDia.set(dia, { dataAula: dia, faltas: 0, tevePresenca: false });
+            }
+            const registroDoDia = porDia.get(dia);
+            const faltas = item.qtdFaltas || 0;
+            registroDoDia.faltas += faltas;
+            if (faltas === 0) registroDoDia.tevePresenca = true;
+        }
+
+        const dias = [...porDia.values()]
+            .sort((a, b) => converterDataAula(a.dataAula) - converterDataAula(b.dataAula));
+
+        let sequencia = 0;
+        let faltasNaSequencia = 0;
+        let indice = dias.length - 1;
+        for (; indice >= 0 && !dias[indice].tevePresenca && dias[indice].faltas > 0; indice--) {
+            sequencia++;
+            faltasNaSequencia += dias[indice].faltas;
+        }
+
+        // O laço para no primeiro dia em que o aluno veio — é a última presença
+        // dele. Fica `null` quando ele nunca apareceu em nenhum lançamento da
+        // turma (a sequência começa no primeiro dia de aula registrado).
+        const ultimaPresenca = indice >= 0 ? dias[indice].dataAula : null;
+        const primeiraFalta = dias[indice + 1]?.dataAula || null;
+
+        if (sequencia < DIAS_AULA_CONSECUTIVOS_RISCO) continue;
+
+        const ultimo = registros[registros.length - 1];
+        resultado.push({
+            matricula: ultimo.matricula,
+            nomeAluno: ultimo.nomeAluno,
+            codigoTurma: ultimo.codigoTurma,
+            nomeTurma: ultimo.nomeTurma,
+            // Dias de aula seguidos sem vir — é o que a tela mostra. Contar dias
+            // é mais fiel que dividir o total de faltas por um nº fixo de aulas,
+            // já que um dia com duas UCs tem mais aulas que um dia com uma só.
+            diasSemVir: sequencia,
+            totalFaltas: faltasNaSequencia,
+            // Datas em `dd/mm/aaaa` (formato do SGE) — a tela mostra "sumiu desde"
+            // pra dar a noção de calendário que `diasSemVir` sozinho não dá:
+            // 2 dias de aula é uma semana na turma diária e quase um mês na
+            // semipresencial.
+            ultimaPresenca,
+            primeiraFalta
+        });
+    }
+
+    resultado.sort((a, b) => b.diasSemVir - a.diasSemVir || b.totalFaltas - a.totalFaltas);
+
+    return { emRisco: resultado, ultimaAulaPorTurma };
+}
+
+// Enriquece a lista de risco com telefone, histórico de contato e a última aula
+// da turma — o que a tela /risco precisa pra decidir quem abordar e como.
 async function listarEmRisco(req, res) {
     try {
         const { turma } = req.query;
+        const { emRisco, ultimaAulaPorTurma } = await calcularAlunosEmRisco();
 
-        const lancamentos = await prisma.lancamento.findMany({
-            select: { matricula: true, nomeAluno: true, codigoTurma: true, nomeTurma: true, dataAula: true, qtdFaltas: true }
-        });
-
-        const grupos = new Map();
-        // Dia de aula mais recente lançado em cada turma (por qualquer aluno, não só
-        // os em risco) — a tela mostra no cabeçalho da turma pra deixar claro até
-        // quando a frequência daquela turma está atualizada.
-        const ultimaAulaPorTurma = new Map();
-        for (const item of lancamentos) {
-            const chave = `${item.matricula}||${item.codigoTurma || ''}`;
-            if (!grupos.has(chave)) grupos.set(chave, []);
-            grupos.get(chave).push(item);
-
-            const chaveTurma = item.codigoTurma || '';
-            const atual = ultimaAulaPorTurma.get(chaveTurma);
-            if (!atual || converterDataAula(item.dataAula) > converterDataAula(atual)) {
-                ultimaAulaPorTurma.set(chaveTurma, item.dataAula);
-            }
-        }
-
-        let resultado = [];
-        for (const registros of grupos.values()) {
-            registros.sort((a, b) => converterDataAula(a.dataAula) - converterDataAula(b.dataAula));
-
-            // Um mesmo dia pode ter mais de um lançamento, um por UC, quando dois
-            // professores dão aula pra turma no mesmo dia. As faltas do dia somam,
-            // mas presença em qualquer UC significa que o aluno veio: o dia inteiro
-            // conta como presença e a sequência de risco reseta.
-            const porDia = new Map();
-            for (const item of registros) {
-                const dia = item.dataAula || '';
-                if (!porDia.has(dia)) {
-                    porDia.set(dia, { dataAula: dia, faltas: 0, tevePresenca: false });
-                }
-                const registroDoDia = porDia.get(dia);
-                const faltas = item.qtdFaltas || 0;
-                registroDoDia.faltas += faltas;
-                if (faltas === 0) registroDoDia.tevePresenca = true;
-            }
-
-            const dias = [...porDia.values()]
-                .sort((a, b) => converterDataAula(a.dataAula) - converterDataAula(b.dataAula));
-
-            let sequencia = 0;
-            let faltasNaSequencia = 0;
-            let indice = dias.length - 1;
-            for (; indice >= 0 && !dias[indice].tevePresenca && dias[indice].faltas > 0; indice--) {
-                sequencia++;
-                faltasNaSequencia += dias[indice].faltas;
-            }
-
-            // O laço para no primeiro dia em que o aluno veio — é a última presença
-            // dele. Fica `null` quando ele nunca apareceu em nenhum lançamento da
-            // turma (a sequência começa no primeiro dia de aula registrado).
-            const ultimaPresenca = indice >= 0 ? dias[indice].dataAula : null;
-            const primeiraFalta = dias[indice + 1]?.dataAula || null;
-
-            if (sequencia < DIAS_AULA_CONSECUTIVOS_RISCO) continue;
-
-            const ultimo = registros[registros.length - 1];
-            resultado.push({
-                matricula: ultimo.matricula,
-                nomeAluno: ultimo.nomeAluno,
-                codigoTurma: ultimo.codigoTurma,
-                nomeTurma: ultimo.nomeTurma,
-                // Dias de aula seguidos sem vir — é o que a tela mostra. Contar dias
-                // é mais fiel que dividir o total de faltas por um nº fixo de aulas,
-                // já que um dia com duas UCs tem mais aulas que um dia com uma só.
-                diasSemVir: sequencia,
-                totalFaltas: faltasNaSequencia,
-                // Datas em `dd/mm/aaaa` (formato do SGE) — a tela mostra "sumiu desde"
-                // pra dar a noção de calendário que `diasSemVir` sozinho não dá:
-                // 2 dias de aula é uma semana na turma diária e quase um mês na
-                // semipresencial.
-                ultimaPresenca,
-                primeiraFalta
-            });
-        }
-
-        if (turma) {
-            resultado = resultado.filter((item) => item.codigoTurma === turma);
-        }
-
-        resultado.sort((a, b) => b.diasSemVir - a.diasSemVir || b.totalFaltas - a.totalFaltas);
+        const resultado = turma
+            ? emRisco.filter((item) => item.codigoTurma === turma)
+            : emRisco;
 
         const matriculas = resultado.map((item) => item.matricula);
 
@@ -151,9 +185,11 @@ async function listarEmRisco(req, res) {
 }
 
 // Recebe a planilha Excel da secretaria (colunas: Aluno, Nascimento, Matricula,
-// Telefone, Telefone, Situação, Apuração) e importa só Matricula + Telefone
-// (primeira coluna "Telefone" da planilha — a segunda é ignorada), vinculando
-// o telefone ao aluno pra tela de Faltas poder linkar direto pro WhatsApp.
+// Telefone, Telefone, Situação, Apuração) e importa Matricula + Aluno (nome) +
+// Telefone (a primeira coluna "Telefone" — a segunda é ignorada) + Situação.
+// O telefone alimenta o link de WhatsApp das telas de Faltas e Risco; a situação
+// é o que define "aluno ativo" no painel, então a planilha precisa entrar
+// inteira: quem não tem telefone também é aluno e também conta.
 async function importarTelefones(req, res) {
     if (!req.file) {
         return res.status(400).json({ status: 'erro', mensagem: 'Nenhum arquivo enviado' });
@@ -177,15 +213,21 @@ async function importarTelefones(req, res) {
         // qualquer linha, então procuramos a primeira linha com "matricula".
         let colMatricula = -1;
         let colTelefone = -1;
+        let colNome = -1;
+        let colSituacao = -1;
         let indiceCabecalho = -1;
 
         for (let i = 0; i < linhas.length; i++) {
-            const valores = linhas[i].map((valor) => (valor || '').toString().trim().toLowerCase());
+            // A comparação ignora acento pra achar "Situação" do jeito que a
+            // secretaria escrever ("Situacao", "SITUAÇÃO", com espaço sobrando).
+            const valores = linhas[i].map(normalizarTexto);
             const indiceMatricula = valores.indexOf('matricula');
             if (indiceMatricula !== -1) {
                 indiceCabecalho = i;
                 colMatricula = indiceMatricula;
                 colTelefone = valores.indexOf('telefone');
+                colNome = valores.indexOf('aluno');
+                colSituacao = valores.indexOf('situacao');
                 break;
             }
         }
@@ -196,33 +238,100 @@ async function importarTelefones(req, res) {
 
         let importados = 0;
         let semTelefone = 0;
+        // Contagem por situação encontrada na planilha, devolvida na resposta: é
+        // como a coordenação descobre quais valores a secretaria usa de verdade
+        // e confere se SITUACOES_ATIVAS cobre todos eles.
+        const situacoes = {};
 
         for (let i = indiceCabecalho + 1; i < linhas.length; i++) {
             const linha = linhas[i];
             const matricula = (linha[colMatricula] || '').toString().trim();
-            const telefone = (linha[colTelefone] || '').toString().replace(/\D/g, '');
-
             if (!matricula) continue;
-            if (!telefone) {
-                semTelefone++;
-                continue;
-            }
 
+            const telefone = (linha[colTelefone] || '').toString().replace(/\D/g, '');
+            const nome = colNome !== -1 ? (linha[colNome] || '').toString().trim() : '';
+            const situacao = colSituacao !== -1 ? (linha[colSituacao] || '').toString().trim() : '';
+
+            if (!telefone) semTelefone++;
+
+            const rotuloSituacao = situacao || 'Sem situação na planilha';
+            situacoes[rotuloSituacao] = (situacoes[rotuloSituacao] || 0) + 1;
+
+            // Só sobrescreve o que a planilha realmente traz: uma planilha sem
+            // telefone pra um aluno não pode apagar o telefone que já temos dele.
+            const campos = {};
+            if (telefone) campos.telefone = telefone;
+            if (nome) campos.nome = nome;
+            if (situacao) campos.situacao = situacao;
+
+            // Uma query por linha (~130 por turma). É lento em tese, mas a
+            // importação roda uma vez por turma por semestre — não vale a
+            // complexidade de agrupar em transação.
             await prisma.aluno.upsert({
                 where: { matricula },
-                update: { telefone },
-                create: { matricula, telefone }
+                update: campos,
+                create: { matricula, ...campos }
             });
             importados++;
         }
 
         res.json({
             status: 'ok',
-            mensagem: `${importados} telefone(s) importado(s)${semTelefone > 0 ? `, ${semTelefone} aluno(s) sem telefone na planilha` : ''}`
+            mensagem: `${importados} aluno(s) importado(s)${semTelefone > 0 ? `, ${semTelefone} sem telefone na planilha` : ''}`,
+            situacoes
         });
     } catch (erro) {
         res.status(500).json({ status: 'erro', mensagem: erro.message });
     }
 }
 
-module.exports = { listarEmRisco, importarTelefones, DIAS_AULA_CONSECUTIVOS_RISCO };
+// Números do painel. "Ativo" vem da coluna Situação da planilha da secretaria,
+// não de "não está na lista de risco": quem evade de vez para de receber
+// lançamento de falta e sairia da lista de risco sozinho, sendo contado como
+// ativo — quanto mais evasão, mais "ativos". A planilha é a fonte confiável.
+async function resumoAlunos(req, res) {
+    try {
+        const [alunos, { emRisco }] = await Promise.all([
+            prisma.aluno.findMany({ select: { matricula: true, telefone: true, situacao: true, atualizadoEm: true } }),
+            calcularAlunosEmRisco()
+        ]);
+
+        let ativos = 0;
+        let inativos = 0;
+        let semSituacao = 0;
+        let semTelefone = 0;
+        let importadosEm = null;
+
+        for (const aluno of alunos) {
+            if (ehSituacaoAtiva(aluno.situacao)) ativos++;
+            else inativos++;
+
+            if (!aluno.situacao) semSituacao++;
+            if (!aluno.telefone) semTelefone++;
+
+            if (!importadosEm || aluno.atualizadoEm > importadosEm) importadosEm = aluno.atualizadoEm;
+        }
+
+        // calcularAlunosEmRisco devolve uma linha por (aluno, turma): contamos
+        // matrículas distintas pra não inflar o número de alunos com quem estuda
+        // em duas turmas — senão o risco pode até passar o total de ativos.
+        const matriculasEmRisco = new Set(emRisco.map((item) => item.matricula));
+
+        res.json({
+            status: 'ok',
+            dados: {
+                ativos,
+                inativos,
+                semSituacao,
+                semTelefone,
+                emRisco: matriculasEmRisco.size,
+                importadosEm,
+                criterioRisco: DIAS_AULA_CONSECUTIVOS_RISCO
+            }
+        });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+module.exports = { listarEmRisco, importarTelefones, resumoAlunos, DIAS_AULA_CONSECUTIVOS_RISCO };

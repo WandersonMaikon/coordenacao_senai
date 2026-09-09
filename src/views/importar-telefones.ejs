@@ -18,7 +18,7 @@
         <div class="app-page-head d-flex flex-wrap gap-3 align-items-center justify-content-between">
           <div class="clearfix">
             <h1 class="app-page-title">Importar contatos</h1>
-            <span>Envie a planilha da secretaria (colunas "Matricula" e "Telefone") pra vincular o telefone de cada aluno</span>
+            <span>Envie a planilha da secretaria pra cadastrar os alunos da turma — telefone para contato e situação da matrícula</span>
           </div>
         </div>
 
@@ -28,7 +28,10 @@
               <div class="mb-3">
                 <label class="form-label" for="arquivoExcel">Planilha Excel (.xlsx)</label>
                 <input type="file" class="form-control" id="arquivoExcel" accept=".xlsx,.xls" required>
-                <div class="form-text">Só as colunas "Matricula" e "Telefone" são usadas — o resto da planilha é ignorado.</div>
+                <div class="form-text">
+                  São usadas as colunas "Matricula", "Aluno", "Telefone" e "Situação" — o resto é ignorado.
+                  Aluno sem telefone também é cadastrado, e a situação é o que define quem entra na contagem de alunos ativos do painel.
+                </div>
               </div>
               <button type="submit" class="btn btn-primary" id="btnImportar">
                 <i class="bi bi-upload me-1"></i> Importar
@@ -120,6 +123,27 @@
 
         resultado.className = `alert ${dados.status === 'ok' ? 'alert-success' : 'alert-warning'}`;
         resultado.textContent = dados.mensagem;
+
+        // Mostra os valores que a coluna "Situação" trouxe. É o que permite
+        // conferir se a lista de situações consideradas ativas (SITUACOES_ATIVAS,
+        // no alunoController) cobre o que a secretaria realmente usa.
+        const situacoes = Object.entries(dados.situacoes || {});
+        if (situacoes.length) {
+          const lista = document.createElement('ul');
+          lista.className = 'mb-0 mt-2';
+          situacoes
+            .sort((a, b) => b[1] - a[1])
+            .forEach(([situacao, quantidade]) => {
+              const item = document.createElement('li');
+              item.textContent = `${situacao}: ${quantidade}`;
+              lista.appendChild(item);
+            });
+          resultado.appendChild(Object.assign(document.createElement('div'), {
+            className: 'mt-2 fw-semibold',
+            textContent: 'Situações encontradas na planilha:'
+          }));
+          resultado.appendChild(lista);
+        }
 
         if (dados.status === 'ok') {
           document.getElementById('formImportar').reset();
