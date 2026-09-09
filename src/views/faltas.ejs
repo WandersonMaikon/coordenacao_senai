@@ -16,8 +16,8 @@
 
         <div class="app-page-head d-flex flex-wrap gap-3 align-items-center justify-content-between">
           <div class="clearfix">
-            <h1 class="app-page-title">Faltas</h1>
-            <span>Todos os lançamentos capturados pelo userscript</span>
+            <h1 class="app-page-title">Frequência</h1>
+            <span>Frequência consolidada por turma no período — quem está perto de reprovar por falta</span>
           </div>
         </div>
 
@@ -54,9 +54,11 @@
 
         <div id="statusCarregamento" class="alert alert-info">Carregando dados...</div>
 
+        <div id="avisoCobertura" class="alert alert-warning d-none"></div>
+
         <div class="card d-none" id="cardResultado">
           <div class="card-header d-flex align-items-center justify-content-between border-0 pb-0">
-            <h6 class="card-title mb-0">Lançamentos <span class="text-body fw-normal" id="totalResultado"></span></h6>
+            <h6 class="card-title mb-0">Turmas <span class="text-body fw-normal" id="totalResultado"></span></h6>
           </div>
           <div class="card-body">
             <div class="accordion accordion-custom-button accordion-primary" id="accordionFaltas"></div>
@@ -70,6 +72,7 @@
 
   </div>
 
+  <script src="/js/turmas.js"></script>
   <script>
     const token = localStorage.getItem('coor360_token');
 
@@ -109,13 +112,14 @@
       localStorage.setItem('coor360_tema', atual);
     });
 
-    // Contamos os dias de aula distintos em que o aluno teve falta. Não dá pra
-    // dividir o total de aulas por um nº fixo: quando dois professores dão aula
-    // pra turma no mesmo dia, esse dia tem duas UCs lançadas e mais aulas que um
-    // dia com uma UC só — dividir inflaria a conta. O total de aulas perdidas
-    // continua visível no tooltip do badge.
-    function formatarDiasFalta(diasComFalta) {
-      return `${diasComFalta} ${diasComFalta === 1 ? 'dia' : 'dias'}`;
+    // Nome de aluno e de turma vêm do SGE e entram via innerHTML — um "<" no meio
+    // de um nome já quebraria a renderização da tabela.
+    function escaparHtml(texto) {
+      return String(texto ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
     }
 
     function nomeCurto(nomeCompleto) {
@@ -139,28 +143,61 @@
       return resposta.json();
     }
 
-    async function carregarTurmas() {
-      try {
-        const resposta = await chamarApi('/turmas');
-        const select = document.getElementById('filtroTurma');
-        resposta.dados.forEach((turma) => {
-          const opcao = document.createElement('option');
-          opcao.value = turma.codigoTurma;
-          opcao.textContent = turma.nomeTurma ? `${turma.nomeTurma} (${turma.codigoTurma})` : turma.codigoTurma;
-          select.appendChild(opcao);
-        });
-      } catch (erro) {
-        console.error('Não foi possível carregar a lista de turmas:', erro);
-      }
+    // Barra de frequência: a cor vem da faixa, não do valor bruto — verde acima do
+    // mínimo, âmbar na zona de atenção (até 10 pontos acima do mínimo, onde ainda dá
+    // pra reverter) e vermelho abaixo do mínimo, onde já reprovou por falta.
+    function corFrequencia(frequencia, minimo) {
+      if (frequencia === null) return 'secondary';
+      if (frequencia < minimo) return 'danger';
+      if (frequencia < minimo + 10) return 'warning';
+      return 'success';
+    }
+
+    function barraFrequencia(frequencia, minimo) {
+      if (frequencia === null) return '<span class="text-body-secondary">—</span>';
+      const cor = corFrequencia(frequencia, minimo);
+      return `
+        <div class="d-flex align-items-center gap-2">
+          <div class="progress flex-grow-1" style="height: 6px; min-width: 80px;" role="img"
+               aria-label="Frequência de ${frequencia}%">
+            <div class="progress-bar bg-${cor}" style="width: ${frequencia}%"></div>
+          </div>
+          <span class="text-${cor} fw-semibold" style="min-width: 52px; text-align: right;">${frequencia}%</span>
+        </div>
+      `;
+    }
+
+    function linhaAlunoHtml(aluno, minimo) {
+      // Quantas aulas ainda pode perder antes de cair abaixo do mínimo. É o número
+      // que transforma o relatório em conversa: "você pode faltar mais 2 aulas".
+      const margem = Math.floor(aluno.aulas - aluno.faltas - (minimo / 100) * aluno.aulas);
+      return `
+        <tr>
+          <td>
+            ${escaparHtml(aluno.nomeAluno)}
+            ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
+          </td>
+          <td>${escaparHtml(aluno.matricula)}</td>
+          <td class="text-end" title="${aluno.faltas} de ${aluno.aulas} aula(s)">${aluno.faltas}/${aluno.aulas}</td>
+          <td style="min-width: 160px;">${barraFrequencia(aluno.frequencia, minimo)}</td>
+          <td class="text-end">${
+            aluno.frequencia === null ? '—'
+              : margem < 0 ? '<span class="text-danger">já reprovou</span>'
+              : `${margem} aula(s)`
+          }</td>
+        </tr>
+      `;
     }
 
     async function carregarFaltas(dataInicio, dataFim, turma) {
       const statusEl = document.getElementById('statusCarregamento');
       const cardResultado = document.getElementById('cardResultado');
+      const avisoCobertura = document.getElementById('avisoCobertura');
       statusEl.className = 'alert alert-info';
       statusEl.textContent = 'Carregando dados...';
       statusEl.classList.remove('d-none');
       cardResultado.classList.add('d-none');
+      avisoCobertura.classList.add('d-none');
 
       try {
         const params = new URLSearchParams();
@@ -168,67 +205,63 @@
         if (dataFim) params.set('dataFim', dataFim);
         if (turma) params.set('turma', turma);
         const query = params.toString();
-        const caminho = query ? `/lancamentos?${query}` : '/lancamentos';
-        const resposta = await chamarApi(caminho);
+        const resposta = await chamarApi(`/frequencia${query ? `?${query}` : ''}`);
+        const minimo = resposta.frequenciaMinima;
+
+        // Lançamentos anteriores à v4.1 do userscript não trazem o total de aulas
+        // do dia, então não entram no cálculo. Sem esse aviso, o relatório pareceria
+        // completo mostrando só a parte do período que o script novo já cobriu.
+        if (resposta.diasSemTotalDeAulas > 0) {
+          avisoCobertura.classList.remove('d-none');
+          avisoCobertura.innerHTML = `
+            <strong>${resposta.diasSemTotalDeAulas} lançamento(s) fora do cálculo.</strong>
+            São chamadas salvas antes da atualização do userscript, que não informavam quantas
+            aulas o dia teve — sem esse número não dá pra calcular percentual. Elas entram no
+            relatório assim que o professor salvar a frequência daquela turma de novo.
+          `;
+        }
 
         const accordion = document.getElementById('accordionFaltas');
+
         if (resposta.dados.length === 0) {
-          accordion.innerHTML = `<p class="text-center text-body py-4 mb-0">Nenhum lançamento encontrado${dataInicio ? ' para esse período.' : '.'}</p>`;
+          accordion.innerHTML = `<p class="text-center text-body py-4 mb-0">Nenhuma aula lançada${dataInicio ? ' nesse período.' : '.'}</p>`;
         } else {
-          const turmas = new Map();
-          resposta.dados.forEach((item) => {
-            const chaveTurma = item.codigoTurma || item.nomeTurma || '—';
-            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professores: new Set(), alunos: new Map() });
-            // A mesma turma pode ter mais de um professor lançando (uma UC cada).
-            if (item.professor) turmas.get(chaveTurma).professores.add(item.professor);
-
-            // Soma as faltas de todos os lançamentos do aluno nessa turma. Agora
-            // um mesmo dia pode ter mais de um lançamento (um por UC), então as
-            // faltas do dia somam e os dias distintos são contados à parte.
-            const alunos = turmas.get(chaveTurma).alunos;
-            const chaveAluno = item.matricula || item.nomeAluno || '—';
-            if (!alunos.has(chaveAluno)) {
-              alunos.set(chaveAluno, { nome: item.nomeAluno || '—', telefone: item.aluno?.telefone || '', totalFaltas: 0, diasComFalta: new Set() });
-            }
-            const aluno = alunos.get(chaveAluno);
-            aluno.totalFaltas += item.qtdFaltas || 0;
-            if ((item.qtdFaltas || 0) > 0) aluno.diasComFalta.add(item.dataAula || '');
-          });
-
-          accordion.innerHTML = Array.from(turmas.entries()).map(([codigo, turma], indice) => {
+          accordion.innerHTML = resposta.dados.map((dadosTurma, indice) => {
             const idColapso = `colapsoTurma${indice}`;
-            const listaAlunos = Array.from(turma.alunos.values())
-              .filter((aluno) => aluno.totalFaltas > 0)
-              .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-            if (listaAlunos.length === 0) return '';
-            const linhas = listaAlunos.map((aluno) => `
-              <tr>
-                <td>
-                  ${aluno.nome}
-                  ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
-                </td>
-                <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning" title="${aluno.totalFaltas} aula(s) perdida(s)">${formatarDiasFalta(aluno.diasComFalta.size)}</span></td>
-              </tr>
-            `).join('');
+            const cor = corFrequencia(dadosTurma.frequenciaTurma, minimo);
+            const professores = dadosTurma.professores.map(nomeCurto).join(' / ') || '—';
 
             return `
               <div class="accordion-item">
                 <h2 class="accordion-header">
                   <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${idColapso}">
-                    ${turma.nome} (${codigo}) - Professor: ${Array.from(turma.professores).map(nomeCurto).join(' / ') || '—'} <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${listaAlunos.length}</span>
+                    <span class="flex-grow-1">
+                      ${escaparHtml(nomeTurmaLimpo(dadosTurma.nomeTurma))} (${escaparHtml(dadosTurma.codigoTurma)})
+                      <span class="ms-2 small text-body-secondary">Professor: ${escaparHtml(professores)}</span>
+                    </span>
+                    <span class="badge bg-${cor} bg-opacity-10 text-${cor} ms-2">${dadosTurma.frequenciaTurma}% de frequência</span>
+                    ${dadosTurma.abaixoDoMinimo > 0
+                      ? `<span class="badge bg-danger bg-opacity-10 text-danger ms-2">${dadosTurma.abaixoDoMinimo} abaixo de ${minimo}%</span>`
+                      : ''}
                   </button>
                 </h2>
                 <div id="${idColapso}" class="accordion-collapse collapse" data-bs-parent="#accordionFaltas">
                   <div class="accordion-body p-0">
+                    <div class="px-3 py-2 small text-body-secondary border-bottom">
+                      ${dadosTurma.totalAulas} aula(s) lançada(s) no período · ${dadosTurma.totalAlunos} aluno(s)
+                    </div>
                     <div class="table-responsive">
                       <table class="table table-hover align-middle mb-0">
                         <thead>
                           <tr>
                             <th>Aluno</th>
-                            <th class="text-end">Total de faltas</th>
+                            <th>Matrícula</th>
+                            <th class="text-end" title="Aulas perdidas sobre aulas lançadas">Faltas</th>
+                            <th>Frequência</th>
+                            <th class="text-end" title="Quantas aulas ainda pode perder sem ficar abaixo do mínimo">Margem</th>
                           </tr>
                         </thead>
-                        <tbody>${linhas}</tbody>
+                        <tbody>${dadosTurma.alunos.map((aluno) => linhaAlunoHtml(aluno, minimo)).join('')}</tbody>
                       </table>
                     </div>
                   </div>
@@ -238,7 +271,7 @@
           }).join('');
         }
 
-        document.getElementById('totalResultado').textContent = `(${resposta.total}${!dataInicio && !turma && resposta.total >= 100 ? '+ — mostrando os 100 mais recentes' : ''})`;
+        document.getElementById('totalResultado').textContent = `(${resposta.total})`;
 
         statusEl.classList.add('d-none');
         cardResultado.classList.remove('d-none');
@@ -246,7 +279,7 @@
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           statusEl.className = 'alert alert-warning';
-          statusEl.textContent = 'Não foi possível carregar os lançamentos agora.';
+          statusEl.textContent = 'Não foi possível carregar a frequência agora.';
         }
       }
     }
@@ -297,7 +330,7 @@
       carregarFaltas(document.getElementById('filtroDataInicio').value, document.getElementById('filtroDataFim').value, '');
     });
 
-    carregarTurmas();
+    preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi);
     definirPeriodoPadrao();
     carregarFaltas(document.getElementById('filtroDataInicio').value, document.getElementById('filtroDataFim').value, '');
   </script>

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         SGE Novo - Captura Frequência SENAI
 // @namespace    http://tampermonkey.net/
-// @version      4.0
-// @description  Captura frequência do novo SGE (Angular/PO-UI) - resposta otimista, envio rápido, suporta correção, envia só o que mudou
+// @version      4.1
+// @description  Captura frequência do novo SGE (Angular/PO-UI) - resposta otimista, envio rápido, suporta correção, envia só o que mudou, informa o total de aulas do dia
 // @author       Wanderson
 // @match        https://sge.fiero.org.br/*
 // @match        http://sge.fiero.org.br/*
@@ -37,7 +37,7 @@
     const DELAY_RETRY_MS = 3000;      // reduzido de 5s para 3s
     const TIMEOUT_MS = 7000;          // reduzido de 15s para 7s
     const CHAVE_FILA = 'sge_fila_pendente_v3';
-    const CHAVE_CACHE_ESTADO = 'sge_cache_estado_v2';
+    const CHAVE_CACHE_ESTADO = 'sge_cache_estado_v3';
 
     console.log('%c[SGE-v3.4] Script carregado (resposta otimista, com suporte a correção, envia só o que mudou)', 'color: green; font-weight: bold;');
 
@@ -107,6 +107,13 @@
     // A UC entra na chave (v2 do cache) porque ela agora faz parte da chave do
     // lançamento no servidor: uma turma pode ter aula de duas UCs no mesmo dia,
     // e sem a UC aqui o cache trataria as duas como o mesmo lançamento.
+    //
+    // v3 zera o cache de todo mundo de propósito. O campo `qtd_aulas` é novo e o
+    // delta compara só `qtd_faltas` — sem zerar, os dias já confirmados nunca
+    // seriam reenviados e o servidor ficaria sem o total de aulas deles. Com o
+    // cache vazio, o próximo "Salvar" de cada professor reenvia a tela inteira
+    // uma vez (o upsert do backend absorve isso sem duplicar) e o histórico
+    // visível na tela passa a ter % de frequência.
 
     function chaveItem(item) {
         return `${item.matricula}|${item.data_aula}|${item.codigo_turma}|${item.uc}`;
@@ -221,8 +228,12 @@
                 const dataLimpa = dataAulaRaw.replace(/^x/, '').replace(/c\d+$/, '');
 
                 if (!porData[dataLimpa]) {
-                    porData[dataLimpa] = { idAula: dataAulaRaw, qtdFaltas: 0 };
+                    porData[dataLimpa] = { idAula: dataAulaRaw, qtdFaltas: 0, qtdAulas: 0 };
                 }
+                // Cada célula da data é uma aula daquele dia, marcada ou não. Sem
+                // esse total o backend não consegue calcular % de frequência — só
+                // saberia quantas faltas, nunca de quantas aulas.
+                porData[dataLimpa].qtdAulas += 1;
                 if (marcado) porData[dataLimpa].qtdFaltas += 1;
             });
 
@@ -237,7 +248,8 @@
                     uc: infoTurma.disciplina,
                     periodo_letivo: infoTurma.periodoLetivo,
                     professor: nomeProfessor,
-                    qtd_faltas: info.qtdFaltas
+                    qtd_faltas: info.qtdFaltas,
+                    qtd_aulas: info.qtdAulas
                 });
             });
         });

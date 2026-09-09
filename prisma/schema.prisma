@@ -43,6 +43,12 @@ model Lancamento {
   periodoLetivo  String?  @map("periodo_letivo") @db.VarChar(20)
   professor      String?  @db.VarChar(255)
   qtdFaltas      Int      @default(1) @map("qtd_faltas")
+  // Total de aulas que aquele dia teve naquela UC (marcadas ou não), lido da
+  // tela do SGE pelo userscript. É o denominador da % de frequência: sem ele
+  // dá pra saber quantas faltas o aluno teve, nunca de quantas aulas.
+  // Nulo nos lançamentos anteriores à v4.1 do userscript — a tela de Frequência
+  // ignora esses dias e informa quantos ficaram de fora.
+  qtdAulas       Int?     @map("qtd_aulas")
   criadoEm       DateTime @default(now()) @map("criado_em")
   atualizadoEm   DateTime @updatedAt @map("atualizado_em")
 
