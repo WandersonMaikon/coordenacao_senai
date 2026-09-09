@@ -148,7 +148,9 @@
       }
       const canal = CANAIS[ultimoContato.canal] || ultimoContato.canal || '—';
       const status = STATUS[ultimoContato.status] || ultimoContato.status || '—';
-      return `<span class="badge bg-success bg-opacity-10 text-success" title="${formatarDataHora(ultimoContato.criadoEm)}">${canal} · ${status} · ${formatarDataRelativa(ultimoContato.criadoEm)}</span>`;
+      // Contato feito mas sem resposta do aluno ainda é pendência: amarelo, não verde.
+      const cor = ultimoContato.status === 'sem_resposta' ? 'warning' : 'success';
+      return `<span class="badge bg-${cor} bg-opacity-10 text-${cor}" title="${formatarDataHora(ultimoContato.criadoEm)}">${canal} · ${status} · ${formatarDataRelativa(ultimoContato.criadoEm)}</span>`;
     }
 
     async function carregarTurmas() {
@@ -271,7 +273,7 @@
             ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
           </td>
           <td>${aluno.matricula}</td>
-          <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning">${formatarDiasFalta(aluno.totalFaltas)}</span></td>
+          <td class="text-end"><span class="badge bg-danger bg-opacity-10 text-danger">${formatarDiasFalta(aluno.totalFaltas)}</span></td>
           <td id="badge-contato-${indice}">${badgeUltimoContato(aluno.ultimoContato)}</td>
           <td class="text-end">
             <button type="button" class="btn btn-outline-primary btn-sm btnContato" data-indice="${indice}" data-matricula="${aluno.matricula}">
