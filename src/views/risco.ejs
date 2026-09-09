@@ -420,7 +420,7 @@
         const turmas = new Map();
         alunos.forEach((aluno, indice) => {
           const chaveTurma = aluno.codigoTurma || aluno.nomeTurma || '—';
-          if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: aluno.nomeTurma || chaveTurma, alunos: [] });
+          if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: aluno.nomeTurma || chaveTurma, ultimaAula: aluno.ultimaAulaTurma || null, alunos: [] });
           turmas.get(chaveTurma).alunos.push({ ...aluno, indice });
         });
 
@@ -435,7 +435,7 @@
             <div class="accordion-item">
               <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${idColapso}">
-                  ${turma.nome} (${codigo}) <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${turma.alunos.length}</span>
+                  ${turma.nome} (${codigo}) <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${turma.alunos.length}</span>${turma.ultimaAula ? `<span class="ms-2 small text-body-secondary">última atualização: ${escaparHtml(turma.ultimaAula)}</span>` : ''}
                 </button>
               </h2>
               <div id="${idColapso}" class="accordion-collapse collapse" data-bs-parent="#accordionRisco">

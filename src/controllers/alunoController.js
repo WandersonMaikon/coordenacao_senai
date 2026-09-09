@@ -27,10 +27,20 @@ async function listarEmRisco(req, res) {
         });
 
         const grupos = new Map();
+        // Dia de aula mais recente lançado em cada turma (por qualquer aluno, não só
+        // os em risco) — a tela mostra no cabeçalho da turma pra deixar claro até
+        // quando a frequência daquela turma está atualizada.
+        const ultimaAulaPorTurma = new Map();
         for (const item of lancamentos) {
             const chave = `${item.matricula}||${item.codigoTurma || ''}`;
             if (!grupos.has(chave)) grupos.set(chave, []);
             grupos.get(chave).push(item);
+
+            const chaveTurma = item.codigoTurma || '';
+            const atual = ultimaAulaPorTurma.get(chaveTurma);
+            if (!atual || converterDataAula(item.dataAula) > converterDataAula(atual)) {
+                ultimaAulaPorTurma.set(chaveTurma, item.dataAula);
+            }
         }
 
         let resultado = [];
@@ -111,7 +121,8 @@ async function listarEmRisco(req, res) {
         const dados = resultado.map((item) => ({
             ...item,
             telefone: telefonePorMatricula.get(item.matricula) || null,
-            ultimoContato: ultimoContatoPorMatricula.get(item.matricula) || null
+            ultimoContato: ultimoContatoPorMatricula.get(item.matricula) || null,
+            ultimaAulaTurma: ultimaAulaPorTurma.get(item.codigoTurma || '') || null
         }));
 
         res.json({ status: 'ok', total: dados.length, dados });
