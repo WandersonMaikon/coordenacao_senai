@@ -100,15 +100,15 @@
               <div class="card">
                 <div class="card-body">
                   <div class="d-flex flex-column mb-3">
-                    <h6 class="text-body text-uppercase text-2xs mb-1">Critério de risco</h6>
-                    <h2 class="mb-0" id="kpiCriterio">—</h2>
+                    <h6 class="text-body text-uppercase text-2xs mb-1">Alunos recuperados</h6>
+                    <h2 class="mb-0" id="kpiRecuperados">—</h2>
                   </div>
                   <div class="avatar bg-info bg-opacity-10 shadow-info rounded-circle avatar-xl text-info mb-0 mx-auto">
-                    <i class="bi bi-shield-exclamation"></i>
+                    <i class="bi bi-arrow-counterclockwise"></i>
                   </div>
                 </div>
                 <div class="card-footer border-0">
-                  <span>Dias de aula seguidos com falta para entrar na lista</span>
+                  <span id="rodapeRecuperados">Sumiram, voltaram e continuam vindo</span>
                 </div>
               </div>
             </div>
@@ -192,7 +192,7 @@
         document.getElementById('kpiAlunosAtivos').textContent = resumo.ativos;
         document.getElementById('kpiAlunosRisco').textContent = resumo.emRisco;
         document.getElementById('kpiSemTelefone').textContent = resumo.semTelefone;
-        document.getElementById('kpiCriterio').textContent = resumo.criterioRisco;
+        document.getElementById('kpiRecuperados').textContent = resumo.recuperados;
 
         // Sem aluno importado, "0 ativos" parece um dado e não é — é a ausência
         // dele. O aviso manda a coordenação pra tela de importação. Com filtro de
@@ -213,6 +213,13 @@
         document.getElementById('rodapeRisco').textContent = percentual !== null
           ? `${percentual}% dos alunos ativos`
           : `${resumo.criterioRisco} dias de aula seguidos sem vir`;
+
+        // O rodapé só cita o contato quando houve algum: "0 após contato" ao lado
+        // de um número positivo daria a impressão errada de que o trabalho da
+        // coordenação não funcionou, quando pode ser que nem tenha havido contato.
+        document.getElementById('rodapeRecuperados').textContent = resumo.recuperadosAposContato > 0
+          ? `Voltaram após sumir ${resumo.criterioRecuperado}+ dias de aula — ${resumo.recuperadosAposContato} após contato da coordenação`
+          : `Voltaram após sumir ${resumo.criterioRecuperado}+ dias de aula e continuam vindo`;
 
         statusEl.classList.add('d-none');
         document.getElementById('conteudoPainel').classList.remove('d-none');

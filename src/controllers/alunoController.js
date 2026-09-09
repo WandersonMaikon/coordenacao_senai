@@ -10,6 +10,13 @@ const prisma = require('../config/prisma');
 // turma: a régua é "dia de aula lançado", não intervalo de calendário.
 const DIAS_AULA_CONSECUTIVOS_RISCO = 2;
 
+// Nº de dias de aula seguidos sem vir que um sumiço precisa ter tido para que a
+// volta do aluno conte como recuperação no painel. É bem maior que o critério de
+// risco de propósito: com a régua do risco (2 dias), "recuperado" viraria ruído —
+// quem faltou dois dias por uma gripe e voltou não foi resgatado, só adoeceu.
+// Aqui a régua é "sumiu a ponto de parecer evasão e mesmo assim voltou".
+const DIAS_AULA_SUMIDO_RECUPERADO = 6;
+
 // Valores da coluna "Situação" da planilha da secretaria que contam como aluno
 // ativo no painel. A comparação ignora acento e maiúscula porque a planilha não
 // é consistente. Se a secretaria passar a usar outro termo, é só acrescentar
@@ -76,6 +83,7 @@ async function calcularAlunosEmRisco() {
     }
 
     const resultado = [];
+    const recuperados = [];
     for (const registros of grupos.values()) {
         registros.sort((a, b) => converterDataAula(a.dataAula) - converterDataAula(b.dataAula));
 
@@ -97,6 +105,34 @@ async function calcularAlunosEmRisco() {
 
         const dias = [...porDia.values()]
             .sort((a, b) => converterDataAula(a.dataAula) - converterDataAula(b.dataAula));
+
+        // Sumiços que já terminaram: sequência de faltas fechada por um dia em que
+        // o aluno veio. Sumiço longo o bastante + volta = recuperação. Percorre do
+        // começo pro fim justamente porque interessa o que já foi resolvido — o
+        // contrário da sequência em aberto, que se conta do fim pro começo.
+        let diasSumido = 0;
+        let inicioSumico = null;
+        for (const dia of dias) {
+            const faltou = !dia.tevePresenca && dia.faltas > 0;
+            if (faltou) {
+                if (diasSumido === 0) inicioSumico = dia.dataAula;
+                diasSumido++;
+                continue;
+            }
+
+            if (diasSumido >= DIAS_AULA_SUMIDO_RECUPERADO) {
+                recuperados.push({
+                    matricula: registros[0].matricula,
+                    nomeAluno: registros[0].nomeAluno,
+                    codigoTurma: registros[0].codigoTurma,
+                    diasSumido,
+                    inicioSumico,
+                    dataRetorno: dia.dataAula
+                });
+            }
+            diasSumido = 0;
+            inicioSumico = null;
+        }
 
         let sequencia = 0;
         let faltasNaSequencia = 0;
@@ -136,7 +172,7 @@ async function calcularAlunosEmRisco() {
 
     resultado.sort((a, b) => b.diasSemVir - a.diasSemVir || b.totalFaltas - a.totalFaltas);
 
-    return { emRisco: resultado, ultimaAulaPorTurma, matriculasPorTurma };
+    return { emRisco: resultado, recuperados, ultimaAulaPorTurma, matriculasPorTurma };
 }
 
 // Enriquece a lista de risco com telefone, histórico de contato e a última aula
@@ -301,7 +337,7 @@ async function resumoAlunos(req, res) {
     try {
         const { turma } = req.query;
 
-        const [todosAlunos, { emRisco, matriculasPorTurma }] = await Promise.all([
+        const [todosAlunos, { emRisco, recuperados, matriculasPorTurma }] = await Promise.all([
             prisma.aluno.findMany({ select: { matricula: true, telefone: true, situacao: true, atualizadoEm: true } }),
             calcularAlunosEmRisco()
         ]);
@@ -341,6 +377,51 @@ async function resumoAlunos(req, res) {
         // em duas turmas — senão o risco pode até passar o total de ativos.
         const matriculasEmRisco = new Set(emRiscoFiltrado.map((item) => item.matricula));
 
+        // Recuperado é quem sumiu, voltou e continua vindo: quem está em risco
+        // agora sai da conta, mesmo que já tenha sido resgatado antes. Assim os
+        // dois cards do painel são estados excludentes e ninguém é contado nos
+        // dois — um resgate que não durou não é um resgate.
+        const recuperadosFiltrados = (turma ? recuperados.filter((item) => item.codigoTurma === turma) : recuperados)
+            .filter((item) => !matriculasEmRisco.has(item.matricula));
+
+        // Um aluno pode ter sumido e voltado mais de uma vez: guardamos o retorno
+        // mais recente de cada um, que é o que interessa pra saber se o contato
+        // da coordenação teve a ver com a volta.
+        const retornoPorMatricula = new Map();
+        for (const item of recuperadosFiltrados) {
+            const anterior = retornoPorMatricula.get(item.matricula);
+            if (!anterior || converterDataAula(item.dataRetorno) > converterDataAula(anterior.dataRetorno)) {
+                retornoPorMatricula.set(item.matricula, item);
+            }
+        }
+
+        // Quantos voltaram depois de a coordenação ter ido atrás: exige um contato
+        // registrado dentro da janela do sumiço (entre a primeira falta e o dia da
+        // volta). Contato feito antes do sumiço ou depois da volta não conta.
+        let recuperadosAposContato = 0;
+        if (retornoPorMatricula.size > 0) {
+            const contatos = await prisma.contato.findMany({
+                where: { matricula: { in: [...retornoPorMatricula.keys()] } },
+                select: { matricula: true, criadoEm: true }
+            });
+
+            const contatosPorMatricula = new Map();
+            for (const contato of contatos) {
+                if (!contatosPorMatricula.has(contato.matricula)) contatosPorMatricula.set(contato.matricula, []);
+                contatosPorMatricula.get(contato.matricula).push(contato.criadoEm);
+            }
+
+            for (const [matricula, item] of retornoPorMatricula) {
+                const inicio = converterDataAula(item.inicioSumico);
+                // +1 dia: o contato pode ter sido registrado no mesmo dia da volta,
+                // e converterDataAula devolve a meia-noite daquele dia.
+                const fim = converterDataAula(item.dataRetorno) + 24 * 60 * 60 * 1000;
+                const teveContato = (contatosPorMatricula.get(matricula) || [])
+                    .some((criadoEm) => criadoEm.getTime() >= inicio && criadoEm.getTime() < fim);
+                if (teveContato) recuperadosAposContato++;
+            }
+        }
+
         res.json({
             status: 'ok',
             dados: {
@@ -349,8 +430,11 @@ async function resumoAlunos(req, res) {
                 semSituacao,
                 semTelefone,
                 emRisco: matriculasEmRisco.size,
+                recuperados: retornoPorMatricula.size,
+                recuperadosAposContato,
                 importadosEm,
-                criterioRisco: DIAS_AULA_CONSECUTIVOS_RISCO
+                criterioRisco: DIAS_AULA_CONSECUTIVOS_RISCO,
+                criterioRecuperado: DIAS_AULA_SUMIDO_RECUPERADO
             }
         });
     } catch (erro) {
