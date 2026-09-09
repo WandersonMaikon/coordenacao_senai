@@ -44,7 +44,9 @@
             <span id="textoAviso"></span><a href="/importar-telefones">Importar contatos</a>.
           </div>
 
-          <div class="row row-cols-1 row-cols-md-2 row-cols-xxl-5 g-3">
+          <%# São 4 cards com o "Sem telefone" desativado; volte pra row-cols-xxl-5
+              se ele for reativado, senão sobra uma coluna vazia na linha. %>
+          <div class="row row-cols-1 row-cols-md-2 row-cols-xxl-4 g-3">
             <div class="col">
               <div class="card h-100">
                 <div class="card-body">
@@ -96,6 +98,12 @@
               </div>
             </div>
 
+            <%# Card "Sem telefone" desativado a pedido da coordenação. Pra trazer de
+                volta: apague a linha de abertura deste comentário EJS e a de
+                fechamento logo abaixo do card, descomente a linha do kpiSemTelefone
+                no script e volte a grade pra row-cols-xxl-5. O campo `semTelefone`
+                continua vindo em GET /alunos/resumo, nada muda no backend.
+
             <div class="col">
               <div class="card h-100">
                 <div class="card-body">
@@ -112,6 +120,7 @@
                 </div>
               </div>
             </div>
+            %>
 
             <div class="col">
               <div class="card h-100">
@@ -209,7 +218,8 @@
         document.getElementById('kpiMatriculados').textContent = resumo.matriculados;
         document.getElementById('kpiAlunosAtivos').textContent = resumo.ativos;
         document.getElementById('kpiAlunosRisco').textContent = resumo.emRisco;
-        document.getElementById('kpiSemTelefone').textContent = resumo.semTelefone;
+        // Card "Sem telefone" desativado — ver o comentário no HTML acima.
+        // document.getElementById('kpiSemTelefone').textContent = resumo.semTelefone;
         document.getElementById('kpiRecuperados').textContent = resumo.recuperados;
 
         // Sem aluno importado, "0 ativos" parece um dado e não é — é a ausência
