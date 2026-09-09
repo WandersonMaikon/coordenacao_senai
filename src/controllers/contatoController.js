@@ -53,4 +53,41 @@ async function listarPorAluno(req, res) {
     }
 }
 
-module.exports = { registrar, listarPorAluno };
+// Corrige um contato já registrado (a coordenação anota na hora da ligação e
+// às vezes precisa ajustar o status ou o motivo depois). Só os campos do
+// atendimento são editáveis: matricula, contatadoPor e criadoEm ficam como
+// estão — quem registrou e quando são o histórico em si, não conteúdo.
+async function atualizar(req, res) {
+    const id = Number(req.params.id);
+    const { canal, status, motivo, observacao } = req.body;
+
+    if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ status: 'erro', mensagem: 'Id de contato inválido' });
+    }
+
+    if (!canal || !status) {
+        return res.status(400).json({ status: 'erro', mensagem: 'Informe canal e status' });
+    }
+
+    try {
+        const contato = await prisma.contato.update({
+            where: { id },
+            data: {
+                canal,
+                status,
+                motivo: motivo || null,
+                observacao: observacao || null
+            }
+        });
+
+        res.json({ status: 'ok', dados: contato });
+    } catch (erro) {
+        // P2025 = registro não encontrado (id que não existe ou já removido)
+        if (erro.code === 'P2025') {
+            return res.status(404).json({ status: 'erro', mensagem: 'Contato não encontrado' });
+        }
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+module.exports = { registrar, listarPorAluno, atualizar };
