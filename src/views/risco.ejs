@@ -206,13 +206,14 @@
     // "2 dias" é uma semana de sumiço na turma diária e quase um mês na
     // semipresencial — a data resolve essa ambiguidade.
     function colunaSumiuDesde(aluno) {
-      if (!aluno.ultimaPresenca) {
-        const desde = aluno.primeiraFalta
-          ? ` title="Primeira falta em ${escaparHtml(aluno.primeiraFalta)}"`
-          : '';
-        return `<span class="text-danger"${desde}>nunca veio</span>`;
-      }
-      return `<span title="Última presença registrada">${escaparHtml(aluno.ultimaPresenca)}</span>`;
+      // Quem nunca teve presença registrada cai no dia da primeira falta — a
+      // coluna mostra uma data em todos os casos, o tooltip diz qual das duas é.
+      const data = aluno.ultimaPresenca || aluno.primeiraFalta;
+      if (!data) return '—';
+      const titulo = aluno.ultimaPresenca
+        ? 'Última presença registrada'
+        : 'Nunca teve presença registrada — primeiro dia de aula com falta';
+      return `<span title="${titulo}">${escaparHtml(data)}</span>`;
     }
     
     async function carregarTurmas() {
