@@ -175,6 +175,17 @@
       return new Date(dataIso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     }
 
+    // O SGE repete o curso na coluna "série", então o nome montado pelo userscript
+    // chega como "Curso - Curso - Turno". Remove partes consecutivas iguais só na
+    // exibição — o dado no banco continua como veio do SGE.
+    function nomeTurmaLimpo(nome) {
+      if (!nome) return nome;
+      const partes = nome.split(' - ').map((parte) => parte.trim()).filter(Boolean);
+      return partes
+        .filter((parte, i) => i === 0 || parte.toLowerCase() !== partes[i - 1].toLowerCase())
+        .join(' - ');
+    }
+
     function badgeUltimoContato(ultimoContato) {
       if (!ultimoContato) {
         return '<span class="badge bg-danger bg-opacity-10 text-danger">Nunca contatado</span>';
@@ -192,7 +203,7 @@
         resposta.dados.forEach((turma) => {
           const opcao = document.createElement('option');
           opcao.value = turma.codigoTurma;
-          opcao.textContent = turma.nomeTurma ? `${turma.nomeTurma} (${turma.codigoTurma})` : turma.codigoTurma;
+          opcao.textContent = turma.nomeTurma ? `${nomeTurmaLimpo(turma.nomeTurma)} (${turma.codigoTurma})` : turma.codigoTurma;
           select.appendChild(opcao);
         });
       } catch (erro) {
@@ -420,7 +431,7 @@
         const turmas = new Map();
         alunos.forEach((aluno, indice) => {
           const chaveTurma = aluno.codigoTurma || aluno.nomeTurma || '—';
-          if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: aluno.nomeTurma || chaveTurma, ultimaAula: aluno.ultimaAulaTurma || null, alunos: [] });
+          if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: nomeTurmaLimpo(aluno.nomeTurma) || chaveTurma, ultimaAula: aluno.ultimaAulaTurma || null, alunos: [] });
           turmas.get(chaveTurma).alunos.push({ ...aluno, indice });
         });
 
