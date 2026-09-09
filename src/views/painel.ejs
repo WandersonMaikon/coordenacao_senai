@@ -140,6 +140,50 @@
             </div>
           </div>
 
+          <div class="row mt-4">
+            <div class="col-12">
+              <div class="card">
+                <div class="card-body">
+                  <h5 class="mb-1">Motivos das faltas</h5>
+                  <p class="text-body-secondary mb-4" id="subtituloMotivos">
+                    A partir dos contatos registrados pela coordenação na tela de Alunos em risco
+                  </p>
+
+                  <div id="semMotivos" class="alert alert-info d-none mb-0">
+                    Nenhum contato com motivo registrado ainda. O motivo é preenchido ao registrar
+                    um contato em <a href="/risco">Alunos em risco</a> — é ele que responde
+                    <em>por que</em> os alunos estão faltando, não só quantos faltaram.
+                  </div>
+
+                  <div id="conteudoMotivos" class="row g-4 align-items-center">
+                    <div class="col-lg-5">
+                      <!-- Altura fixa: sem isso o Chart.js cresce a cada redimensionamento -->
+                      <div style="position: relative; height: 280px;">
+                        <canvas id="graficoMotivos"></canvas>
+                      </div>
+                    </div>
+                    <div class="col-lg-7">
+                      <!-- A legenda em tabela é a leitura acessível do gráfico: quem não
+                           distingue as cores (ou imprime em preto e branco) lê os números. -->
+                      <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                          <thead>
+                            <tr>
+                              <th>Motivo</th>
+                              <th class="text-end">Contatos</th>
+                              <th class="text-end">%</th>
+                            </tr>
+                          </thead>
+                          <tbody id="tabelaMotivos"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
 
       </div>
@@ -149,6 +193,7 @@
 
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="/js/turmas.js"></script>
   <script>
     const token = localStorage.getItem('coor360_token');
@@ -190,6 +235,9 @@
       const atual = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
       aplicarTema(atual);
       localStorage.setItem('coor360_tema', atual);
+      // O gráfico não reage sozinho à troca de tema: as cores das fatias e a borda
+      // que as separa são passos escolhidos pra cada fundo, então redesenhamos.
+      carregarMotivos(document.getElementById('filtroTurma').value);
     });
 
     async function chamarApi(caminho) {
@@ -204,6 +252,141 @@
 
     function formatarData(dataIso) {
       return new Date(dataIso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
+
+    // Mesmos rótulos do <select> de motivo da tela /risco. Se um dia a lista de lá
+    // mudar, esta precisa acompanhar — o gráfico cai no código cru do motivo pra
+    // qualquer valor que não estiver aqui, então nada some da contagem.
+    const MOTIVOS = {
+      transporte: 'Transporte',
+      trabalho: 'Trabalho',
+      saude_atestado: 'Saúde — com atestado',
+      saude_sem_atestado: 'Saúde — sem atestado',
+      saude_mental: 'Saúde mental',
+      financeiro: 'Financeiro',
+      desmotivacao_curso: 'Desmotivação com o curso',
+      problema_familiar: 'Problema familiar',
+      outro: 'Outro / não informado'
+    };
+
+    // Paleta categórica em ordem fixa: a fatia recebe a cor pela posição, e a
+    // ordem nunca é reciclada. Os tons escuros não são o mesmo hex clareado —
+    // são passos próprios, escolhidos pra manter contraste no fundo escuro.
+    const CORES_MOTIVO = {
+      claro: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300'],
+      escuro: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300']
+    };
+
+    // "Outros" não é um motivo, é o resto — vai de cinza pra não competir com as
+    // categorias de verdade, e os motivos que caem nele usam o mesmo cinza na
+    // tabela, deixando visível que estão somados naquela fatia.
+    const COR_OUTROS = { claro: '#8f8f86', escuro: '#7c7c73' };
+
+    // Pizza só se lê de relance até ~6 fatias; acima disso as menores viram
+    // lasquinhas indistinguíveis. As 5 maiores ficam e o resto soma em "Outros
+    // motivos" — a tabela ao lado continua mostrando tudo separado.
+    const MAX_FATIAS = 6;
+
+    function prepararFatias(dados) {
+      if (dados.length <= MAX_FATIAS) {
+        return dados.map((item) => ({ rotulo: MOTIVOS[item.motivo] || item.motivo, total: item.total }));
+      }
+
+      const principais = dados.slice(0, MAX_FATIAS - 1)
+        .map((item) => ({ rotulo: MOTIVOS[item.motivo] || item.motivo, total: item.total }));
+      const resto = dados.slice(MAX_FATIAS - 1).reduce((soma, item) => soma + item.total, 0);
+      return [...principais, { rotulo: `Outros motivos (${dados.length - MAX_FATIAS + 1})`, total: resto }];
+    }
+
+    let graficoMotivos = null;
+
+    function desenharMotivos(dados, total) {
+      const semDados = document.getElementById('semMotivos');
+      const conteudo = document.getElementById('conteudoMotivos');
+
+      semDados.classList.toggle('d-none', total > 0);
+      conteudo.classList.toggle('d-none', total === 0);
+      if (total === 0) {
+        if (graficoMotivos) { graficoMotivos.destroy(); graficoMotivos = null; }
+        document.getElementById('tabelaMotivos').innerHTML = '';
+        return;
+      }
+
+      const fatias = prepararFatias(dados);
+      const escuro = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+      const paleta = escuro ? CORES_MOTIVO.escuro : CORES_MOTIVO.claro;
+      const corFundo = escuro ? '#212529' : '#ffffff';
+
+      // Quando houve agrupamento, a última fatia é o "Outros" e recebe o cinza.
+      const indiceOutros = dados.length > MAX_FATIAS ? fatias.length - 1 : -1;
+      const corOutros = escuro ? COR_OUTROS.escuro : COR_OUTROS.claro;
+      const cores = fatias.map((fatia, i) => (i === indiceOutros ? corOutros : paleta[i]));
+
+      // A tabela repete os números do gráfico: é a leitura de quem não distingue
+      // as cores, e onde os motivos agrupados em "Outros" aparecem um a um.
+      document.getElementById('tabelaMotivos').innerHTML = dados.map((item) => {
+        const indice = fatias.findIndex((fatia) => fatia.rotulo === (MOTIVOS[item.motivo] || item.motivo));
+        const cor = indice >= 0 ? cores[indice] : corOutros;
+        const percentual = Math.round((item.total / total) * 100);
+        return `
+          <tr>
+            <td>
+              <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${cor};margin-right:8px"></span>
+              ${MOTIVOS[item.motivo] || item.motivo}
+            </td>
+            <td class="text-end">${item.total}</td>
+            <td class="text-end">${percentual}%</td>
+          </tr>
+        `;
+      }).join('');
+
+      if (graficoMotivos) graficoMotivos.destroy();
+
+      graficoMotivos = new Chart(document.getElementById('graficoMotivos'), {
+        type: 'doughnut',
+        data: {
+          labels: fatias.map((fatia) => fatia.rotulo),
+          datasets: [{
+            data: fatias.map((fatia) => fatia.total),
+            backgroundColor: cores,
+            // A borda na cor do fundo é o respiro de 2px entre as fatias: sem ela,
+            // duas cores vizinhas encostam e a divisa some.
+            borderColor: corFundo,
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          // A legenda do Chart.js seria uma terceira cópia dos mesmos rótulos —
+          // a tabela ao lado já cumpre esse papel, e melhor.
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (contexto) => {
+                  const percentual = Math.round((contexto.parsed / total) * 100);
+                  return ` ${contexto.label}: ${contexto.parsed} (${percentual}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    async function carregarMotivos(turma) {
+      try {
+        const resposta = await chamarApi(`/contatos/motivos${turma ? `?turma=${encodeURIComponent(turma)}` : ''}`);
+        desenharMotivos(resposta.dados || [], resposta.total || 0);
+        document.getElementById('subtituloMotivos').textContent = turma
+          ? `${resposta.total} contato(s) registrado(s) com alunos desta turma`
+          : `${resposta.total} contato(s) registrado(s) pela coordenação`;
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          console.error('Não foi possível carregar os motivos das faltas:', erro);
+        }
+      }
     }
 
     async function carregarPainel(turma) {
@@ -275,10 +458,14 @@
     }
 
     const filtroTurma = document.getElementById('filtroTurma');
-    filtroTurma.addEventListener('change', () => carregarPainel(filtroTurma.value));
+    filtroTurma.addEventListener('change', () => {
+      carregarPainel(filtroTurma.value);
+      carregarMotivos(filtroTurma.value);
+    });
 
     preencherSelectTurmas(filtroTurma, chamarApi);
     carregarPainel('');
+    carregarMotivos('');
   </script>
 </body>
 

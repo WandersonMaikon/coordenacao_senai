@@ -90,4 +90,54 @@ async function atualizar(req, res) {
     }
 }
 
-module.exports = { registrar, listarPorAluno, atualizar };
+// Quantos contatos foram registrados com cada motivo de falta — alimenta o
+// gráfico do painel. É o dado que responde "por que os alunos estão faltando",
+// e não só "quantos faltaram": o motivo só existe porque alguém da coordenação
+// falou com o aluno e anotou.
+async function resumoMotivos(req, res) {
+    try {
+        const { turma } = req.query;
+
+        // A tabela `contatos` não guarda turma (nem `alunos`): o vínculo sai dos
+        // lançamentos, mesma regra do /alunos/resumo — quem teve chamada lançada
+        // naquela turma é aluno dela.
+        let filtroMatricula;
+        if (turma) {
+            const matriculas = await prisma.lancamento.findMany({
+                where: { codigoTurma: turma },
+                select: { matricula: true },
+                distinct: ['matricula']
+            });
+            filtroMatricula = { matricula: { in: matriculas.map((item) => item.matricula) } };
+        }
+
+        const grupos = await prisma.contato.groupBy({
+            by: ['motivo'],
+            _count: { _all: true },
+            where: filtroMatricula
+        });
+
+        // Contato sem motivo preenchido vira "outro": a coordenação nem sempre
+        // descobre o motivo (aluno não respondeu), e sumir com esses registros
+        // faria o gráfico dizer que todo contato rendeu uma explicação.
+        const totalPorMotivo = new Map();
+        for (const grupo of grupos) {
+            const motivo = grupo.motivo || 'outro';
+            totalPorMotivo.set(motivo, (totalPorMotivo.get(motivo) || 0) + grupo._count._all);
+        }
+
+        const dados = [...totalPorMotivo.entries()]
+            .map(([motivo, total]) => ({ motivo, total }))
+            .sort((a, b) => b.total - a.total);
+
+        res.json({
+            status: 'ok',
+            total: dados.reduce((soma, item) => soma + item.total, 0),
+            dados
+        });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+module.exports = { registrar, listarPorAluno, atualizar, resumoMotivos };
