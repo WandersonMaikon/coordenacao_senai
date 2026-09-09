@@ -197,21 +197,25 @@
         // Sem aluno importado, "0 ativos" parece um dado e não é — é a ausência
         // dele. O aviso manda a coordenação pra tela de importação. Com filtro de
         // turma ligado, o motivo é outro: a planilha daquela turma não foi enviada.
+        // A régua é `matriculados`, não `ativos`: uma turma inteira em risco tem
+        // zero ativos com a planilha importada certinho, e isso não é falta de dado.
         const aviso = document.getElementById('avisoSemImportacao');
-        aviso.classList.toggle('d-none', resumo.ativos !== 0);
+        aviso.classList.toggle('d-none', resumo.matriculados !== 0);
         document.getElementById('textoAviso').textContent = turma
           ? 'Nenhum aluno desta turma foi importado ainda — envie a planilha dela em '
           : 'Nenhum aluno importado ainda — os números abaixo só ficam completos depois que a planilha da secretaria for enviada em ';
 
+        // O rodapé mostra o total da planilha porque o card já desconta os em
+        // risco: sem o "de 212", não dá pra saber se 81 é bom ou péssimo.
         document.getElementById('rodapeAtivos').textContent = resumo.importadosEm
-          ? `Matriculados na planilha da secretaria — importada em ${formatarData(resumo.importadosEm)}`
-          : 'Matriculados na planilha da secretaria';
+          ? `Vindo às aulas, de ${resumo.matriculados} matriculados — planilha de ${formatarData(resumo.importadosEm)}`
+          : `Vindo às aulas, de ${resumo.matriculados} matriculados`;
 
-        // A porcentagem é o que dá escala ao número: 8 em risco é muito diferente
-        // em uma escola de 30 alunos e em uma de 400.
-        const percentual = resumo.ativos > 0 ? Math.round((resumo.emRisco / resumo.ativos) * 100) : null;
+        // A porcentagem é sobre o total de matriculados, não sobre os ativos: o
+        // denominador tem que ser a escola inteira pra "62%" significar algo.
+        const percentual = resumo.matriculados > 0 ? Math.round((resumo.emRisco / resumo.matriculados) * 100) : null;
         document.getElementById('rodapeRisco').textContent = percentual !== null
-          ? `${percentual}% dos alunos ativos`
+          ? `${percentual}% dos matriculados`
           : `${resumo.criterioRisco} dias de aula seguidos sem vir`;
 
         // O rodapé só cita o contato quando houve algum: "0 após contato" ao lado

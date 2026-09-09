@@ -356,14 +356,14 @@ async function resumoAlunos(req, res) {
             ? emRisco.filter((item) => item.codigoTurma === turma)
             : emRisco;
 
-        let ativos = 0;
         let inativos = 0;
         let semSituacao = 0;
         let semTelefone = 0;
         let importadosEm = null;
+        const matriculasMatriculadas = new Set();
 
         for (const aluno of alunos) {
-            if (ehSituacaoAtiva(aluno.situacao)) ativos++;
+            if (ehSituacaoAtiva(aluno.situacao)) matriculasMatriculadas.add(aluno.matricula);
             else inativos++;
 
             if (!aluno.situacao) semSituacao++;
@@ -376,6 +376,16 @@ async function resumoAlunos(req, res) {
         // matrículas distintas pra não inflar o número de alunos com quem estuda
         // em duas turmas — senão o risco pode até passar o total de ativos.
         const matriculasEmRisco = new Set(emRiscoFiltrado.map((item) => item.matricula));
+
+        const matriculados = matriculasMatriculadas.size;
+
+        // "Ativo" no painel é quem está vindo à aula: matriculado e sem sequência
+        // de faltas em aberto. A subtração só desconta quem está nos dois lados da
+        // conta — pode haver lançamento de aluno que não veio na planilha (ou que
+        // veio como cancelado), e descontar essa gente do total de matriculados
+        // daria um número menor que a realidade, ou até negativo.
+        const emRiscoMatriculados = [...matriculasEmRisco].filter((matricula) => matriculasMatriculadas.has(matricula)).length;
+        const ativos = matriculados - emRiscoMatriculados;
 
         // Recuperado é quem sumiu, voltou e continua vindo: quem está em risco
         // agora sai da conta, mesmo que já tenha sido resgatado antes. Assim os
@@ -425,7 +435,10 @@ async function resumoAlunos(req, res) {
         res.json({
             status: 'ok',
             dados: {
+                // ativos = está vindo à aula; matriculados = total da planilha.
+                // A diferença entre os dois é o que está em risco.
                 ativos,
+                matriculados,
                 inativos,
                 semSituacao,
                 semTelefone,
