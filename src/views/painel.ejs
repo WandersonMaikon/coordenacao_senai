@@ -44,9 +44,26 @@
             <span id="textoAviso"></span><a href="/importar-telefones">Importar contatos</a>.
           </div>
 
-          <div class="row">
-            <div class="col-xxl-3 col-md-6">
-              <div class="card">
+          <div class="row row-cols-1 row-cols-md-2 row-cols-xxl-5 g-3">
+            <div class="col">
+              <div class="card h-100">
+                <div class="card-body">
+                  <div class="d-flex flex-column mb-3">
+                    <h6 class="text-body text-uppercase text-2xs mb-1">Matriculados</h6>
+                    <h2 class="mb-0" id="kpiMatriculados">—</h2>
+                  </div>
+                  <div class="avatar bg-primary bg-opacity-10 shadow-info rounded-circle avatar-xl text-primary mb-0 mx-auto">
+                    <i class="bi bi-mortarboard-fill"></i>
+                  </div>
+                </div>
+                <div class="card-footer border-0">
+                  <span id="rodapeMatriculados">Total da planilha da secretaria</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="col">
+              <div class="card h-100">
                 <div class="card-body">
                   <div class="d-flex flex-column mb-3">
                     <h6 class="text-body text-uppercase text-2xs mb-1">Alunos ativos</h6>
@@ -62,11 +79,11 @@
               </div>
             </div>
 
-            <div class="col-xxl-3 col-md-6">
-              <div class="card">
+            <div class="col">
+              <div class="card h-100">
                 <div class="card-body">
                   <div class="d-flex flex-column mb-3">
-                    <h6 class="text-body text-uppercase text-2xs mb-1">Alunos em risco</h6>
+                    <h6 class="text-body text-uppercase text-2xs mb-1" id="tituloRisco">Alunos em risco</h6>
                     <h2 class="mb-0" id="kpiAlunosRisco">—</h2>
                   </div>
                   <div class="avatar bg-danger bg-opacity-10 shadow-info rounded-circle avatar-xl text-danger mb-0 mx-auto">
@@ -79,8 +96,8 @@
               </div>
             </div>
 
-            <div class="col-xxl-3 col-md-6">
-              <div class="card">
+            <div class="col">
+              <div class="card h-100">
                 <div class="card-body">
                   <div class="d-flex flex-column mb-3">
                     <h6 class="text-body text-uppercase text-2xs mb-1">Sem telefone</h6>
@@ -96,8 +113,8 @@
               </div>
             </div>
 
-            <div class="col-xxl-3 col-md-6">
-              <div class="card">
+            <div class="col">
+              <div class="card h-100">
                 <div class="card-body">
                   <div class="d-flex flex-column mb-3">
                     <h6 class="text-body text-uppercase text-2xs mb-1">Alunos recuperados</h6>
@@ -189,6 +206,7 @@
       try {
         const resumo = (await chamarApi(`/alunos/resumo${turma ? `?turma=${encodeURIComponent(turma)}` : ''}`)).dados;
 
+        document.getElementById('kpiMatriculados').textContent = resumo.matriculados;
         document.getElementById('kpiAlunosAtivos').textContent = resumo.ativos;
         document.getElementById('kpiAlunosRisco').textContent = resumo.emRisco;
         document.getElementById('kpiSemTelefone').textContent = resumo.semTelefone;
@@ -205,18 +223,28 @@
           ? 'Nenhum aluno desta turma foi importado ainda — envie a planilha dela em '
           : 'Nenhum aluno importado ainda — os números abaixo só ficam completos depois que a planilha da secretaria for enviada em ';
 
-        // O rodapé mostra o total da planilha porque o card já desconta os em
-        // risco: sem o "de 212", não dá pra saber se 81 é bom ou péssimo.
-        document.getElementById('rodapeAtivos').textContent = resumo.importadosEm
-          ? `Vindo às aulas, de ${resumo.matriculados} matriculados — planilha de ${formatarData(resumo.importadosEm)}`
-          : `Vindo às aulas, de ${resumo.matriculados} matriculados`;
+        // A data da planilha vive no card de matriculados, que é o número que vem
+        // dela — os outros três são calculados a partir dos lançamentos.
+        document.getElementById('rodapeMatriculados').textContent = resumo.importadosEm
+          ? `Total da planilha da secretaria — importada em ${formatarData(resumo.importadosEm)}`
+          : 'Total da planilha da secretaria';
 
-        // A porcentagem é sobre o total de matriculados, não sobre os ativos: o
-        // denominador tem que ser a escola inteira pra "62%" significar algo.
+        // Os dois percentuais usam o total de matriculados como denominador e,
+        // juntos, fecham a conta da turma: X% vindo + Y% em risco.
+        const percentualAtivos = resumo.matriculados > 0 ? Math.round((resumo.ativos / resumo.matriculados) * 100) : null;
+        document.getElementById('rodapeAtivos').textContent = percentualAtivos !== null
+          ? `Vindo às aulas — ${percentualAtivos}% dos matriculados`
+          : 'Vindo às aulas';
+
         const percentual = resumo.matriculados > 0 ? Math.round((resumo.emRisco / resumo.matriculados) * 100) : null;
         document.getElementById('rodapeRisco').textContent = percentual !== null
           ? `${percentual}% dos matriculados`
           : `${resumo.criterioRisco} dias de aula seguidos sem vir`;
+
+        // O critério some da tela quando vira um card só de número, mas ainda
+        // precisa estar ao alcance de quem pergunta "risco a partir de quando?".
+        document.getElementById('tituloRisco').title =
+          `${resumo.criterioRisco}+ dias de aula seguidos com falta, sem nenhuma presença no meio`;
 
         // O rodapé só cita o contato quando houve algum: "0 após contato" ao lado
         // de um número positivo daria a impressão errada de que o trabalho da
