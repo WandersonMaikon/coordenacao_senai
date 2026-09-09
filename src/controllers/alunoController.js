@@ -68,10 +68,17 @@ async function listarEmRisco(req, res) {
 
             let sequencia = 0;
             let faltasNaSequencia = 0;
-            for (let i = dias.length - 1; i >= 0 && !dias[i].tevePresenca && dias[i].faltas > 0; i--) {
+            let indice = dias.length - 1;
+            for (; indice >= 0 && !dias[indice].tevePresenca && dias[indice].faltas > 0; indice--) {
                 sequencia++;
-                faltasNaSequencia += dias[i].faltas;
+                faltasNaSequencia += dias[indice].faltas;
             }
+
+            // O laço para no primeiro dia em que o aluno veio — é a última presença
+            // dele. Fica `null` quando ele nunca apareceu em nenhum lançamento da
+            // turma (a sequência começa no primeiro dia de aula registrado).
+            const ultimaPresenca = indice >= 0 ? dias[indice].dataAula : null;
+            const primeiraFalta = dias[indice + 1]?.dataAula || null;
 
             if (sequencia < DIAS_AULA_CONSECUTIVOS_RISCO) continue;
 
@@ -85,7 +92,13 @@ async function listarEmRisco(req, res) {
                 // é mais fiel que dividir o total de faltas por um nº fixo de aulas,
                 // já que um dia com duas UCs tem mais aulas que um dia com uma só.
                 diasSemVir: sequencia,
-                totalFaltas: faltasNaSequencia
+                totalFaltas: faltasNaSequencia,
+                // Datas em `dd/mm/aaaa` (formato do SGE) — a tela mostra "sumiu desde"
+                // pra dar a noção de calendário que `diasSemVir` sozinho não dá:
+                // 2 dias de aula é uma semana na turma diária e quase um mês na
+                // semipresencial.
+                ultimaPresenca,
+                primeiraFalta
             });
         }
 
@@ -112,16 +125,22 @@ async function listarEmRisco(req, res) {
 
         const telefonePorMatricula = new Map(alunos.map((aluno) => [aluno.matricula, aluno.telefone]));
         const ultimoContatoPorMatricula = new Map();
+        // Quantas vezes a coordenação já tentou falar com o aluno: quem acumula
+        // várias tentativas sem resposta precisa de outra abordagem (ligação,
+        // responsável), não de mais uma mensagem igual.
+        const totalContatosPorMatricula = new Map();
         for (const contato of contatos) {
             if (!ultimoContatoPorMatricula.has(contato.matricula)) {
                 ultimoContatoPorMatricula.set(contato.matricula, contato);
             }
+            totalContatosPorMatricula.set(contato.matricula, (totalContatosPorMatricula.get(contato.matricula) || 0) + 1);
         }
 
         const dados = resultado.map((item) => ({
             ...item,
             telefone: telefonePorMatricula.get(item.matricula) || null,
             ultimoContato: ultimoContatoPorMatricula.get(item.matricula) || null,
+            totalContatos: totalContatosPorMatricula.get(item.matricula) || 0,
             ultimaAulaTurma: ultimaAulaPorTurma.get(item.codigoTurma || '') || null
         }));
 

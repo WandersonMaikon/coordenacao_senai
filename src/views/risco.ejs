@@ -186,14 +186,33 @@
         .join(' - ');
     }
 
-    function badgeUltimoContato(ultimoContato) {
+    function badgeUltimoContato(ultimoContato, totalContatos) {
       if (!ultimoContato) {
         return '<span class="badge bg-danger bg-opacity-10 text-danger">Nunca contatado</span>';
       }
       const canal = CANAIS[ultimoContato.canal] || ultimoContato.canal || '—';
       const status = STATUS[ultimoContato.status] || ultimoContato.status || '—';
       const cor = COR_STATUS[ultimoContato.status] || 'success';
-      return `<span class="badge bg-${cor} bg-opacity-10 text-${cor}" title="${formatarDataHora(ultimoContato.criadoEm)}">${canal} · ${status} · ${formatarData(ultimoContato.criadoEm)}</span>`;
+      // A partir da 2ª tentativa vale mostrar o total: várias tentativas sem
+      // resposta são sinal de escalar (ligação, responsável), não de repetir a
+      // mesma mensagem. Na 1ª o número não acrescenta nada.
+      const tentativas = totalContatos > 1
+        ? `<span class="ms-2 small text-body-secondary" title="Total de contatos registrados com este aluno">${totalContatos}ª tentativa</span>`
+        : '';
+      return `<span class="badge bg-${cor} bg-opacity-10 text-${cor}" title="${formatarDataHora(ultimoContato.criadoEm)}">${canal} · ${status} · ${formatarData(ultimoContato.criadoEm)}</span>${tentativas}`;
+    }
+
+    // Último dia de aula em que o aluno apareceu. Complementa a coluna de faltas:
+    // "2 dias" é uma semana de sumiço na turma diária e quase um mês na
+    // semipresencial — a data resolve essa ambiguidade.
+    function colunaSumiuDesde(aluno) {
+      if (!aluno.ultimaPresenca) {
+        const desde = aluno.primeiraFalta
+          ? ` title="Primeira falta em ${escaparHtml(aluno.primeiraFalta)}"`
+          : '';
+        return `<span class="text-danger"${desde}>nunca veio</span>`;
+      }
+      return `<span title="Última presença registrada">${escaparHtml(aluno.ultimaPresenca)}</span>`;
     }
     
     async function carregarTurmas() {
@@ -327,7 +346,7 @@
         // A lista vem do mais recente pro mais antigo, então o primeiro é o que
         // o badge da linha mostra — importante depois de editar um contato.
         const badge = document.getElementById(`badge-contato-${indice}`);
-        if (badge) badge.innerHTML = badgeUltimoContato(contatos[0] || null);
+        if (badge) badge.innerHTML = badgeUltimoContato(contatos[0] || null, contatos.length);
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           container.innerHTML = '<p class="text-warning mb-0">Não foi possível carregar o histórico agora.</p>';
@@ -385,12 +404,8 @@
           </td>
           <td>${aluno.matricula}</td>
           <td class="text-end"><span class="badge bg-danger bg-opacity-10 text-danger" title="${aluno.totalFaltas} aula(s) perdida(s)">${formatarDiasFalta(aluno.diasSemVir)}</span></td>
-          <td id="badge-contato-${indice}">${badgeUltimoContato(aluno.ultimoContato)}</td>
-          <td class="text-end">
-            <button type="button" class="btn btn-outline-primary btn-sm btnContato" data-indice="${indice}" data-matricula="${aluno.matricula}">
-              <i class="bi bi-chat-dots me-1"></i>Contato
-            </button>
-          </td>
+          <td id="badge-contato-${indice}">${badgeUltimoContato(aluno.ultimoContato, aluno.totalContatos)}</td>
+          <td class="text-end">${colunaSumiuDesde(aluno)}</td>
         </tr>
         ${linhaDetalheHtml(indice, aluno)}
       `;
@@ -459,7 +474,7 @@
                           <th>Matrícula</th>
                           <th class="text-end">Faltas</th>
                           <th>Último contato</th>
-                          <th class="text-end">Ação</th>
+                          <th class="text-end">Sumiu desde</th>
                         </tr>
                       </thead>
                       <tbody>${linhas}</tbody>
@@ -499,14 +514,9 @@
         return;
       }
 
-      const botaoContato = evento.target.closest('.btnContato');
-      if (botaoContato) {
-        alternarDetalhe(botaoContato.dataset.indice, botaoContato.dataset.matricula);
-        return;
-      }
-
-      // Clicar em qualquer ponto da linha do aluno também abre o painel de
-      // contato — o botão "Contato" continua valendo, virou só um atalho a mais.
+      // Clicar em qualquer ponto da linha do aluno abre o painel de contato — a
+      // coluna de ação com o botão "Contato" saiu por ser um segundo caminho pro
+      // mesmo lugar, e deu espaço pro "sumiu desde".
       const linhaAluno = evento.target.closest('tr.linha-aluno');
       if (linhaAluno) {
         // O ícone do WhatsApp (e qualquer campo do formulário, se um dia a linha
