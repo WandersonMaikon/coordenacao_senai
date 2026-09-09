@@ -20,22 +20,26 @@ async function receberWebhook(req, res) {
 
     try {
         for (const item of lancamentos) {
+            // A UC faz parte da chave: uma turma pode ter dois professores lançando
+            // no mesmo dia, e sem a UC o segundo envio sobrescreveria a falta do
+            // primeiro. Com ela, cada UC vira uma linha e as faltas do dia somam.
             const chave = {
                 matricula: item.matricula || '',
                 dataAula: item.data_aula || '',
-                codigoTurma: item.codigo_turma || ''
+                codigoTurma: item.codigo_turma || '',
+                uc: item.uc || ''
             };
 
             // upsert: se o professor corrigir um lançamento (ex: desmarcar uma falta
             // indevida e salvar de novo), a chave já existe e o registro é atualizado
-            // em vez de ignorado como duplicata.
+            // em vez de ignorado como duplicata. Só o lançamento daquela UC é tocado —
+            // o do outro professor no mesmo dia fica intacto.
             const resultado = await prisma.lancamento.upsert({
                 where: { chave_idempotencia: chave },
                 update: {
                     nomeAluno: item.nome_aluno || '',
                     idAula: item.id_aula || '',
                     nomeTurma: item.nome_turma || '',
-                    uc: item.uc || '',
                     periodoLetivo: item.periodo_letivo || '',
                     professor: item.professor || '',
                     qtdFaltas: item.qtd_faltas ?? 0
@@ -45,7 +49,6 @@ async function receberWebhook(req, res) {
                     nomeAluno: item.nome_aluno || '',
                     idAula: item.id_aula || '',
                     nomeTurma: item.nome_turma || '',
-                    uc: item.uc || '',
                     periodoLetivo: item.periodo_letivo || '',
                     professor: item.professor || '',
                     qtdFaltas: item.qtd_faltas ?? 1
@@ -57,7 +60,7 @@ async function receberWebhook(req, res) {
                 inseridos++;
             } else {
                 corrigidos++;
-                console.log(`[Webhook] Corrigido: ${item.matricula} / ${item.data_aula} -> qtd_faltas=${resultado.qtdFaltas}`);
+                console.log(`[Webhook] Corrigido: ${item.matricula} / ${item.data_aula} / ${item.uc || '(sem UC)'} -> qtd_faltas=${resultado.qtdFaltas}`);
             }
         }
 

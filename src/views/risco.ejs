@@ -116,12 +116,11 @@
       outro: 'Outro / não informado'
     };
 
-    // Cada dia de aula tem 4 aulas — o SGE conta falta por aula (mesmo critério de faltas.ejs).
-    const AULAS_POR_DIA = 4;
-    function formatarDiasFalta(qtdFaltas) {
-      const dias = qtdFaltas / AULAS_POR_DIA;
-      const diasTexto = dias.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-      return `${diasTexto} ${dias === 1 ? 'dia' : 'dias'}`;
+    // O backend já devolve quantos dias de aula seguidos o aluno faltou (diasSemVir).
+    // Não dá pra derivar isso dividindo as faltas por um nº fixo de aulas: um dia com
+    // duas UCs (dois professores) tem mais aulas lançadas que um dia com uma só.
+    function formatarDiasFalta(diasSemVir) {
+      return `${diasSemVir} ${diasSemVir === 1 ? 'dia' : 'dias'}`;
     }
 
     // Formata "69993408643" como "(69) 99340-8643"
@@ -273,7 +272,7 @@
             ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
           </td>
           <td>${aluno.matricula}</td>
-          <td class="text-end"><span class="badge bg-danger bg-opacity-10 text-danger">${formatarDiasFalta(aluno.totalFaltas)}</span></td>
+          <td class="text-end"><span class="badge bg-danger bg-opacity-10 text-danger" title="${aluno.totalFaltas} aula(s) perdida(s)">${formatarDiasFalta(aluno.diasSemVir)}</span></td>
           <td id="badge-contato-${indice}">${badgeUltimoContato(aluno.ultimoContato)}</td>
           <td class="text-end">
             <button type="button" class="btn btn-outline-primary btn-sm btnContato" data-indice="${indice}" data-matricula="${aluno.matricula}">

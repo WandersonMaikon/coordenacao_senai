@@ -39,7 +39,7 @@ model Lancamento {
   idAula         String?  @map("id_aula") @db.VarChar(50)
   codigoTurma    String?  @map("codigo_turma") @db.VarChar(50)
   nomeTurma      String?  @map("nome_turma") @db.VarChar(255)
-  uc             String?  @db.VarChar(255)
+  uc             String   @default("") @db.VarChar(255)
   periodoLetivo  String?  @map("periodo_letivo") @db.VarChar(20)
   professor      String?  @db.VarChar(255)
   qtdFaltas      Int      @default(1) @map("qtd_faltas")
@@ -49,8 +49,11 @@ model Lancamento {
   // Relacionamento opcional com a tabela de Alunos (preparando o futuro)
   aluno   Aluno? @relation(fields: [matricula], references: [matricula])
 
-  // Evita duplicar o mesmo lançamento (mesmo aluno, mesma aula, mesma turma)
-  @@unique([matricula, dataAula, codigoTurma], name: "chave_idempotencia")
+  // Evita duplicar o mesmo lançamento (mesmo aluno, mesmo dia, mesma turma, mesma UC).
+  // A UC faz parte da chave porque uma turma pode ter dois professores lançando no
+  // mesmo dia: sem ela, o segundo a salvar sobrescrevia a falta lançada pelo primeiro.
+  // Cada UC tem sua própria linha, e a soma do dia é feita na leitura.
+  @@unique([matricula, dataAula, codigoTurma, uc], name: "chave_idempotencia")
   // relationMode = "prisma" não cria índice automático para FK — criamos manualmente
   @@index([matricula])
   @@map("lancamentos")

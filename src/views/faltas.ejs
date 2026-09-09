@@ -109,13 +109,13 @@
       localStorage.setItem('coor360_tema', atual);
     });
 
-    // Cada dia de aula tem 4 aulas — o SGE conta falta por aula, então
-    // convertemos pra "dias" dividindo por 4 (0,5 dia = faltou 2 das 4 aulas).
-    const AULAS_POR_DIA = 4;
-    function formatarDiasFalta(qtdFaltas) {
-      const dias = qtdFaltas / AULAS_POR_DIA;
-      const diasTexto = dias.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-      return `${diasTexto} ${dias === 1 ? 'dia' : 'dias'}`;
+    // Contamos os dias de aula distintos em que o aluno teve falta. Não dá pra
+    // dividir o total de aulas por um nº fixo: quando dois professores dão aula
+    // pra turma no mesmo dia, esse dia tem duas UCs lançadas e mais aulas que um
+    // dia com uma UC só — dividir inflaria a conta. O total de aulas perdidas
+    // continua visível no tooltip do badge.
+    function formatarDiasFalta(diasComFalta) {
+      return `${diasComFalta} ${diasComFalta === 1 ? 'dia' : 'dias'}`;
     }
 
     function nomeCurto(nomeCompleto) {
@@ -178,16 +178,21 @@
           const turmas = new Map();
           resposta.dados.forEach((item) => {
             const chaveTurma = item.codigoTurma || item.nomeTurma || '—';
-            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professor: item.professor || '—', alunos: new Map() });
+            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professores: new Set(), alunos: new Map() });
+            // A mesma turma pode ter mais de um professor lançando (uma UC cada).
+            if (item.professor) turmas.get(chaveTurma).professores.add(item.professor);
 
-            // Soma as faltas de todos os lançamentos do aluno nessa turma (um
-            // lançamento por dia de aula), em vez de mostrar cada dia isolado.
+            // Soma as faltas de todos os lançamentos do aluno nessa turma. Agora
+            // um mesmo dia pode ter mais de um lançamento (um por UC), então as
+            // faltas do dia somam e os dias distintos são contados à parte.
             const alunos = turmas.get(chaveTurma).alunos;
             const chaveAluno = item.matricula || item.nomeAluno || '—';
             if (!alunos.has(chaveAluno)) {
-              alunos.set(chaveAluno, { nome: item.nomeAluno || '—', telefone: item.aluno?.telefone || '', totalFaltas: 0 });
+              alunos.set(chaveAluno, { nome: item.nomeAluno || '—', telefone: item.aluno?.telefone || '', totalFaltas: 0, diasComFalta: new Set() });
             }
-            alunos.get(chaveAluno).totalFaltas += item.qtdFaltas || 0;
+            const aluno = alunos.get(chaveAluno);
+            aluno.totalFaltas += item.qtdFaltas || 0;
+            if ((item.qtdFaltas || 0) > 0) aluno.diasComFalta.add(item.dataAula || '');
           });
 
           accordion.innerHTML = Array.from(turmas.entries()).map(([codigo, turma], indice) => {
@@ -202,7 +207,7 @@
                   ${aluno.nome}
                   ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
                 </td>
-                <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning">${formatarDiasFalta(aluno.totalFaltas)}</span></td>
+                <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning" title="${aluno.totalFaltas} aula(s) perdida(s)">${formatarDiasFalta(aluno.diasComFalta.size)}</span></td>
               </tr>
             `).join('');
 
@@ -210,7 +215,7 @@
               <div class="accordion-item">
                 <h2 class="accordion-header">
                   <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${idColapso}">
-                    ${turma.nome} (${codigo}) - Professor: ${nomeCurto(turma.professor)} <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${listaAlunos.length}</span>
+                    ${turma.nome} (${codigo}) - Professor: ${Array.from(turma.professores).map(nomeCurto).join(' / ') || '—'} <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${listaAlunos.length}</span>
                   </button>
                 </h2>
                 <div id="${idColapso}" class="accordion-collapse collapse" data-bs-parent="#accordionFaltas">

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SGE Novo - Captura Frequência SENAI
 // @namespace    http://tampermonkey.net/
-// @version      3.6
+// @version      4.0
 // @description  Captura frequência do novo SGE (Angular/PO-UI) - resposta otimista, envio rápido, suporta correção, envia só o que mudou
 // @author       Wanderson
 // @match        https://sge.fiero.org.br/*
@@ -10,7 +10,10 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_registerMenuCommand
 // @connect      app.coor360-senai.com.br
+// @updateURL    https://app.coor360-senai.com.br/sge-captura.user.js
+// @downloadURL  https://app.coor360-senai.com.br/sge-captura.user.js
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -18,17 +21,23 @@
     'use strict';
 
     // ==========================================
-    // CONFIGURAÇÃO — cada professor edita aqui
+    // CONFIGURAÇÃO
     // ==========================================
-    const NOME_PROFESSOR = 'Wanderson Maikon da Silva';
     const WEBHOOK_URL = 'https://app.coor360-senai.com.br/webhook/frequencia';
+
+    // O nome do professor NÃO fica escrito aqui. Como o script se atualiza
+    // sozinho (@updateURL), um nome fixo no código seria sobrescrito a cada
+    // atualização e os lançamentos de todo mundo passariam a chegar com o mesmo
+    // nome. Ele é perguntado uma vez e guardado no Tampermonkey desta máquina —
+    // dá pra trocar depois pelo menu do Tampermonkey ("Alterar nome do professor").
+    const CHAVE_NOME_PROFESSOR = 'sge_nome_professor';
     // ==========================================
 
     const MAX_TENTATIVAS = 3;
     const DELAY_RETRY_MS = 3000;      // reduzido de 5s para 3s
     const TIMEOUT_MS = 7000;          // reduzido de 15s para 7s
     const CHAVE_FILA = 'sge_fila_pendente_v3';
-    const CHAVE_CACHE_ESTADO = 'sge_cache_estado_v1';
+    const CHAVE_CACHE_ESTADO = 'sge_cache_estado_v2';
 
     console.log('%c[SGE-v3.4] Script carregado (resposta otimista, com suporte a correção, envia só o que mudou)', 'color: green; font-weight: bold;');
 
@@ -49,15 +58,58 @@
     function limparFila() { salvarFila([]); }
 
     // ─────────────────────────────────────────
+    // NOME DO PROFESSOR (por máquina, não no código)
+    // ─────────────────────────────────────────
+
+    function lerNomeProfessor() {
+        return (GM_getValue(CHAVE_NOME_PROFESSOR, '') || '').trim();
+    }
+
+    // Devolve o nome já salvo, ou o novo se o professor digitar. Se ele cancelar,
+    // devolve o que havia antes (string vazia na primeira vez).
+    function pedirNomeProfessor(nomeAtual) {
+        const resposta = prompt(
+            'Captura de frequência SENAI\n\n' +
+            'Digite seu nome completo — é ele que aparece no painel da coordenação:',
+            nomeAtual || ''
+        );
+        if (resposta === null) return nomeAtual || '';
+        const nome = resposta.trim();
+        if (!nome) return nomeAtual || '';
+        GM_setValue(CHAVE_NOME_PROFESSOR, nome);
+        console.log('[SGE] Nome do professor salvo neste navegador:', nome);
+        return nome;
+    }
+
+    // Chamado na hora de capturar, não no carregamento da página: assim o
+    // professor só é interrompido quando está de fato lançando frequência.
+    // Se ele cancelar, o lançamento vai mesmo assim com o professor em branco —
+    // perder a falta seria pior que perder o nome, e dá pra corrigir depois.
+    function obterNomeProfessor() {
+        const nome = lerNomeProfessor();
+        if (nome) return nome;
+        const informado = pedirNomeProfessor('');
+        if (!informado) {
+            console.warn('[SGE] Nome do professor não configurado — enviando em branco. ' +
+                'Configure pelo menu do Tampermonkey ("Alterar nome do professor").');
+        }
+        return informado;
+    }
+
+    // ─────────────────────────────────────────
     // CACHE LOCAL DO ÚLTIMO ESTADO ENVIADO
     // ─────────────────────────────────────────
-    // Guarda, por matricula+data_aula+codigo_turma, o último qtd_faltas que
+    // Guarda, por matricula+data_aula+codigo_turma+uc, o último qtd_faltas que
     // foi CONFIRMADO pelo servidor. Serve para comparar com a tela atual e
     // mandar só o que mudou (faltas novas ou correções), em vez de mandar
     // o estado de presença de todo mundo a cada clique em "Salvar".
+    //
+    // A UC entra na chave (v2 do cache) porque ela agora faz parte da chave do
+    // lançamento no servidor: uma turma pode ter aula de duas UCs no mesmo dia,
+    // e sem a UC aqui o cache trataria as duas como o mesmo lançamento.
 
     function chaveItem(item) {
-        return `${item.matricula}|${item.data_aula}|${item.codigo_turma}`;
+        return `${item.matricula}|${item.data_aula}|${item.codigo_turma}|${item.uc}`;
     }
     function lerCacheEstado() {
         try { return JSON.parse(GM_getValue(CHAVE_CACHE_ESTADO, '{}')); }
@@ -140,6 +192,9 @@
         }
 
         const infoTurma = extrairInfoTurma();
+        // Resolvido uma vez por captura: se fosse por aluno, um professor que
+        // cancelasse o prompt veria a pergunta repetir turma inteira adentro.
+        const nomeProfessor = obterNomeProfessor();
         const lancamentos = [];
 
         linhas.forEach(linha => {
@@ -181,7 +236,7 @@
                     nome_turma: `${infoTurma.curso} - ${infoTurma.serie} - ${infoTurma.turno}`.trim(),
                     uc: infoTurma.disciplina,
                     periodo_letivo: infoTurma.periodoLetivo,
-                    professor: NOME_PROFESSOR,
+                    professor: nomeProfessor,
                     qtd_faltas: info.qtdFaltas
                 });
             });
@@ -385,6 +440,15 @@
 
     setTimeout(processarFilaPendente, 3000);
     setTimeout(instalarInterceptador, 1500);
+
+    // Menu do Tampermonkey (ícone da extensão) — pra corrigir o nome digitado
+    // errado ou configurar numa máquina nova sem mexer no código.
+    if (typeof GM_registerMenuCommand === 'function') {
+        GM_registerMenuCommand('Alterar nome do professor', function () {
+            const nome = pedirNomeProfessor(lerNomeProfessor());
+            alert(nome ? 'Nome salvo: ' + nome : 'Nome não configurado.');
+        });
+    }
 
     window.testarCapturaSGE = function () {
         const mudancas = capturarMudancas();

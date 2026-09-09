@@ -9,6 +9,7 @@ const alunoRoutes = require('./src/routes/alunoRoutes');
 const contatoRoutes = require('./src/routes/contatoRoutes');
 const usuarioRoutes = require('./src/routes/usuarioRoutes');
 const viewRoutes = require('./src/routes/viewRoutes');
+const userscriptRoutes = require('./src/routes/userscriptRoutes');
 const prisma = require('./src/config/prisma');
 
 const app = express();
@@ -41,6 +42,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use(viewRoutes);
+app.use(userscriptRoutes);
 app.use('/auth', authRoutes);
 app.use('/auth', usuarioRoutes);
 app.use(lancamentoRoutes);
@@ -53,6 +55,7 @@ app.listen(PORT, () => {
     console.log(`🔑 Login em: http://localhost:${PORT}/auth/login`);
     console.log(`📋 Veja os lançamentos em: http://localhost:${PORT}/lancamentos`);
     console.log(`⚠️  Veja alunos em risco em: http://localhost:${PORT}/alunos-risco`);
+    console.log(`🧩 Userscript dos professores em: http://localhost:${PORT}/sge-captura.user.js`);
 });
 
 // Encerra a conexão do Prisma corretamente quando o servidor for finalizado

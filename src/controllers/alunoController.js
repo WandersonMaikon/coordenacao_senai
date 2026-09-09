@@ -1,15 +1,14 @@
 const XLSX = require('xlsx');
 const prisma = require('../config/prisma');
 
-// Nº de aulas seguidas com falta (sem nenhuma presença no meio) que colocam o
-// aluno em risco. Não é mais soma acumulada do período todo: assim que o aluno
-// tem presença num lançamento posterior, entende-se que ele voltou e some da
+// Nº de dias de aula seguidos com falta (sem nenhuma presença no meio) que
+// colocam o aluno em risco. Não é soma acumulada do período todo: assim que o
+// aluno tem presença num dia posterior, entende-se que ele voltou e some da
 // lista — mesmo que o total de faltas do semestre continue alto.
-// Vale tanto pra turma diária (2 dias seguidos = 8 em qtd_faltas, já que cada
-// dia soma 4 aulas) quanto pra turma semi-presencial (1 aula/semana — 2
-// lançamentos seguidos com falta, ex: 06/08 e 13/08), sem precisar diferenciar
-// o tipo de turma: a régua é sempre "lançamento", não dia do calendário.
-const LANCAMENTOS_CONSECUTIVOS_RISCO = 2;
+// Vale tanto pra turma diária quanto pra semi-presencial (1 aula/semana — 2
+// dias de aula seguidos, ex: 06/08 e 13/08), sem precisar diferenciar o tipo de
+// turma: a régua é "dia de aula lançado", não intervalo de calendário.
+const DIAS_AULA_CONSECUTIVOS_RISCO = 2;
 
 function converterDataAula(dataAula) {
     if (!dataAula) return 0;
@@ -18,7 +17,7 @@ function converterDataAula(dataAula) {
 }
 
 // Agrupa lançamentos por (aluno, turma) e verifica a sequência de faltas em
-// aberto, do lançamento mais recente pra trás, parando na primeira presença.
+// aberto, do dia mais recente pra trás, parando no primeiro dia com presença.
 async function listarEmRisco(req, res) {
     try {
         const { turma } = req.query;
@@ -38,14 +37,33 @@ async function listarEmRisco(req, res) {
         for (const registros of grupos.values()) {
             registros.sort((a, b) => converterDataAula(a.dataAula) - converterDataAula(b.dataAula));
 
-            let sequencia = 0;
-            let faltasNaSequencia = 0;
-            for (let i = registros.length - 1; i >= 0 && (registros[i].qtdFaltas || 0) > 0; i--) {
-                sequencia++;
-                faltasNaSequencia += registros[i].qtdFaltas || 0;
+            // Um mesmo dia pode ter mais de um lançamento, um por UC, quando dois
+            // professores dão aula pra turma no mesmo dia. As faltas do dia somam,
+            // mas presença em qualquer UC significa que o aluno veio: o dia inteiro
+            // conta como presença e a sequência de risco reseta.
+            const porDia = new Map();
+            for (const item of registros) {
+                const dia = item.dataAula || '';
+                if (!porDia.has(dia)) {
+                    porDia.set(dia, { dataAula: dia, faltas: 0, tevePresenca: false });
+                }
+                const registroDoDia = porDia.get(dia);
+                const faltas = item.qtdFaltas || 0;
+                registroDoDia.faltas += faltas;
+                if (faltas === 0) registroDoDia.tevePresenca = true;
             }
 
-            if (sequencia < LANCAMENTOS_CONSECUTIVOS_RISCO) continue;
+            const dias = [...porDia.values()]
+                .sort((a, b) => converterDataAula(a.dataAula) - converterDataAula(b.dataAula));
+
+            let sequencia = 0;
+            let faltasNaSequencia = 0;
+            for (let i = dias.length - 1; i >= 0 && !dias[i].tevePresenca && dias[i].faltas > 0; i--) {
+                sequencia++;
+                faltasNaSequencia += dias[i].faltas;
+            }
+
+            if (sequencia < DIAS_AULA_CONSECUTIVOS_RISCO) continue;
 
             const ultimo = registros[registros.length - 1];
             resultado.push({
@@ -53,6 +71,10 @@ async function listarEmRisco(req, res) {
                 nomeAluno: ultimo.nomeAluno,
                 codigoTurma: ultimo.codigoTurma,
                 nomeTurma: ultimo.nomeTurma,
+                // Dias de aula seguidos sem vir — é o que a tela mostra. Contar dias
+                // é mais fiel que dividir o total de faltas por um nº fixo de aulas,
+                // já que um dia com duas UCs tem mais aulas que um dia com uma só.
+                diasSemVir: sequencia,
                 totalFaltas: faltasNaSequencia
             });
         }
@@ -61,7 +83,7 @@ async function listarEmRisco(req, res) {
             resultado = resultado.filter((item) => item.codigoTurma === turma);
         }
 
-        resultado.sort((a, b) => b.totalFaltas - a.totalFaltas);
+        resultado.sort((a, b) => b.diasSemVir - a.diasSemVir || b.totalFaltas - a.totalFaltas);
 
         const matriculas = resultado.map((item) => item.matricula);
 
@@ -173,4 +195,4 @@ async function importarTelefones(req, res) {
     }
 }
 
-module.exports = { listarEmRisco, importarTelefones, LANCAMENTOS_CONSECUTIVOS_RISCO };
+module.exports = { listarEmRisco, importarTelefones, DIAS_AULA_CONSECUTIVOS_RISCO };
