@@ -341,6 +341,15 @@
       form.canal.focus();
     }
 
+    function alternarDetalhe(indice, matricula) {
+      const linha = document.getElementById(`detalhe-${indice}`);
+      const abrindo = linha.classList.contains('d-none');
+
+      linha.classList.toggle('d-none');
+
+      if (abrindo) carregarHistorico(indice, matricula);
+    }
+
     function sairModoEdicao(form) {
       const indice = form.dataset.indice;
       delete form.dataset.editandoId;
@@ -352,7 +361,7 @@
 
     function linhaAlunoHtml(aluno, indice) {
       return `
-        <tr>
+        <tr class="linha-aluno" style="cursor: pointer" data-indice="${indice}" data-matricula="${aluno.matricula}">
           <td>
             ${aluno.nomeAluno || '—'}
             ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
@@ -466,15 +475,18 @@
 
       const botaoContato = evento.target.closest('.btnContato');
       if (botaoContato) {
-        const indice = botaoContato.dataset.indice;
-        const linha = document.getElementById(`detalhe-${indice}`);
-        const abrindo = linha.classList.contains('d-none');
+        alternarDetalhe(botaoContato.dataset.indice, botaoContato.dataset.matricula);
+        return;
+      }
 
-        linha.classList.toggle('d-none');
-
-        if (abrindo) {
-          carregarHistorico(indice, botaoContato.dataset.matricula);
-        }
+      // Clicar em qualquer ponto da linha do aluno também abre o painel de
+      // contato — o botão "Contato" continua valendo, virou só um atalho a mais.
+      const linhaAluno = evento.target.closest('tr.linha-aluno');
+      if (linhaAluno) {
+        // O ícone do WhatsApp (e qualquer campo do formulário, se um dia a linha
+        // ganhar um) mantém o comportamento próprio em vez de abrir o painel.
+        if (evento.target.closest('a, button, input, select, textarea, label')) return;
+        alternarDetalhe(linhaAluno.dataset.indice, linhaAluno.dataset.matricula);
         return;
       }
 
