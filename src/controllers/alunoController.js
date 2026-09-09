@@ -55,6 +55,11 @@ async function calcularAlunosEmRisco() {
     // os em risco) — a tela mostra no cabeçalho da turma pra deixar claro até
     // quando a frequência daquela turma está atualizada.
     const ultimaAulaPorTurma = new Map();
+    // Quem é aluno de cada turma. A tabela `alunos` não guarda turma (a planilha
+    // da secretaria é por turma, mas não traz o código dela numa coluna), então
+    // o vínculo sai dos lançamentos: quem já teve chamada lançada naquela turma
+    // é aluno dela. É o que permite filtrar o painel por turma.
+    const matriculasPorTurma = new Map();
     for (const item of lancamentos) {
         const chave = `${item.matricula}||${item.codigoTurma || ''}`;
         if (!grupos.has(chave)) grupos.set(chave, []);
@@ -65,6 +70,9 @@ async function calcularAlunosEmRisco() {
         if (!atual || converterDataAula(item.dataAula) > converterDataAula(atual)) {
             ultimaAulaPorTurma.set(chaveTurma, item.dataAula);
         }
+
+        if (!matriculasPorTurma.has(chaveTurma)) matriculasPorTurma.set(chaveTurma, new Set());
+        matriculasPorTurma.get(chaveTurma).add(item.matricula);
     }
 
     const resultado = [];
@@ -128,7 +136,7 @@ async function calcularAlunosEmRisco() {
 
     resultado.sort((a, b) => b.diasSemVir - a.diasSemVir || b.totalFaltas - a.totalFaltas);
 
-    return { emRisco: resultado, ultimaAulaPorTurma };
+    return { emRisco: resultado, ultimaAulaPorTurma, matriculasPorTurma };
 }
 
 // Enriquece a lista de risco com telefone, histórico de contato e a última aula
@@ -291,10 +299,26 @@ async function importarTelefones(req, res) {
 // ativo — quanto mais evasão, mais "ativos". A planilha é a fonte confiável.
 async function resumoAlunos(req, res) {
     try {
-        const [alunos, { emRisco }] = await Promise.all([
+        const { turma } = req.query;
+
+        const [todosAlunos, { emRisco, matriculasPorTurma }] = await Promise.all([
             prisma.aluno.findMany({ select: { matricula: true, telefone: true, situacao: true, atualizadoEm: true } }),
             calcularAlunosEmRisco()
         ]);
+
+        // Filtrar por turma restringe aos alunos com chamada lançada nela. Quem foi
+        // importado da planilha mas ainda não apareceu em nenhum lançamento fica de
+        // fora do recorte por turma — só aparece no total geral.
+        // Turma sem nenhum lançamento cai num Set vazio (e não em "todas"), pra um
+        // código de turma errado devolver zero em vez do total da escola.
+        const matriculasDaTurma = turma ? (matriculasPorTurma.get(turma) || new Set()) : null;
+        const alunos = matriculasDaTurma
+            ? todosAlunos.filter((aluno) => matriculasDaTurma.has(aluno.matricula))
+            : todosAlunos;
+
+        const emRiscoFiltrado = turma
+            ? emRisco.filter((item) => item.codigoTurma === turma)
+            : emRisco;
 
         let ativos = 0;
         let inativos = 0;
@@ -315,7 +339,7 @@ async function resumoAlunos(req, res) {
         // calcularAlunosEmRisco devolve uma linha por (aluno, turma): contamos
         // matrículas distintas pra não inflar o número de alunos com quem estuda
         // em duas turmas — senão o risco pode até passar o total de ativos.
-        const matriculasEmRisco = new Set(emRisco.map((item) => item.matricula));
+        const matriculasEmRisco = new Set(emRiscoFiltrado.map((item) => item.matricula));
 
         res.json({
             status: 'ok',

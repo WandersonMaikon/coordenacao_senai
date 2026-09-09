@@ -23,13 +23,25 @@
           </div>
         </div>
 
+        <div class="card mb-4">
+          <div class="card-body">
+            <div class="row g-3 align-items-end">
+              <div class="col-md-6 col-lg-5">
+                <label class="form-label" for="filtroTurma">Turma</label>
+                <select class="form-select" id="filtroTurma">
+                  <option value="">Todas as turmas</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div id="statusCarregamento" class="alert alert-info">Carregando dados...</div>
 
         <div id="conteudoPainel" class="d-none">
 
           <div id="avisoSemImportacao" class="alert alert-warning d-none">
-            Nenhum aluno importado ainda — os números abaixo só ficam completos depois que a
-            planilha da secretaria for enviada em <a href="/importar-telefones">Importar contatos</a>.
+            <span id="textoAviso"></span><a href="/importar-telefones">Importar contatos</a>.
           </div>
 
           <div class="row">
@@ -111,6 +123,7 @@
 
   </div>
 
+  <script src="/js/turmas.js"></script>
   <script>
     const token = localStorage.getItem('coor360_token');
 
@@ -167,9 +180,14 @@
       return new Date(dataIso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     }
 
-    async function carregarPainel() {
+    async function carregarPainel(turma) {
+      const statusEl = document.getElementById('statusCarregamento');
+      statusEl.className = 'alert alert-info';
+      statusEl.textContent = 'Carregando dados...';
+      statusEl.classList.remove('d-none');
+
       try {
-        const resumo = (await chamarApi('/alunos/resumo')).dados;
+        const resumo = (await chamarApi(`/alunos/resumo${turma ? `?turma=${encodeURIComponent(turma)}` : ''}`)).dados;
 
         document.getElementById('kpiAlunosAtivos').textContent = resumo.ativos;
         document.getElementById('kpiAlunosRisco').textContent = resumo.emRisco;
@@ -177,10 +195,13 @@
         document.getElementById('kpiCriterio').textContent = resumo.criterioRisco;
 
         // Sem aluno importado, "0 ativos" parece um dado e não é — é a ausência
-        // dele. O aviso manda a coordenação pra tela de importação.
-        if (resumo.ativos === 0) {
-          document.getElementById('avisoSemImportacao').classList.remove('d-none');
-        }
+        // dele. O aviso manda a coordenação pra tela de importação. Com filtro de
+        // turma ligado, o motivo é outro: a planilha daquela turma não foi enviada.
+        const aviso = document.getElementById('avisoSemImportacao');
+        aviso.classList.toggle('d-none', resumo.ativos !== 0);
+        document.getElementById('textoAviso').textContent = turma
+          ? 'Nenhum aluno desta turma foi importado ainda — envie a planilha dela em '
+          : 'Nenhum aluno importado ainda — os números abaixo só ficam completos depois que a planilha da secretaria for enviada em ';
 
         document.getElementById('rodapeAtivos').textContent = resumo.importadosEm
           ? `Matriculados na planilha da secretaria — importada em ${formatarData(resumo.importadosEm)}`
@@ -193,19 +214,22 @@
           ? `${percentual}% dos alunos ativos`
           : `${resumo.criterioRisco} dias de aula seguidos sem vir`;
 
-        document.getElementById('statusCarregamento').classList.add('d-none');
+        statusEl.classList.add('d-none');
         document.getElementById('conteudoPainel').classList.remove('d-none');
 
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
-          const status = document.getElementById('statusCarregamento');
-          status.className = 'alert alert-warning';
-          status.textContent = 'Não foi possível carregar os dados do painel agora.';
+          statusEl.className = 'alert alert-warning';
+          statusEl.textContent = 'Não foi possível carregar os dados do painel agora.';
         }
       }
     }
 
-    carregarPainel();
+    const filtroTurma = document.getElementById('filtroTurma');
+    filtroTurma.addEventListener('change', () => carregarPainel(filtroTurma.value));
+
+    preencherSelectTurmas(filtroTurma, chamarApi);
+    carregarPainel('');
   </script>
 </body>
 

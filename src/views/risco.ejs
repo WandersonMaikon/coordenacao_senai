@@ -70,6 +70,7 @@
 
   </div>
 
+  <script src="/js/turmas.js"></script>
   <script>
     const token = localStorage.getItem('coor360_token');
 
@@ -175,17 +176,6 @@
       return new Date(dataIso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     }
 
-    // O SGE repete o curso na coluna "série", então o nome montado pelo userscript
-    // chega como "Curso - Curso - Turno". Remove partes consecutivas iguais só na
-    // exibição — o dado no banco continua como veio do SGE.
-    function nomeTurmaLimpo(nome) {
-      if (!nome) return nome;
-      const partes = nome.split(' - ').map((parte) => parte.trim()).filter(Boolean);
-      return partes
-        .filter((parte, i) => i === 0 || parte.toLowerCase() !== partes[i - 1].toLowerCase())
-        .join(' - ');
-    }
-
     function badgeUltimoContato(ultimoContato, totalContatos) {
       if (!ultimoContato) {
         return '<span class="badge bg-danger bg-opacity-10 text-danger">Nunca contatado</span>';
@@ -216,21 +206,6 @@
       return `<span title="${titulo}">${escaparHtml(data)}</span>`;
     }
     
-    async function carregarTurmas() {
-      try {
-        const resposta = await chamarApi('/turmas');
-        const select = document.getElementById('filtroTurma');
-        resposta.dados.forEach((turma) => {
-          const opcao = document.createElement('option');
-          opcao.value = turma.codigoTurma;
-          opcao.textContent = turma.nomeTurma ? `${nomeTurmaLimpo(turma.nomeTurma)} (${turma.codigoTurma})` : turma.codigoTurma;
-          select.appendChild(opcao);
-        });
-      } catch (erro) {
-        console.error('Não foi possível carregar a lista de turmas:', erro);
-      }
-    }
-
     async function chamarApi(caminho, opcoes = {}) {
       const resposta = await fetch(caminho, {
         ...opcoes,
@@ -616,7 +591,7 @@
     // pra não divergir quando um status novo for criado.
     document.getElementById('filtroStatus').insertAdjacentHTML('beforeend', opcoesStatus);
 
-    carregarTurmas();
+    preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi);
     carregarRisco();
   </script>
 </body>
