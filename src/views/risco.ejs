@@ -184,7 +184,6 @@
       const cor = COR_STATUS[ultimoContato.status] || 'success';
       return `<span class="badge bg-${cor} bg-opacity-10 text-${cor}" title="${formatarDataHora(ultimoContato.criadoEm)}">${canal} · ${status} · ${formatarData(ultimoContato.criadoEm)}</span>`;
     }
-
     async function carregarTurmas() {
       try {
         const resposta = await chamarApi('/turmas');
