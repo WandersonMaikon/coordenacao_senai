@@ -56,7 +56,7 @@
 
         <div class="card d-none" id="cardResultado">
           <div class="card-header d-flex align-items-center justify-content-between border-0 pb-0">
-            <h6 class="card-title mb-0">Lançamentos <span class="text-body fw-normal" id="totalResultado"></span></h6>
+            <h6 class="card-title mb-0">Turmas com falta no período <span class="text-body fw-normal" id="totalResultado"></span></h6>
           </div>
           <div class="card-body">
             <div class="accordion accordion-custom-button accordion-primary" id="accordionFaltas"></div>
@@ -70,6 +70,7 @@
 
   </div>
 
+  <script src="/js/turmas.js"></script>
   <script>
     const token = localStorage.getItem('coor360_token');
 
@@ -139,21 +140,6 @@
       return resposta.json();
     }
 
-    async function carregarTurmas() {
-      try {
-        const resposta = await chamarApi('/turmas');
-        const select = document.getElementById('filtroTurma');
-        resposta.dados.forEach((turma) => {
-          const opcao = document.createElement('option');
-          opcao.value = turma.codigoTurma;
-          opcao.textContent = turma.nomeTurma ? `${turma.nomeTurma} (${turma.codigoTurma})` : turma.codigoTurma;
-          select.appendChild(opcao);
-        });
-      } catch (erro) {
-        console.error('Não foi possível carregar a lista de turmas:', erro);
-      }
-    }
-
     async function carregarFaltas(dataInicio, dataFim, turma) {
       const statusEl = document.getElementById('statusCarregamento');
       const cardResultado = document.getElementById('cardResultado');
@@ -178,7 +164,7 @@
           const turmas = new Map();
           resposta.dados.forEach((item) => {
             const chaveTurma = item.codigoTurma || item.nomeTurma || '—';
-            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professores: new Set(), alunos: new Map() });
+            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professores: new Set(), alunos: new Map(), aulasPerdidas: 0 });
             // A mesma turma pode ter mais de um professor lançando (uma UC cada).
             if (item.professor) turmas.get(chaveTurma).professores.add(item.professor);
 
@@ -193,13 +179,24 @@
             const aluno = alunos.get(chaveAluno);
             aluno.totalFaltas += item.qtdFaltas || 0;
             if ((item.qtdFaltas || 0) > 0) aluno.diasComFalta.add(item.dataAula || '');
+            // Aulas perdidas pela turma inteira no período — o volume de falta que
+            // aquela turma acumulou, que é o que permite comparar uma turma com a
+            // outra sem precisar abrir as duas.
+            turmas.get(chaveTurma).aulasPerdidas += item.qtdFaltas || 0;
           });
 
           accordion.innerHTML = Array.from(turmas.entries()).map(([codigo, turma], indice) => {
             const idColapso = `colapsoTurma${indice}`;
+            // Ordem alfabética não diz nada: quem precisa de atenção é quem mais
+            // faltou, então a lista desce do pior pro melhor. Empate no nº de dias
+            // desempata pelas aulas perdidas (quem faltou o dia todo vem antes de
+            // quem perdeu uma aula só) e, por fim, pelo nome.
             const listaAlunos = Array.from(turma.alunos.values())
               .filter((aluno) => aluno.totalFaltas > 0)
-              .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+              .sort((a, b) =>
+                b.diasComFalta.size - a.diasComFalta.size
+                || b.totalFaltas - a.totalFaltas
+                || a.nome.localeCompare(b.nome, 'pt-BR'));
             if (listaAlunos.length === 0) return '';
             const linhas = listaAlunos.map((aluno) => `
               <tr>
@@ -215,7 +212,12 @@
               <div class="accordion-item">
                 <h2 class="accordion-header">
                   <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${idColapso}">
-                    ${turma.nome} (${codigo}) - Professor: ${Array.from(turma.professores).map(nomeCurto).join(' / ') || '—'} <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${listaAlunos.length}</span>
+                    <span class="flex-grow-1">
+                      ${nomeTurmaLimpo(turma.nome)} (${codigo})
+                      <span class="ms-2 small">Professor: ${Array.from(turma.professores).map(nomeCurto).join(' / ') || '—'}</span>
+                    </span>
+                    <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;" title="Alunos com pelo menos uma falta no período">${listaAlunos.length} aluno(s)</span>
+                    <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;" title="Soma das aulas perdidas por todos os alunos da turma no período">${turma.aulasPerdidas} aula(s) perdida(s)</span>
                   </button>
                 </h2>
                 <div id="${idColapso}" class="accordion-collapse collapse" data-bs-parent="#accordionFaltas">
@@ -238,7 +240,14 @@
           }).join('');
         }
 
-        document.getElementById('totalResultado').textContent = `(${resposta.total}${!dataInicio && !turma && resposta.total >= 100 ? '+ — mostrando os 100 mais recentes' : ''})`;
+        // O total de lançamentos (uma linha por aluno/dia/UC, presenças inclusive)
+        // não significa nada pra quem lê: 813 "lançamentos" é o tamanho da tabela,
+        // não o tamanho do problema. O que importa é quantas turmas têm falta e
+        // quantos alunos faltaram.
+        const totalAlunos = Array.from(turmas.values())
+          .reduce((soma, t) => soma + Array.from(t.alunos.values()).filter((a) => a.totalFaltas > 0).length, 0);
+        document.getElementById('totalResultado').textContent =
+          `(${turmas.size} turma(s), ${totalAlunos} aluno(s) com falta${!dataInicio && !turma && resposta.total >= 100 ? ' — mostrando só os 100 lançamentos mais recentes, filtre por período' : ''})`;
 
         statusEl.classList.add('d-none');
         cardResultado.classList.remove('d-none');
@@ -297,7 +306,7 @@
       carregarFaltas(document.getElementById('filtroDataInicio').value, document.getElementById('filtroDataFim').value, '');
     });
 
-    carregarTurmas();
+    preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi);
     definirPeriodoPadrao();
     carregarFaltas(document.getElementById('filtroDataInicio').value, document.getElementById('filtroDataFim').value, '');
   </script>

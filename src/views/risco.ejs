@@ -148,6 +148,12 @@
     // O backend já devolve quantos dias de aula seguidos o aluno faltou (diasSemVir).
     // Não dá pra derivar isso dividindo as faltas por um nº fixo de aulas: um dia com
     // duas UCs (dois professores) tem mais aulas lançadas que um dia com uma só.
+    //
+    // Atenção ao ler este número: ele é da SEQUÊNCIA EM ABERTO, não do semestre.
+    // Um aluno que faltou 4 dias em agosto, voltou, e agora está 2 dias sem vir
+    // aparece aqui como "2 dias" — os 4 de agosto já foram fechados por uma
+    // presença e não contam mais. Quem quiser o acumulado do período usa a tela
+    // de Faltas, que soma tudo o que foi lançado no intervalo filtrado.
     function formatarDiasFalta(diasSemVir) {
       return `${diasSemVir} ${diasSemVir === 1 ? 'dia' : 'dias'}`;
     }
@@ -379,7 +385,7 @@
             ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
           </td>
           <td>${aluno.matricula}</td>
-          <td class="text-end"><span class="badge bg-danger bg-opacity-10 text-danger" title="${aluno.totalFaltas} aula(s) perdida(s)">${formatarDiasFalta(aluno.diasSemVir)}</span></td>
+          <td class="text-end"><span class="badge bg-danger bg-opacity-10 text-danger" title="${aluno.totalFaltas} aula(s) perdida(s) nesta sequência — não é o total de faltas do semestre">${formatarDiasFalta(aluno.diasSemVir)}</span></td>
           <td id="badge-contato-${indice}">${badgeUltimoContato(aluno.ultimoContato, aluno.totalContatos)}</td>
           <td class="text-end">${colunaSumiuDesde(aluno)}</td>
         </tr>
