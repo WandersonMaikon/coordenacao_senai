@@ -158,10 +158,13 @@
         const resposta = await chamarApi(caminho);
 
         const accordion = document.getElementById('accordionFaltas');
+        // Declarado fora do if: o resumo no título do card lê este mapa depois do
+        // bloco, e `const` dentro do else não existiria lá fora.
+        const turmas = new Map();
+
         if (resposta.dados.length === 0) {
           accordion.innerHTML = `<p class="text-center text-body py-4 mb-0">Nenhum lançamento encontrado${dataInicio ? ' para esse período.' : '.'}</p>`;
         } else {
-          const turmas = new Map();
           resposta.dados.forEach((item) => {
             const chaveTurma = item.codigoTurma || item.nomeTurma || '—';
             if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professores: new Set(), alunos: new Map(), aulasPerdidas: 0 });
@@ -244,10 +247,15 @@
         // não significa nada pra quem lê: 813 "lançamentos" é o tamanho da tabela,
         // não o tamanho do problema. O que importa é quantas turmas têm falta e
         // quantos alunos faltaram.
-        const totalAlunos = Array.from(turmas.values())
-          .reduce((soma, t) => soma + Array.from(t.alunos.values()).filter((a) => a.totalFaltas > 0).length, 0);
+        // Turma cujos alunos vieram todos os dias não aparece no accordion, então
+        // também não pode entrar na contagem — senão o título prometeria mais
+        // turmas do que a tela mostra.
+        const alunosComFalta = (dadosTurma) => Array.from(dadosTurma.alunos.values()).filter((a) => a.totalFaltas > 0);
+        const turmasComFalta = Array.from(turmas.values()).filter((dadosTurma) => alunosComFalta(dadosTurma).length > 0);
+        const totalAlunos = turmasComFalta.reduce((soma, dadosTurma) => soma + alunosComFalta(dadosTurma).length, 0);
+
         document.getElementById('totalResultado').textContent =
-          `(${turmas.size} turma(s), ${totalAlunos} aluno(s) com falta${!dataInicio && !turma && resposta.total >= 100 ? ' — mostrando só os 100 lançamentos mais recentes, filtre por período' : ''})`;
+          `(${turmasComFalta.length} turma(s), ${totalAlunos} aluno(s) com falta${!dataInicio && !turma && resposta.total >= 100 ? ' — mostrando só os 100 lançamentos mais recentes, filtre por período' : ''})`;
 
         statusEl.classList.add('d-none');
         cardResultado.classList.remove('d-none');
