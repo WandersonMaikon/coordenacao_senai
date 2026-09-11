@@ -43,15 +43,15 @@ model Lancamento {
   periodoLetivo  String?  @map("periodo_letivo") @db.VarChar(20)
   professor      String?  @db.VarChar(255)
   qtdFaltas      Int      @default(1) @map("qtd_faltas")
-  // Total de aulas que aquele dia teve naquela UC (marcadas ou não), lido da
-  // tela do SGE pelo userscript. É o denominador da % de frequência: sem ele
-  // dá pra saber quantas faltas o aluno teve, nunca de quantas aulas.
-  // Nulo nos lançamentos anteriores à v4.1 do userscript — a tela de Frequência
-  // ignora esses dias e informa quantos ficaram de fora.
+  // NÃO USADA HOJE. Sobrou de uma tela de frequência (% de aulas presentes) que
+  // foi revertida: nenhum código escreve nem lê essa coluna, e o userscript
+  // voltou a não enviar o total de aulas do dia.
+  // A coluna fica porque a migration já rodou em produção — removê-la do schema
+  // sem dropar do banco (ou vice-versa) cria drift no próximo `migrate dev`.
+  // Se a tela de frequência voltar, é aqui que o denominador da % entra.
   qtdAulas       Int?     @map("qtd_aulas")
   criadoEm       DateTime @default(now()) @map("criado_em")
   atualizadoEm   DateTime @updatedAt @map("atualizado_em")
-
   // Relacionamento opcional com a tabela de Alunos (preparando o futuro)
   aluno   Aluno? @relation(fields: [matricula], references: [matricula])
 

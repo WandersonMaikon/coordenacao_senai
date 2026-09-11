@@ -1,7 +1,6 @@
 // ==UserScript==
 // @name         SGE Novo - Captura Frequência SENAI
 // @namespace    http://tampermonkey.net/
-// @version      4.0
 // @description  Captura frequência do novo SGE (Angular/PO-UI) - resposta otimista, envio rápido, suporta correção, envia só o que mudou
 // @author       Wanderson
 // @match        https://sge.fiero.org.br/*
@@ -16,6 +15,14 @@
 // @downloadURL  https://app.coor360-senai.com.br/sge-captura.user.js
 // @run-at       document-idle
 // ==/UserScript==
+
+// Historico de versoes:
+// 4.1 - passou a enviar qtd_aulas (total de aulas do dia) para uma tela de
+//       frequencia no painel. Revertida: a tela saiu e o script voltou a
+//       enviar so o que enviava antes.
+// 4.2 - conteudo identico ao da 4.0. O numero NAO volta pra 4.0 porque o
+//       Tampermonkey so atualiza quando a @version SOBE: quem ja tinha baixado
+//       a 4.1 ficaria preso nela pra sempre, sem receber correcao nenhuma.
 
 (function () {
     'use strict';
