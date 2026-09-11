@@ -42,12 +42,7 @@ async function receberWebhook(req, res) {
                     nomeTurma: item.nome_turma || '',
                     periodoLetivo: item.periodo_letivo || '',
                     professor: item.professor || '',
-                    qtdFaltas: item.qtd_faltas ?? 0,
-                    // Userscript anterior à v4.1 não manda qtd_aulas. `null` mantém o
-                    // dia fora do cálculo de frequência em vez de fingir que houve
-                    // zero aula — e um envio antigo não apaga o valor de um dia que
-                    // já tinha sido gravado por um script atualizado.
-                    ...(item.qtd_aulas != null ? { qtdAulas: item.qtd_aulas } : {})
+                    qtdFaltas: item.qtd_faltas ?? 0
                 },
                 create: {
                     ...chave,
@@ -56,8 +51,7 @@ async function receberWebhook(req, res) {
                     nomeTurma: item.nome_turma || '',
                     periodoLetivo: item.periodo_letivo || '',
                     professor: item.professor || '',
-                    qtdFaltas: item.qtd_faltas ?? 1,
-                    qtdAulas: item.qtd_aulas ?? null
+                    qtdFaltas: item.qtd_faltas ?? 1
                 }
             });
 
@@ -140,133 +134,6 @@ async function listar(req, res) {
     }
 }
 
-// Frequência mínima para aprovação. Abaixo disso o aluno reprova por falta,
-// mesmo com nota — é a régua que a tela de Frequência usa pra destacar quem
-// está no limite. Confirmar com a coordenação se o SENAI usa outro percentual.
-const FREQUENCIA_MINIMA = 75;
-
-// Relatório consolidado de frequência por turma no período — o que o SGE não
-// entrega. Complementa a tela de Alunos em risco, que enxerga só abandono
-// (faltas seguidas): aqui aparece o faltante crônico, o que perde uma aula por
-// semana o semestre inteiro, nunca acumula dias seguidos e reprova por falta
-// sem nunca ter entrado na lista de risco.
-async function frequencia(req, res) {
-    try {
-        const { dataInicio, dataFim, turma } = req.query;
-        const where = {};
-
-        if (dataInicio || dataFim) {
-            if (!dataInicio || !dataFim) {
-                return res.status(400).json({ status: 'erro', mensagem: 'Informe dataInicio e dataFim juntas, no formato AAAA-MM-DD' });
-            }
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicio) || !/^\d{4}-\d{2}-\d{2}$/.test(dataFim)) {
-                return res.status(400).json({ status: 'erro', mensagem: 'Data inválida, use o formato AAAA-MM-DD' });
-            }
-            where.dataAula = { in: gerarDatasIntervalo(dataInicio, dataFim) };
-        }
-
-        if (turma) {
-            where.codigoTurma = turma;
-        }
-
-        const lancamentos = await prisma.lancamento.findMany({
-            where,
-            select: {
-                matricula: true, nomeAluno: true, codigoTurma: true, nomeTurma: true,
-                dataAula: true, uc: true, professor: true, qtdFaltas: true, qtdAulas: true
-            }
-        });
-
-        const turmas = new Map();
-        // Lançamentos anteriores à v4.1 do userscript não têm qtdAulas. Ficam fora
-        // do cálculo (não dá pra inventar o denominador) e são contados à parte,
-        // pra tela poder avisar que o período não está coberto por inteiro.
-        let diasSemTotalDeAulas = 0;
-
-        for (const item of lancamentos) {
-            const codigo = item.codigoTurma || '—';
-            if (!turmas.has(codigo)) {
-                turmas.set(codigo, {
-                    codigoTurma: codigo,
-                    nomeTurma: item.nomeTurma || codigo,
-                    professores: new Set(),
-                    // Cada (dia + UC) é uma aula lançada. O total de aulas do período
-                    // é somado sobre essas chaves, não sobre os lançamentos: cada
-                    // aluno gera uma linha do mesmo dia, e somar linha por linha
-                    // multiplicaria o total de aulas pelo tamanho da turma.
-                    aulasPorChave: new Map(),
-                    alunos: new Map()
-                });
-            }
-            const dadosTurma = turmas.get(codigo);
-            if (item.professor) dadosTurma.professores.add(item.professor);
-
-            if (item.qtdAulas == null) {
-                diasSemTotalDeAulas++;
-                continue;
-            }
-
-            dadosTurma.aulasPorChave.set(`${item.dataAula}|${item.uc}`, item.qtdAulas);
-
-            const matricula = item.matricula || '—';
-            if (!dadosTurma.alunos.has(matricula)) {
-                dadosTurma.alunos.set(matricula, { matricula, nomeAluno: item.nomeAluno || '—', faltas: 0, aulas: 0 });
-            }
-            const aluno = dadosTurma.alunos.get(matricula);
-            aluno.faltas += item.qtdFaltas || 0;
-            aluno.aulas += item.qtdAulas;
-        }
-
-        const matriculas = [...turmas.values()].flatMap((dadosTurma) => [...dadosTurma.alunos.keys()]);
-        const alunosCadastrados = await prisma.aluno.findMany({
-            where: { matricula: { in: matriculas } },
-            select: { matricula: true, telefone: true }
-        });
-        const telefonePorMatricula = new Map(alunosCadastrados.map((aluno) => [aluno.matricula, aluno.telefone]));
-
-        const dados = [...turmas.values()].map((dadosTurma) => {
-            const totalAulas = [...dadosTurma.aulasPorChave.values()].reduce((soma, aulas) => soma + aulas, 0);
-
-            const alunos = [...dadosTurma.alunos.values()]
-                .map((aluno) => ({
-                    ...aluno,
-                    telefone: telefonePorMatricula.get(aluno.matricula) || null,
-                    // A frequência é sobre as aulas em que o aluno aparece lançado,
-                    // não sobre o total da turma: quem entrou na turma depois não
-                    // pode ser penalizado pelas aulas anteriores à matrícula dele.
-                    frequencia: aluno.aulas > 0 ? Math.round(((aluno.aulas - aluno.faltas) / aluno.aulas) * 1000) / 10 : null
-                }))
-                .sort((a, b) => (a.frequencia ?? 101) - (b.frequencia ?? 101));
-
-            const somaAulas = alunos.reduce((soma, aluno) => soma + aluno.aulas, 0);
-            const somaFaltas = alunos.reduce((soma, aluno) => soma + aluno.faltas, 0);
-
-            return {
-                codigoTurma: dadosTurma.codigoTurma,
-                nomeTurma: dadosTurma.nomeTurma,
-                professores: [...dadosTurma.professores],
-                totalAulas,
-                totalAlunos: alunos.length,
-                abaixoDoMinimo: alunos.filter((aluno) => aluno.frequencia !== null && aluno.frequencia < FREQUENCIA_MINIMA).length,
-                frequenciaTurma: somaAulas > 0 ? Math.round(((somaAulas - somaFaltas) / somaAulas) * 1000) / 10 : null,
-                alunos
-            };
-        })
-            .filter((dadosTurma) => dadosTurma.totalAulas > 0)
-            .sort((a, b) => (a.frequenciaTurma ?? 101) - (b.frequenciaTurma ?? 101));
-
-        res.json({
-            status: 'ok',
-            total: dados.length,
-            frequenciaMinima: FREQUENCIA_MINIMA,
-            diasSemTotalDeAulas,
-            dados
-        });
-    } catch (erro) {
-        res.status(500).json({ status: 'erro', mensagem: erro.message });
-    }
-}
-
 // Lista as turmas distintas já lançadas (código + nome), pra popular o
 // dropdown de filtro na tela de faltas
 async function listarTurmas(req, res) {
@@ -283,4 +150,4 @@ async function listarTurmas(req, res) {
     }
 }
 
-module.exports = { receberWebhook, listar, listarTurmas, frequencia, FREQUENCIA_MINIMA };
+module.exports = { receberWebhook, listar, listarTurmas };
