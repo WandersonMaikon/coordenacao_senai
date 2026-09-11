@@ -119,6 +119,48 @@
       return `${diasComFalta} ${diasComFalta === 1 ? 'dia' : 'dias'}`;
     }
 
+    // Nome de aluno, turma e UC vêm do SGE e entram via innerHTML — um "<" no meio
+    // de qualquer um deles já quebraria a renderização da tabela.
+    function escaparHtml(texto) {
+      return String(texto ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+    }
+
+    const DIAS_SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+    // dataAula chega como "dd/mm/aaaa" (formato do SGE), não como data ISO —
+    // por isso o parse é manual em vez de new Date(string).
+    function dataAulaParaDate(dataAula) {
+      const [dia, mes, ano] = String(dataAula || '').split('/').map(Number);
+      if (!dia || !mes || !ano) return null;
+      return new Date(ano, mes - 1, dia);
+    }
+
+    function diaDaSemana(dataAula) {
+      const data = dataAulaParaDate(dataAula);
+      return data ? DIAS_SEMANA[data.getDay()] : '';
+    }
+
+    function dataComDiaSemana(dataAula) {
+      const dia = diaDaSemana(dataAula);
+      return dia ? `${dataAula} (${dia})` : dataAula || '—';
+    }
+
+    // "Matemática (8) · Informática (4)" — a UC onde a falta se concentra diz se o
+    // problema é a escola inteira ou uma matéria só. Mostra as 2 maiores pra linha
+    // não estourar; o tooltip traz a lista completa.
+    function resumoUcs(ucs) {
+      const ordenadas = [...ucs.entries()].sort((a, b) => b[1] - a[1]);
+      if (ordenadas.length === 0) return '<span class="text-body-secondary">—</span>';
+      const texto = ordenadas.map(([uc, faltas]) => `${uc || '(sem UC)'} (${faltas})`);
+      const visivel = texto.slice(0, 2).join(' · ');
+      const resto = ordenadas.length > 2 ? ` +${ordenadas.length - 2}` : '';
+      return `<span title="${escaparHtml(texto.join(' · '))}">${escaparHtml(visivel)}${resto}</span>`;
+    }
+
     function nomeCurto(nomeCompleto) {
       if (!nomeCompleto) return '—';
       return nomeCompleto.trim().split(/\s+/).slice(0, 2).join(' ');
@@ -167,7 +209,7 @@
         } else {
           resposta.dados.forEach((item) => {
             const chaveTurma = item.codigoTurma || item.nomeTurma || '—';
-            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professores: new Set(), alunos: new Map(), aulasPerdidas: 0 });
+            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professores: new Set(), alunos: new Map(), aulasPerdidas: 0, faltasPorDiaSemana: new Map() });
             // A mesma turma pode ter mais de um professor lançando (uma UC cada).
             if (item.professor) turmas.get(chaveTurma).professores.add(item.professor);
 
@@ -177,11 +219,34 @@
             const alunos = turmas.get(chaveTurma).alunos;
             const chaveAluno = item.matricula || item.nomeAluno || '—';
             if (!alunos.has(chaveAluno)) {
-              alunos.set(chaveAluno, { nome: item.nomeAluno || '—', telefone: item.aluno?.telefone || '', totalFaltas: 0, diasComFalta: new Set() });
+              alunos.set(chaveAluno, { nome: item.nomeAluno || '—', telefone: item.aluno?.telefone || '', totalFaltas: 0, diasComFalta: new Set(), ucs: new Map(), ultimaFalta: null });
             }
             const aluno = alunos.get(chaveAluno);
-            aluno.totalFaltas += item.qtdFaltas || 0;
-            if ((item.qtdFaltas || 0) > 0) aluno.diasComFalta.add(item.dataAula || '');
+            const faltasDoLancamento = item.qtdFaltas || 0;
+            aluno.totalFaltas += faltasDoLancamento;
+
+            if (faltasDoLancamento > 0) {
+              aluno.diasComFalta.add(item.dataAula || '');
+
+              // Em qual UC ele está perdendo aula. Lançamento de presença não
+              // entra: a UC só interessa aqui quando houve falta nela.
+              const uc = item.uc || '';
+              aluno.ucs.set(uc, (aluno.ucs.get(uc) || 0) + faltasDoLancamento);
+
+              // Data da falta mais recente do período, pra separar quem faltou no
+              // começo do mês e já voltou de quem faltou ontem.
+              const data = dataAulaParaDate(item.dataAula);
+              const atual = dataAulaParaDate(aluno.ultimaFalta);
+              if (data && (!atual || data > atual)) aluno.ultimaFalta = item.dataAula;
+
+              // Padrão de agenda da turma: faltar toda sexta é problema de
+              // horário/trabalho/transporte, não de desmotivação.
+              const dia = diaDaSemana(item.dataAula);
+              if (dia) {
+                const porDia = turmas.get(chaveTurma).faltasPorDiaSemana;
+                porDia.set(dia, (porDia.get(dia) || 0) + faltasDoLancamento);
+              }
+            }
             // Aulas perdidas pela turma inteira no período — o volume de falta que
             // aquela turma acumulou, que é o que permite comparar uma turma com a
             // outra sem precisar abrir as duas.
@@ -204,10 +269,15 @@
             const linhas = listaAlunos.map((aluno) => `
               <tr>
                 <td>
-                  ${aluno.nome}
+                  ${escaparHtml(aluno.nome)}
                   ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
                 </td>
-                <td class="text-end"><span class="badge bg-warning bg-opacity-10 text-warning" title="${aluno.totalFaltas} aula(s) perdida(s)">${formatarDiasFalta(aluno.diasComFalta.size)}</span></td>
+                <td class="text-end">
+                  <span class="badge bg-warning bg-opacity-10 text-warning" title="Dias de aula em que faltou, no período filtrado">${formatarDiasFalta(aluno.diasComFalta.size)}</span>
+                  <span class="ms-2 small text-body-secondary" title="Aulas perdidas no período — um dia com duas UCs tem mais aulas que um dia com uma só">${aluno.totalFaltas} aula(s)</span>
+                </td>
+                <td class="small">${resumoUcs(aluno.ucs)}</td>
+                <td class="text-end small">${dataComDiaSemana(aluno.ultimaFalta)}</td>
               </tr>
             `).join('');
 
@@ -221,6 +291,15 @@
                     </span>
                     <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;" title="Alunos com pelo menos uma falta no período">${listaAlunos.length} aluno(s)</span>
                     <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;" title="Soma das aulas perdidas por todos os alunos da turma no período">${turma.aulasPerdidas} aula(s) perdida(s)</span>
+                    ${(() => {
+                      // Só vale mostrar o dia campeão quando há mais de um dia com
+                      // falta: com um dia só, "mais falta: sexta" é o único dia que
+                      // existe, e informar isso como padrão seria enganoso.
+                      const porDia = [...turma.faltasPorDiaSemana.entries()].sort((a, b) => b[1] - a[1]);
+                      if (porDia.length < 2) return '';
+                      const [dia, faltas] = porDia[0];
+                      return `<span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;" title="Dia da semana que concentra mais aulas perdidas nesta turma — padrão de agenda (trabalho, transporte, horário) costuma aparecer aqui">mais falta: ${dia} (${faltas})</span>`;
+                    })()}
                   </button>
                 </h2>
                 <div id="${idColapso}" class="accordion-collapse collapse" data-bs-parent="#accordionFaltas">
@@ -230,7 +309,9 @@
                         <thead>
                           <tr>
                             <th>Aluno</th>
-                            <th class="text-end">Total de faltas</th>
+                            <th class="text-end">Dias com falta / aulas perdidas</th>
+                            <th title="Em quais UCs o aluno está perdendo aula — falta concentrada numa UC só aponta pra matéria, horário ou professor, não pro aluno">UC das faltas</th>
+                            <th class="text-end" title="Falta mais recente do aluno no período filtrado">Última falta</th>
                           </tr>
                         </thead>
                         <tbody>${linhas}</tbody>
