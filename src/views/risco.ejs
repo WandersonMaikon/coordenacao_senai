@@ -78,6 +78,17 @@
       window.location.href = '/login';
     }
 
+    // Usuário logado, lido do próprio token (mesmo jeito da sidebar). Serve só pra
+    // decidir se mostra os botões de editar/apagar contato — quem garante que
+    // ninguém mexe no contato de outra pessoa é a API (PUT e DELETE
+    // /contatos/:id), que recusa com 403.
+    let usuarioLogado = null;
+    try {
+      usuarioLogado = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).usuario;
+    } catch (erro) {
+      usuarioLogado = null;
+    }
+
     function sair() {
       localStorage.removeItem('coor360_token');
       window.location.href = '/login';
@@ -289,6 +300,9 @@
       const canal = CANAIS[contato.canal] || contato.canal || '—';
       const status = STATUS[contato.status] || contato.status || '—';
       const motivo = MOTIVOS[contato.motivo] || contato.motivo;
+      // Editar e apagar só aparecem pra quem registrou o contato — a API também
+      // recusa (403) pra qualquer outro usuário, inclusive o admin.
+      const ehAutor = usuarioLogado && contato.contatadoPor === usuarioLogado;
       // Editado = atualizadoEm mais de 1s depois de criadoEm. A margem evita
       // marcar como corrigido o registro recém-criado, em que os dois timestamps
       // são gravados na mesma operação com alguns milissegundos de diferença.
@@ -298,10 +312,17 @@
         <div class="border-bottom pb-2 mb-2">
           <div class="d-flex justify-content-between align-items-start gap-2">
             <div><strong>${canal}</strong> · ${status}${motivo ? ` · ${escaparHtml(motivo)}` : ''}</div>
-            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none btnEditarContato"
-                    data-indice="${indice}" data-id="${contato.id}" title="Editar este contato">
-              <i class="bi bi-pencil"></i>
-            </button>
+            ${ehAutor ? `
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none btnEditarContato"
+                      data-indice="${indice}" data-id="${contato.id}" title="Editar este contato">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none text-danger btnApagarContato"
+                      data-indice="${indice}" data-id="${contato.id}" title="Apagar este contato">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>` : ''}
           </div>
           ${contato.observacao ? `<div class="text-body">${escaparHtml(contato.observacao)}</div>` : ''}
           <div class="text-body text-2xs">
@@ -362,6 +383,34 @@
       form.querySelector('.btnCancelarEdicao').classList.remove('d-none');
       form.querySelector('.statusFormContato').textContent = '';
       form.canal.focus();
+    }
+
+    async function apagarContato(indice, idContato) {
+      if (!confirm('Apagar este contato do histórico? Essa ação não pode ser desfeita.')) return;
+
+      const form = document.querySelector(`.formContato[data-indice="${indice}"]`);
+      const statusForm = form.querySelector('.statusFormContato');
+
+      try {
+        const resposta = await chamarApi(`/contatos/${idContato}`, { method: 'DELETE' });
+        if (resposta.status !== 'ok') {
+          throw new Error(resposta.mensagem || 'Erro ao apagar');
+        }
+
+        // Se o contato apagado era o que estava aberto no formulário, a edição
+        // não tem mais o que salvar.
+        if (form.dataset.editandoId === String(idContato)) sairModoEdicao(form);
+
+        statusForm.className = 'statusFormContato ms-2 text-success';
+        statusForm.textContent = 'Contato apagado.';
+        // Recarrega o histórico e, com ele, o badge de último contato da linha.
+        await carregarHistorico(indice, form.dataset.matricula);
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          statusForm.className = 'statusFormContato ms-2 text-warning';
+          statusForm.textContent = erro.message || 'Não foi possível apagar agora.';
+        }
+      }
     }
 
     function alternarDetalhe(indice, matricula) {
@@ -506,6 +555,12 @@
       const botaoEditar = evento.target.closest('.btnEditarContato');
       if (botaoEditar) {
         entrarModoEdicao(botaoEditar.dataset.indice, Number(botaoEditar.dataset.id));
+        return;
+      }
+
+      const botaoApagar = evento.target.closest('.btnApagarContato');
+      if (botaoApagar) {
+        apagarContato(botaoApagar.dataset.indice, Number(botaoApagar.dataset.id));
         return;
       }
 

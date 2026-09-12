@@ -57,6 +57,7 @@ async function listarPorAluno(req, res) {
 // às vezes precisa ajustar o status ou o motivo depois). Só os campos do
 // atendimento são editáveis: matricula, contatadoPor e criadoEm ficam como
 // estão — quem registrou e quando são o histórico em si, não conteúdo.
+// Só o autor do contato pode editar (ver checagem abaixo).
 async function atualizar(req, res) {
     const id = Number(req.params.id);
     const { canal, status, motivo, observacao } = req.body;
@@ -70,6 +71,19 @@ async function atualizar(req, res) {
     }
 
     try {
+        // Mesma regra do apagar: só quem registrou pode corrigir. Editar o
+        // contato de outra pessoa mudaria o que ela anotou mantendo o nome dela
+        // no registro.
+        const existente = await prisma.contato.findUnique({ where: { id }, select: { contatadoPor: true } });
+
+        if (!existente) {
+            return res.status(404).json({ status: 'erro', mensagem: 'Contato não encontrado' });
+        }
+
+        if (existente.contatadoPor !== req.usuario.usuario) {
+            return res.status(403).json({ status: 'erro', mensagem: 'Só quem registrou o contato pode editá-lo' });
+        }
+
         const contato = await prisma.contato.update({
             where: { id },
             data: {
@@ -83,6 +97,39 @@ async function atualizar(req, res) {
         res.json({ status: 'ok', dados: contato });
     } catch (erro) {
         // P2025 = registro não encontrado (id que não existe ou já removido)
+        if (erro.code === 'P2025') {
+            return res.status(404).json({ status: 'erro', mensagem: 'Contato não encontrado' });
+        }
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+// Apaga um contato do histórico. Só quem registrou pode apagar — nem outro
+// usuário, nem o admin: o histórico é o que mostra que a coordenação foi atrás
+// do aluno, e apagar o registro de outra pessoa sumiria com esse rastro. A
+// checagem é aqui no servidor (e não só escondendo o botão na tela), porque a
+// API pode ser chamada direto.
+async function remover(req, res) {
+    const id = Number(req.params.id);
+
+    if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ status: 'erro', mensagem: 'Id de contato inválido' });
+    }
+
+    try {
+        const contato = await prisma.contato.findUnique({ where: { id }, select: { contatadoPor: true } });
+
+        if (!contato) {
+            return res.status(404).json({ status: 'erro', mensagem: 'Contato não encontrado' });
+        }
+
+        if (contato.contatadoPor !== req.usuario.usuario) {
+            return res.status(403).json({ status: 'erro', mensagem: 'Só quem registrou o contato pode apagá-lo' });
+        }
+
+        await prisma.contato.delete({ where: { id } });
+        res.json({ status: 'ok' });
+    } catch (erro) {
         if (erro.code === 'P2025') {
             return res.status(404).json({ status: 'erro', mensagem: 'Contato não encontrado' });
         }
@@ -140,4 +187,4 @@ async function resumoMotivos(req, res) {
     }
 }
 
-module.exports = { registrar, listarPorAluno, atualizar, resumoMotivos };
+module.exports = { registrar, listarPorAluno, atualizar, remover, resumoMotivos };
