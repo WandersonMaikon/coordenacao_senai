@@ -386,7 +386,20 @@
     }
 
     async function apagarContato(indice, idContato) {
-      if (!confirm('Apagar este contato do histórico? Essa ação não pode ser desfeita.')) return;
+      const confirmacao = await Swal.fire({
+        title: 'Apagar este contato?',
+        text: 'O contato sai do histórico do aluno. Essa ação não pode ser desfeita.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sim, apagar',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#dc3545',
+        cancelButtonColor: '#6c757d',
+        // Foco no "Cancelar": um Enter distraído não apaga nada.
+        focusCancel: true,
+        reverseButtons: true
+      });
+      if (!confirmacao.isConfirmed) return;
 
       const form = document.querySelector(`.formContato[data-indice="${indice}"]`);
       const statusForm = form.querySelector('.statusFormContato');
