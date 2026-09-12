@@ -398,7 +398,16 @@
       `;
     }
 
-    // status: '' = todos, 'sem_contato' = nunca contatado, ou um valor de STATUS.
+    // Ordem dos alunos na tabela, pelo status do último contato. Status fora da
+    // lista (valor antigo, gravado antes do select fixo) vai pro fim.
+    const ORDEM_STATUS = ['sem_contato', 'nunca_contato', 'sem_resposta', 'acompanhar', 'respondido', 'recuperado'];
+    function prioridadeStatus(aluno) {
+      const status = aluno.ultimoContato ? aluno.ultimoContato.status : 'sem_contato';
+      const posicao = ORDEM_STATUS.indexOf(status);
+      return posicao === -1 ? ORDEM_STATUS.length : posicao;
+    }
+
+    // status: '' = todos, 'sem_contato' = sem contato registrado, ou um valor de STATUS.
     // O filtro é aplicado aqui no client porque /alunos-risco já devolve o último
     // contato de cada aluno — não vale um parâmetro novo na API só pra isso.
     async function carregarRisco(turma, status) {
@@ -437,7 +446,12 @@
           turmas.get(chaveTurma).alunos.push({ ...aluno, indice });
         });
 
-        turmas.forEach((turma) => turma.alunos.sort((a, b) => (a.nomeAluno || '').localeCompare(b.nomeAluno || '', 'pt-BR')));
+        // Dentro de cada turma, quem mais precisa de atenção vem primeiro: sem
+        // contato nenhum, depois do mais pendente pro mais resolvido. Mesmo status
+        // desempata por nome.
+        turmas.forEach((turma) => turma.alunos.sort((a, b) =>
+          prioridadeStatus(a) - prioridadeStatus(b) ||
+          (a.nomeAluno || '').localeCompare(b.nomeAluno || '', 'pt-BR')));
 
         const accordion = document.getElementById('accordionRisco');
         accordion.innerHTML = Array.from(turmas.entries()).map(([codigo, turma], indiceTurma) => {
