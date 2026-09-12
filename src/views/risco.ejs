@@ -35,7 +35,7 @@
                 <label class="form-label" for="filtroStatus">Status do contato</label>
                 <select class="form-select" id="filtroStatus">
                   <option value="">Todos</option>
-                  <option value="sem_contato">Nunca contatado</option>
+                  <option value="sem_contato">Sem contato registrado</option>
                 </select>
               </div>
               <div class="col-auto">
@@ -115,13 +115,18 @@
       respondido: 'Respondido',
       sem_resposta: 'Sem resposta',
       acompanhar: 'Acompanhar',
-      nunca_contato: 'Nunca contato'
+      // A chave continua `nunca_contato` (é o valor já gravado no banco); só o
+      // rótulo mudou.
+      nunca_contato: 'Nunca contatado',
+      recuperado: 'Recuperado'
     };
 
     // Cor do badge de último contato por status. A escala vai do resolvido pro
-    // pendente: verde = respondeu, azul = em acompanhamento, amarelo = tentou e
-    // não voltou, vermelho = não se conseguiu contato.
+    // pendente: azul-escuro = aluno recuperado (voltou a vir), verde = respondeu,
+    // azul = em acompanhamento, amarelo = tentou e não voltou, vermelho = não se
+    // conseguiu contato.
     const COR_STATUS = {
+      recuperado: 'primary',
       respondido: 'success',
       acompanhar: 'info',
       sem_resposta: 'warning',

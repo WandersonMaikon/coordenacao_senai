@@ -147,7 +147,7 @@ secreto — os dados é que são, e esses vêm pela API protegida.
   não são preenchidos por nenhum código.
 - **`Contato`** (`contatos`) — histórico de contato com o aluno: `canal`
   (whatsapp/ligacao/presencial), `status`
-  (respondido/sem_resposta/acompanhar/nunca_contato), `motivo`
+  (respondido/sem_resposta/acompanhar/nunca_contato/recuperado), `motivo`
   (transporte/trabalho/saude/financeiro/desmotivacao_curso/problema_familiar/outro) e
   `observacao`. `contatadoPor` vem do usuário do token, não é digitado. O `motivo` é o que
   permite medir *por que* os alunos estão evadindo, e não só *quantos* faltaram.
