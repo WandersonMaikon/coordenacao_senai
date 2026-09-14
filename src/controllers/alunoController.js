@@ -180,7 +180,7 @@ async function listarEmRisco(req, res) {
 
         const codigosTurma = [...new Set(resultado.map((item) => item.codigoTurma).filter(Boolean))];
 
-        const [alunos, contatos, turmasImportadas] = await Promise.all([
+        const [alunos, contatos, alunosPorTurma] = await Promise.all([
             prisma.aluno.findMany({
                 where: { matricula: { in: matriculas } },
                 select: { matricula: true, telefone: true }
@@ -191,21 +191,30 @@ async function listarEmRisco(req, res) {
                 where: { matricula: { in: matriculas } },
                 orderBy: { criadoEm: 'desc' }
             }),
-            // Turma "importada" = pelo menos um aluno dela (qualquer um que já teve
-            // chamada lançada, não só os em risco) veio da planilha da secretaria.
-            // Telefone/situação só são gravados pela importação — o upsert de
-            // POST /contatos cria o aluno só com nome, então não conta como importado.
+            // Todos os alunos (matrícula) de cada turma, pelos lançamentos — não só os
+            // em risco — com telefone/situação do cadastro. Esses dois campos só são
+            // gravados pela importação da planilha; o upsert de POST /contatos cria o
+            // aluno só com nome, então não conta como importado.
             prisma.lancamento.findMany({
-                where: {
-                    codigoTurma: { in: codigosTurma },
-                    aluno: { is: { OR: [{ telefone: { not: null } }, { situacao: { not: null } }] } }
-                },
-                select: { codigoTurma: true },
-                distinct: ['codigoTurma']
+                where: { codigoTurma: { in: codigosTurma } },
+                select: { codigoTurma: true, matricula: true, aluno: { select: { telefone: true, situacao: true } } },
+                distinct: ['codigoTurma', 'matricula']
             })
         ]);
 
-        const codigosImportados = new Set(turmasImportadas.map((item) => item.codigoTurma));
+        // Turma "importada" = a maioria dos alunos dela veio da planilha. Não basta
+        // um aluno só: a matrícula é do aluno, não da turma, então quem também
+        // estuda numa turma já importada faria a turma dele parecer importada.
+        const contagemPorTurma = new Map();
+        for (const { codigoTurma, aluno } of alunosPorTurma) {
+            const contagem = contagemPorTurma.get(codigoTurma) || { total: 0, importados: 0 };
+            contagem.total++;
+            if (aluno && (aluno.telefone || aluno.situacao)) contagem.importados++;
+            contagemPorTurma.set(codigoTurma, contagem);
+        }
+        const codigosImportados = new Set(
+            [...contagemPorTurma].filter(([, c]) => c.importados * 2 >= c.total).map(([codigo]) => codigo)
+        );
 
         const telefonePorMatricula = new Map(alunos.map((aluno) => [aluno.matricula, aluno.telefone]));
         const ultimoContatoPorMatricula = new Map();
