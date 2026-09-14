@@ -134,7 +134,7 @@
                   </div>
                 </div>
                 <div class="card-footer border-0">
-                  <span id="rodapeRecuperados">Sumiram, voltaram e continuam vindo</span>
+                  <span>Marcados como "Recuperado" pela coordenação</span>
                 </div>
               </div>
             </div>
@@ -438,13 +438,6 @@
         // precisa estar ao alcance de quem pergunta "risco a partir de quando?".
         document.getElementById('tituloRisco').title =
           `${resumo.criterioRisco}+ dias de aula seguidos com falta, sem nenhuma presença no meio`;
-
-        // O rodapé só cita o contato quando houve algum: "0 após contato" ao lado
-        // de um número positivo daria a impressão errada de que o trabalho da
-        // coordenação não funcionou, quando pode ser que nem tenha havido contato.
-        document.getElementById('rodapeRecuperados').textContent = resumo.recuperadosAposContato > 0
-          ? `Voltaram após sumir ${resumo.criterioRecuperado}+ dias de aula — ${resumo.recuperadosAposContato} após contato da coordenação`
-          : `Voltaram após sumir ${resumo.criterioRecuperado}+ dias de aula e continuam vindo`;
 
         statusEl.classList.add('d-none');
         document.getElementById('conteudoPainel').classList.remove('d-none');
