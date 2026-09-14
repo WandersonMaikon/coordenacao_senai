@@ -144,6 +144,50 @@
             <div class="col-12">
               <div class="card">
                 <div class="card-body">
+                  <h5 class="mb-1">Motivos das faltas</h5>
+                  <p class="text-body-secondary mb-4" id="subtituloMotivos">
+                    A partir dos contatos registrados pela coordenação na tela de Alunos em risco
+                  </p>
+
+                  <div id="semMotivos" class="alert alert-info d-none mb-0">
+                    Nenhum contato com motivo registrado ainda. O motivo é preenchido ao registrar
+                    um contato em <a href="/risco">Alunos em risco</a> — é ele que responde
+                    <em>por que</em> os alunos estão faltando, não só quantos faltaram.
+                  </div>
+
+                  <div id="conteudoMotivos" class="row g-4 align-items-center">
+                    <div class="col-lg-5">
+                      <!-- Altura fixa: sem isso o Chart.js cresce a cada redimensionamento -->
+                      <div style="position: relative; height: 280px;">
+                        <canvas id="graficoMotivos"></canvas>
+                      </div>
+                    </div>
+                    <div class="col-lg-7">
+                      <!-- A legenda em tabela é a leitura acessível do gráfico: quem não
+                           distingue as cores (ou imprime em preto e branco) lê os números. -->
+                      <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                          <thead>
+                            <tr>
+                              <th>Motivo</th>
+                              <th class="text-end">Contatos</th>
+                              <th class="text-end">%</th>
+                            </tr>
+                          </thead>
+                          <tbody id="tabelaMotivos"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row mt-4">
+            <div class="col-12">
+              <div class="card">
+                <div class="card-body">
                   <h5 class="mb-1">Andamento dos contatos</h5>
                   <p class="text-body-secondary mb-3" id="subtituloContatos">
                     Situação de quem precisa de atenção agora: alunos em risco e recuperados em acompanhamento
@@ -184,50 +228,6 @@
                       </thead>
                       <tbody id="tabelaTurmas"></tbody>
                     </table>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="row mt-4">
-            <div class="col-12">
-              <div class="card">
-                <div class="card-body">
-                  <h5 class="mb-1">Motivos das faltas</h5>
-                  <p class="text-body-secondary mb-4" id="subtituloMotivos">
-                    A partir dos contatos registrados pela coordenação na tela de Alunos em risco
-                  </p>
-
-                  <div id="semMotivos" class="alert alert-info d-none mb-0">
-                    Nenhum contato com motivo registrado ainda. O motivo é preenchido ao registrar
-                    um contato em <a href="/risco">Alunos em risco</a> — é ele que responde
-                    <em>por que</em> os alunos estão faltando, não só quantos faltaram.
-                  </div>
-
-                  <div id="conteudoMotivos" class="row g-4 align-items-center">
-                    <div class="col-lg-5">
-                      <!-- Altura fixa: sem isso o Chart.js cresce a cada redimensionamento -->
-                      <div style="position: relative; height: 280px;">
-                        <canvas id="graficoMotivos"></canvas>
-                      </div>
-                    </div>
-                    <div class="col-lg-7">
-                      <!-- A legenda em tabela é a leitura acessível do gráfico: quem não
-                           distingue as cores (ou imprime em preto e branco) lê os números. -->
-                      <div class="table-responsive">
-                        <table class="table table-sm align-middle mb-0">
-                          <thead>
-                            <tr>
-                              <th>Motivo</th>
-                              <th class="text-end">Contatos</th>
-                              <th class="text-end">%</th>
-                            </tr>
-                          </thead>
-                          <tbody id="tabelaMotivos"></tbody>
-                        </table>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
