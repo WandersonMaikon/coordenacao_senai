@@ -675,6 +675,11 @@
         else form.reset();
 
         statusForm.textContent = mensagemOk;
+        // Marcado como recuperado, o aluno sai desta tela e vai pro acompanhamento
+        // da /recuperado — só some da lista no próximo carregamento, então avisa.
+        if (corpo.status === 'recuperado') {
+          statusForm.innerHTML = `${mensagemOk} O aluno sai desta lista e passa a ser acompanhado em <a href="/recuperado">Recuperados</a>.`;
+        }
 
         // carregarHistorico já atualiza o badge da linha com o contato mais
         // recente — inclusive quando o editado não foi o último.

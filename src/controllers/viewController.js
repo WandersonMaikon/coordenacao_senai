@@ -14,6 +14,10 @@ function paginaRisco(req, res) {
     res.render('risco');
 }
 
+function paginaRecuperado(req, res) {
+    res.render('recuperado');
+}
+
 function paginaImportarTelefones(req, res) {
     res.render('importar-telefones');
 }
@@ -22,4 +26,4 @@ function paginaUsuarios(req, res) {
     res.render('usuarios');
 }
 
-module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaImportarTelefones, paginaUsuarios };
+module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaRecuperado, paginaImportarTelefones, paginaUsuarios };

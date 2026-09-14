@@ -10,6 +10,22 @@ const prisma = require('../config/prisma');
 // turma: a régua é "dia de aula lançado", não intervalo de calendário.
 const DIAS_AULA_CONSECUTIVOS_RISCO = 2;
 
+// Quantos dias de aula o aluno marcado como "recuperado" fica em acompanhamento
+// na tela /recuperado antes de sair dela. Conta dias de aula lançados pelos
+// professores DEPOIS da marcação (mesma régua do risco: dia de aula, não
+// calendário). Enquanto está em acompanhamento ele não aparece na /risco, mesmo
+// que falte — a falta vira um alerta na /recuperado.
+const DIAS_AULA_ACOMPANHAMENTO_RECUPERADO = 4;
+
+// Só entram no acompanhamento as turmas em que o aluno teve aula nesse intervalo
+// antes da marcação — sem isso, uma turma antiga dele (semestre passado) nunca
+// receberia lançamento novo e ficaria "0 de 4" pra sempre na tela.
+const DIAS_TURMA_RECENTE = 30;
+
+// A escola é em Ji-Paraná (UTC-4) e o container roda em UTC: um contato marcado
+// às 21h viraria "dia seguinte" e a aula daquela noite ficaria de fora.
+const FUSO_ESCOLA = 'America/Porto_Velho';
+
 // Valores da coluna "Situação" da planilha da secretaria que contam como aluno
 // ativo no painel. A comparação ignora acento e maiúscula porque a planilha não
 // é consistente. Se a secretaria passar a usar outro termo, é só acrescentar
@@ -165,12 +181,133 @@ async function listarMatriculasRecuperadas() {
     return recuperadas;
 }
 
+// "dd/mm/aaaa" do dia em que o contato foi registrado, no fuso da escola — o
+// mesmo formato de `dataAula`, pra dar pra comparar com converterDataAula.
+function diaNoFusoDaEscola(data) {
+    return data.toLocaleDateString('pt-BR', { timeZone: FUSO_ESCOLA, day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+// Alunos marcados como recuperados que ainda estão no período de acompanhamento,
+// uma linha por (aluno, turma). Recuperado = último contato com status
+// "recuperado" (mesma regra de listarMatriculasRecuperadas). Um dia de aula conta
+// no acompanhamento quando é do dia da marcação em diante E o lançamento foi
+// criado depois da marcação — a segunda condição tira a chamada do próprio dia
+// que já tinha sido lançada antes (normalmente a falta que motivou o contato).
+async function calcularRecuperadosEmAcompanhamento() {
+    const contatos = await prisma.contato.findMany({ orderBy: { criadoEm: 'desc' } });
+
+    const marcacaoPorMatricula = new Map();
+    const vistos = new Set();
+    for (const contato of contatos) {
+        if (vistos.has(contato.matricula)) continue;
+        vistos.add(contato.matricula);
+        if (contato.status === 'recuperado') marcacaoPorMatricula.set(contato.matricula, contato);
+    }
+    if (marcacaoPorMatricula.size === 0) return [];
+
+    const lancamentos = await prisma.lancamento.findMany({
+        where: { matricula: { in: [...marcacaoPorMatricula.keys()] } },
+        select: { matricula: true, nomeAluno: true, codigoTurma: true, nomeTurma: true, dataAula: true, uc: true, qtdFaltas: true, criadoEm: true }
+    });
+
+    const grupos = new Map();
+    for (const item of lancamentos) {
+        const chave = chaveAlunoTurma(item);
+        if (!grupos.has(chave)) grupos.set(chave, []);
+        grupos.get(chave).push(item);
+    }
+
+    const resultado = [];
+    for (const registros of grupos.values()) {
+        const { matricula } = registros[0];
+        const marcacao = marcacaoPorMatricula.get(matricula);
+        const inicio = converterDataAula(diaNoFusoDaEscola(marcacao.criadoEm));
+
+        const limiteTurmaRecente = inicio - DIAS_TURMA_RECENTE * 24 * 60 * 60 * 1000;
+        if (!registros.some((item) => converterDataAula(item.dataAula) >= limiteTurmaRecente)) continue;
+
+        // Agrega por dia como no risco: presença em qualquer UC = o aluno veio.
+        const porDia = new Map();
+        for (const item of registros) {
+            if (converterDataAula(item.dataAula) < inicio || item.criadoEm <= marcacao.criadoEm) continue;
+            const dia = item.dataAula || '';
+            if (!porDia.has(dia)) porDia.set(dia, { dataAula: dia, faltas: 0, tevePresenca: false, ucs: [] });
+            const registroDoDia = porDia.get(dia);
+            const faltas = item.qtdFaltas || 0;
+            registroDoDia.faltas += faltas;
+            if (faltas === 0) registroDoDia.tevePresenca = true;
+            else registroDoDia.ucs.push(item.uc || '');
+        }
+
+        const dias = [...porDia.values()].sort((a, b) => converterDataAula(a.dataAula) - converterDataAula(b.dataAula));
+        if (dias.length >= DIAS_AULA_ACOMPANHAMENTO_RECUPERADO) continue;
+
+        const diasComFalta = dias
+            .filter((dia) => !dia.tevePresenca && dia.faltas > 0)
+            .map(({ dataAula, faltas, ucs }) => ({ dataAula, faltas, ucs }));
+
+        const ultimo = registros.reduce((a, b) => (converterDataAula(b.dataAula) > converterDataAula(a.dataAula) ? b : a));
+        resultado.push({
+            matricula,
+            nomeAluno: ultimo.nomeAluno,
+            codigoTurma: ultimo.codigoTurma,
+            nomeTurma: ultimo.nomeTurma,
+            recuperadoEm: marcacao.criadoEm,
+            recuperadoPor: marcacao.contatadoPor,
+            observacao: marcacao.observacao,
+            diasAcompanhados: dias.length,
+            diasComFalta
+        });
+    }
+
+    return resultado;
+}
+
+function chaveAlunoTurma(item) {
+    return `${item.matricula}||${item.codigoTurma || ''}`;
+}
+
+// Lista de risco sem quem está em acompanhamento na /recuperado — o aluno sai de
+// uma tela e vai pra outra. Usada pela /risco e pelo painel, pros dois números
+// baterem.
+async function calcularAlunosEmRiscoSemRecuperados() {
+    const [risco, recuperados] = await Promise.all([calcularAlunosEmRisco(), calcularRecuperadosEmAcompanhamento()]);
+    const emAcompanhamento = new Set(recuperados.map(chaveAlunoTurma));
+    return { ...risco, emRisco: risco.emRisco.filter((item) => !emAcompanhamento.has(chaveAlunoTurma(item))) };
+}
+
+// GET /alunos-recuperados — tela /recuperado. Quem faltou durante o
+// acompanhamento vem primeiro: é quem precisa de atenção de novo.
+async function listarRecuperados(req, res) {
+    try {
+        const { turma } = req.query;
+        const recuperados = await calcularRecuperadosEmAcompanhamento();
+        const resultado = turma ? recuperados.filter((item) => item.codigoTurma === turma) : recuperados;
+
+        const alunos = await prisma.aluno.findMany({
+            where: { matricula: { in: resultado.map((item) => item.matricula) } },
+            select: { matricula: true, telefone: true }
+        });
+        const telefonePorMatricula = new Map(alunos.map((aluno) => [aluno.matricula, aluno.telefone]));
+
+        const dados = resultado
+            .map((item) => ({ ...item, telefone: telefonePorMatricula.get(item.matricula) || null }))
+            .sort((a, b) =>
+                b.diasComFalta.length - a.diasComFalta.length ||
+                (a.nomeAluno || '').localeCompare(b.nomeAluno || '', 'pt-BR'));
+
+        res.json({ status: 'ok', total: dados.length, diasAcompanhamento: DIAS_AULA_ACOMPANHAMENTO_RECUPERADO, dados });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
 // Enriquece a lista de risco com telefone, histórico de contato e a última aula
 // da turma — o que a tela /risco precisa pra decidir quem abordar e como.
 async function listarEmRisco(req, res) {
     try {
         const { turma } = req.query;
-        const { emRisco, ultimaAulaPorTurma } = await calcularAlunosEmRisco();
+        const { emRisco, ultimaAulaPorTurma } = await calcularAlunosEmRiscoSemRecuperados();
 
         const resultado = turma
             ? emRisco.filter((item) => item.codigoTurma === turma)
@@ -355,7 +492,7 @@ async function resumoAlunos(req, res) {
 
         const [todosAlunos, { emRisco, matriculasPorTurma }, matriculasRecuperadas] = await Promise.all([
             prisma.aluno.findMany({ select: { matricula: true, telefone: true, situacao: true, atualizadoEm: true } }),
-            calcularAlunosEmRisco(),
+            calcularAlunosEmRiscoSemRecuperados(),
             listarMatriculasRecuperadas()
         ]);
 
@@ -405,9 +542,9 @@ async function resumoAlunos(req, res) {
         const ativos = matriculados - emRiscoMatriculados;
 
         // Recuperado = último contato marcado como "recuperado" pela coordenação
-        // (ver listarMatriculasRecuperadas). Não desconta quem está em risco: um
-        // aluno marcado como recuperado que ainda não teve presença lançada conta
-        // nos dois cards até a próxima chamada.
+        // (ver listarMatriculasRecuperadas). Quem está no acompanhamento da
+        // /recuperado já sai do "em risco" (calcularAlunosEmRiscoSemRecuperados);
+        // depois do acompanhamento, se voltou a faltar, pode contar nos dois.
         const recuperados = matriculasDaTurma
             ? [...matriculasRecuperadas].filter((matricula) => matriculasDaTurma.has(matricula)).length
             : matriculasRecuperadas.size;
@@ -433,4 +570,4 @@ async function resumoAlunos(req, res) {
     }
 }
 
-module.exports = { listarEmRisco, importarTelefones, resumoAlunos, DIAS_AULA_CONSECUTIVOS_RISCO };
+module.exports = { listarEmRisco, listarRecuperados, importarTelefones, resumoAlunos, DIAS_AULA_CONSECUTIVOS_RISCO };

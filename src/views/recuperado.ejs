@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <%- include('partials/head', { titulo: 'Recuperados' }) %>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+</head>
+<body>
+  <div class="page-layout">
+
+    <%- include('partials/header') %>
+
+    <%- include('partials/sidebar', { paginaAtual: 'recuperado' }) %>
+
+    <main class="app-wrapper">
+      <div class="container-fluid">
+
+        <div class="app-page-head d-flex flex-wrap gap-3 align-items-center justify-content-between">
+          <div class="clearfix">
+            <h1 class="app-page-title">Recuperados</h1>
+            <span id="subtituloPagina">Alunos marcados como "Recuperado" na tela de Alunos em risco, em acompanhamento nas próximas aulas</span>
+          </div>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-body">
+            <form id="formFiltro" class="row g-3 align-items-end">
+              <div class="col-auto">
+                <label class="form-label" for="filtroTurma">Turma</label>
+                <select class="form-select" id="filtroTurma">
+                  <option value="">Todas</option>
+                </select>
+              </div>
+              <div class="col-auto">
+                <button type="submit" class="btn btn-primary">
+                  <i class="bi bi-filter me-1"></i> Filtrar
+                </button>
+              </div>
+              <div class="col-auto">
+                <button type="button" class="btn btn-outline-light" id="btnLimparFiltro">
+                  Limpar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div id="statusCarregamento" class="alert alert-info">Carregando dados...</div>
+
+        <div class="card d-none" id="cardResultado">
+          <div class="card-header d-flex align-items-center justify-content-between border-0 pb-0">
+            <h6 class="card-title mb-0">Em acompanhamento <span class="text-body fw-normal" id="totalResultado"></span></h6>
+          </div>
+          <div class="card-body p-0 pt-3">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Aluno</th>
+                    <th>Turma</th>
+                    <th title="Quando e por quem o aluno foi marcado como recuperado">Recuperado em</th>
+                    <th title="Dias de aula lançados pelos professores desde que o aluno foi marcado como recuperado">Acompanhamento</th>
+                    <th>Faltas desde que voltou</th>
+                  </tr>
+                </thead>
+                <tbody id="tabelaRecuperados"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <%- include('partials/footer') %>
+
+  </div>
+
+  <script src="/js/turmas.js"></script>
+  <script>
+    const token = localStorage.getItem('coor360_token');
+
+    if (!token) {
+      window.location.href = '/login';
+    }
+
+    function sair() {
+      localStorage.removeItem('coor360_token');
+      window.location.href = '/login';
+    }
+    document.getElementById('btnSair').addEventListener('click', sair);
+    document.getElementById('btnSairMenu').addEventListener('click', sair);
+
+    const html = document.documentElement;
+
+    document.getElementById('btnToggleMenu').addEventListener('click', function () {
+      this.classList.toggle('active');
+      if (window.matchMedia('(max-width: 1199.98px)').matches) {
+        document.getElementById('menubar').classList.toggle('open');
+      } else if (html.getAttribute('data-app-sidebar') === 'mini') {
+        html.removeAttribute('data-app-sidebar');
+      } else {
+        html.setAttribute('data-app-sidebar', 'mini');
+      }
+    });
+
+    const btnTema = document.getElementById('btnTema');
+    function aplicarTema(tema) {
+      html.setAttribute('data-bs-theme', tema);
+      btnTema.classList.toggle('active', tema === 'dark');
+    }
+    aplicarTema(localStorage.getItem('coor360_tema') || 'light');
+    btnTema.addEventListener('click', () => {
+      const atual = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+      aplicarTema(atual);
+      localStorage.setItem('coor360_tema', atual);
+    });
+
+    // Nome de aluno, turma, UC e observação entram via innerHTML.
+    function escaparHtml(texto) {
+      return String(texto ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+    }
+
+    // Formata "69993408643" como "(69) 99340-8643"
+    function formatarTelefone(telefone) {
+      if (telefone.length !== 11) return telefone;
+      return `(${telefone.slice(0, 2)}) ${telefone.slice(2, 7)}-${telefone.slice(7)}`;
+    }
+
+    function formatarData(dataIso) {
+      return new Date(dataIso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
+
+    function formatarDataHora(dataIso) {
+      return new Date(dataIso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function nomeCurto(nomeCompleto) {
+      if (!nomeCompleto) return '—';
+      return nomeCompleto.trim().split(/\s+/).slice(0, 2).join(' ');
+    }
+
+    async function chamarApi(caminho) {
+      const resposta = await fetch(caminho, { headers: { Authorization: 'Bearer ' + token } });
+      if (resposta.status === 401) {
+        localStorage.removeItem('coor360_token');
+        window.location.href = '/login';
+        throw new Error('Sessão expirada');
+      }
+      return resposta.json();
+    }
+
+    // "2 de 4 aulas" com barra. O aluno sai da tela quando completa a meta.
+    function colunaAcompanhamento(aluno, meta) {
+      const percentual = Math.round((aluno.diasAcompanhados / meta) * 100);
+      const cor = aluno.diasComFalta.length ? 'danger' : 'success';
+      return `
+        <div class="small mb-1">${aluno.diasAcompanhados} de ${meta} aulas</div>
+        <div class="progress" style="height: 6px; min-width: 6rem;" title="${aluno.diasAcompanhados === 0 ? 'Nenhuma chamada lançada desde a marcação' : `${aluno.diasAcompanhados} dia(s) de aula lançado(s) desde a marcação`}">
+          <div class="progress-bar bg-${cor}" style="width: ${percentual}%"></div>
+        </div>
+      `;
+    }
+
+    // A falta durante o acompanhamento é o alerta da tela: o resgate pode não
+    // ter durado. Mostra cada dia com as UCs, pra ver se foi o dia todo ou uma aula.
+    function colunaFaltas(aluno) {
+      if (aluno.diasAcompanhados === 0) {
+        return '<span class="small text-body-secondary">Aguardando a próxima chamada</span>';
+      }
+      if (aluno.diasComFalta.length === 0) {
+        return '<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle"><i class="bi bi-check-circle-fill me-1"></i>Sem faltas</span>';
+      }
+      const dias = aluno.diasComFalta.map((dia) => {
+        const ucs = [...new Set(dia.ucs.filter(Boolean))].join(', ');
+        return `<div class="small text-danger-emphasis">${escaparHtml(dia.dataAula)}${ucs ? ` · ${escaparHtml(ucs)}` : ''} (${dia.faltas} aula(s))</div>`;
+      }).join('');
+      return `
+        <span class="badge text-bg-danger mb-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltou ${aluno.diasComFalta.length} ${aluno.diasComFalta.length === 1 ? 'dia' : 'dias'} depois de recuperado</span>
+        ${dias}
+      `;
+    }
+
+    function linhaHtml(aluno, meta) {
+      const faltou = aluno.diasComFalta.length > 0;
+      return `
+        <tr class="${faltou ? 'table-danger' : ''}">
+          <td>
+            ${escaparHtml(aluno.nomeAluno || '—')}
+            ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
+            <div class="small text-body-secondary">${escaparHtml(aluno.matricula)}</div>
+          </td>
+          <td class="small">${escaparHtml(nomeTurmaLimpo(aluno.nomeTurma) || aluno.codigoTurma || '—')}<div class="text-body-secondary">${escaparHtml(aluno.codigoTurma || '')}</div></td>
+          <td class="small">
+            <span title="${formatarDataHora(aluno.recuperadoEm)}">${formatarData(aluno.recuperadoEm)}</span>
+            <div class="text-body-secondary">por ${escaparHtml(nomeCurto(aluno.recuperadoPor))}</div>
+            ${aluno.observacao ? `<div class="text-body-secondary fst-italic text-truncate" style="max-width: 16rem;" title="${escaparHtml(aluno.observacao)}">"${escaparHtml(aluno.observacao)}"</div>` : ''}
+          </td>
+          <td>${colunaAcompanhamento(aluno, meta)}</td>
+          <td>${colunaFaltas(aluno)}</td>
+        </tr>
+      `;
+    }
+
+    async function carregarRecuperados(turma) {
+      const statusEl = document.getElementById('statusCarregamento');
+      const cardResultado = document.getElementById('cardResultado');
+      statusEl.className = 'alert alert-info';
+      statusEl.textContent = 'Carregando dados...';
+      statusEl.classList.remove('d-none');
+      cardResultado.classList.add('d-none');
+
+      try {
+        const resposta = await chamarApi(turma ? `/alunos-recuperados?turma=${encodeURIComponent(turma)}` : '/alunos-recuperados');
+        const meta = resposta.diasAcompanhamento;
+
+        document.getElementById('subtituloPagina').textContent =
+          `Alunos marcados como "Recuperado" na tela de Alunos em risco — ficam aqui por ${meta} aulas lançadas depois da marcação`;
+
+        if (resposta.dados.length === 0) {
+          statusEl.className = 'alert alert-success';
+          statusEl.textContent = 'Nenhum aluno em acompanhamento no momento.';
+          return;
+        }
+
+        const comFalta = resposta.dados.filter((aluno) => aluno.diasComFalta.length > 0).length;
+        document.getElementById('totalResultado').innerHTML =
+          `(${resposta.dados.length})${comFalta ? ` <span class="badge text-bg-danger ms-2">${comFalta} faltou depois de recuperado</span>` : ''}`;
+        document.getElementById('tabelaRecuperados').innerHTML = resposta.dados.map((aluno) => linhaHtml(aluno, meta)).join('');
+
+        statusEl.classList.add('d-none');
+        cardResultado.classList.remove('d-none');
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          statusEl.className = 'alert alert-warning';
+          statusEl.textContent = 'Não foi possível carregar os alunos recuperados agora.';
+        }
+      }
+    }
+
+    document.getElementById('formFiltro').addEventListener('submit', (evento) => {
+      evento.preventDefault();
+      carregarRecuperados(document.getElementById('filtroTurma').value);
+    });
+
+    document.getElementById('btnLimparFiltro').addEventListener('click', () => {
+      document.getElementById('filtroTurma').value = '';
+      carregarRecuperados('');
+    });
+
+    preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi);
+    carregarRecuperados('');
+  </script>
+</body>
+
+</html>
