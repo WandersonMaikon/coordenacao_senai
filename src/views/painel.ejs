@@ -134,7 +134,7 @@
                   </div>
                 </div>
                 <div class="card-footer border-0">
-                  <span>Marcados como "Recuperado" pela coordenação</span>
+                  <a href="/recuperado">Marcados como "Recuperado" pela coordenação — ver alunos <i class="bi bi-arrow-right"></i></a>
                 </div>
               </div>
             </div>
@@ -423,15 +423,18 @@
           : 'Total da planilha da secretaria';
 
         // Os dois percentuais usam o total de matriculados como denominador e,
-        // juntos, fecham a conta da turma: X% vindo + Y% em risco.
+        // juntos, fecham a conta: X% vindo + Y% em risco = 100%. Por isso o risco
+        // usa só quem está em risco E na planilha (emRiscoMatriculados); o resto
+        // do "em risco" é de turma não importada e vai à parte no rodapé.
         const percentualAtivos = resumo.matriculados > 0 ? Math.round((resumo.ativos / resumo.matriculados) * 100) : null;
         document.getElementById('rodapeAtivos').textContent = percentualAtivos !== null
           ? `Vindo às aulas — ${percentualAtivos}% dos matriculados`
           : 'Vindo às aulas';
 
-        const percentual = resumo.matriculados > 0 ? Math.round((resumo.emRisco / resumo.matriculados) * 100) : null;
+        const percentual = resumo.matriculados > 0 ? Math.round((resumo.emRiscoMatriculados / resumo.matriculados) * 100) : null;
+        const foraDaPlanilha = resumo.emRisco - resumo.emRiscoMatriculados;
         document.getElementById('rodapeRisco').textContent = percentual !== null
-          ? `${percentual}% dos matriculados`
+          ? `${percentual}% dos matriculados${foraDaPlanilha > 0 ? ` (+${foraDaPlanilha} de turmas não importadas)` : ''}`
           : `${resumo.criterioRisco} dias de aula seguidos sem vir`;
 
         // O critério some da tela quando vira um card só de número, mas ainda

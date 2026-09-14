@@ -560,6 +560,11 @@ async function resumoAlunos(req, res) {
                 semSituacao,
                 semTelefone,
                 emRisco: matriculasEmRisco.size,
+                // Parte do "em risco" que está na planilha. É o numerador certo pro
+                // "% dos matriculados": o emRisco inclui aluno de turma que não foi
+                // importada, e dividir isso pelos matriculados mistura duas bases
+                // (dava 142/212 = 67% quando só 71 dos 142 estão na planilha).
+                emRiscoMatriculados,
                 recuperados,
                 importadosEm,
                 criterioRisco: DIAS_AULA_CONSECUTIVOS_RISCO
