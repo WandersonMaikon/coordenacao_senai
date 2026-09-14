@@ -520,18 +520,18 @@
           const idColapso = `colapsoRiscoTurma${indiceTurma}`;
           const linhas = turma.alunos.map((aluno) => linhaAlunoHtml(aluno, aluno.indice)).join('');
 
+          // Um selo só, pra não poluir o cabeçalho: "contatados/em risco". Contato =
+          // pelo menos um registro de contato com o aluno, de qualquer status. A cor
+          // diz a situação: verde todos contatados, azul parcial, vermelho nenhum (amarelo
+          // não, que já é a cor do aviso de turma não importada).
+          const comContato = turma.alunos.filter((aluno) => aluno.ultimoContato).length;
+          const semContato = turma.alunos.length - comContato;
+          const corContato = semContato === 0 ? 'success' : comContato === 0 ? 'danger' : 'primary';
+          const selosContagem = `<span class="badge bg-${corContato}-subtle text-${corContato}-emphasis border border-${corContato}-subtle ms-2" title="${turma.alunos.length} em risco: ${comContato} com contato, ${semContato} sem contato">${comContato}/${turma.alunos.length} contatados</span>`;
+
           // Turma sem planilha da secretaria importada: sem telefone não tem link de
           // WhatsApp, e os alunos dela não entram direito no painel. O destaque é só
           // no cabeçalho — as linhas dos alunos ficam iguais.
-          // Contato = já existe pelo menos um registro de contato com o aluno, de
-          // qualquer status. O "sem contato" vermelho é o que falta a coordenação fazer.
-          const comContato = turma.alunos.filter((aluno) => aluno.ultimoContato).length;
-          const semContato = turma.alunos.length - comContato;
-          const selosContagem = `
-                  <span class="badge text-bg-danger ms-2" title="Alunos em risco nesta turma">${turma.alunos.length} em risco</span>
-                  ${comContato ? `<span class="badge text-bg-success ms-1" title="Alunos em risco que já tiveram contato registrado"><i class="bi bi-telephone-fill me-1"></i>${comContato} com contato</span>` : ''}
-                  ${semContato ? `<span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle ms-1" title="Alunos em risco sem nenhum contato registrado"><i class="bi bi-telephone-x-fill me-1"></i>${semContato} sem contato</span>` : ''}`;
-
           const avisoNaoImportada = turma.importada ? '' : `
                   <span class="badge text-bg-warning ms-2" title="Nenhum aluno desta turma veio da planilha da secretaria">
                     <i class="bi bi-exclamation-triangle-fill me-1"></i>Turma não importada
