@@ -178,7 +178,9 @@ async function listarEmRisco(req, res) {
 
         const matriculas = resultado.map((item) => item.matricula);
 
-        const [alunos, contatos] = await Promise.all([
+        const codigosTurma = [...new Set(resultado.map((item) => item.codigoTurma).filter(Boolean))];
+
+        const [alunos, contatos, turmasImportadas] = await Promise.all([
             prisma.aluno.findMany({
                 where: { matricula: { in: matriculas } },
                 select: { matricula: true, telefone: true }
@@ -188,8 +190,22 @@ async function listarEmRisco(req, res) {
             prisma.contato.findMany({
                 where: { matricula: { in: matriculas } },
                 orderBy: { criadoEm: 'desc' }
+            }),
+            // Turma "importada" = pelo menos um aluno dela (qualquer um que já teve
+            // chamada lançada, não só os em risco) veio da planilha da secretaria.
+            // Telefone/situação só são gravados pela importação — o upsert de
+            // POST /contatos cria o aluno só com nome, então não conta como importado.
+            prisma.lancamento.findMany({
+                where: {
+                    codigoTurma: { in: codigosTurma },
+                    aluno: { is: { OR: [{ telefone: { not: null } }, { situacao: { not: null } }] } }
+                },
+                select: { codigoTurma: true },
+                distinct: ['codigoTurma']
             })
         ]);
+
+        const codigosImportados = new Set(turmasImportadas.map((item) => item.codigoTurma));
 
         const telefonePorMatricula = new Map(alunos.map((aluno) => [aluno.matricula, aluno.telefone]));
         const ultimoContatoPorMatricula = new Map();
@@ -209,7 +225,8 @@ async function listarEmRisco(req, res) {
             telefone: telefonePorMatricula.get(item.matricula) || null,
             ultimoContato: ultimoContatoPorMatricula.get(item.matricula) || null,
             totalContatos: totalContatosPorMatricula.get(item.matricula) || 0,
-            ultimaAulaTurma: ultimaAulaPorTurma.get(item.codigoTurma || '') || null
+            ultimaAulaTurma: ultimaAulaPorTurma.get(item.codigoTurma || '') || null,
+            turmaImportada: codigosImportados.has(item.codigoTurma)
         }));
 
         res.json({ status: 'ok', total: dados.length, dados });
