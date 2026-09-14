@@ -523,6 +523,15 @@
           // Turma sem planilha da secretaria importada: sem telefone não tem link de
           // WhatsApp, e os alunos dela não entram direito no painel. O destaque é só
           // no cabeçalho — as linhas dos alunos ficam iguais.
+          // Contato = já existe pelo menos um registro de contato com o aluno, de
+          // qualquer status. O "sem contato" vermelho é o que falta a coordenação fazer.
+          const comContato = turma.alunos.filter((aluno) => aluno.ultimoContato).length;
+          const semContato = turma.alunos.length - comContato;
+          const selosContagem = `
+                  <span class="badge text-bg-danger ms-2" title="Alunos em risco nesta turma">${turma.alunos.length} em risco</span>
+                  ${comContato ? `<span class="badge text-bg-success ms-1" title="Alunos em risco que já tiveram contato registrado"><i class="bi bi-telephone-fill me-1"></i>${comContato} com contato</span>` : ''}
+                  ${semContato ? `<span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle ms-1" title="Alunos em risco sem nenhum contato registrado"><i class="bi bi-telephone-x-fill me-1"></i>${semContato} sem contato</span>` : ''}`;
+
           const avisoNaoImportada = turma.importada ? '' : `
                   <span class="badge text-bg-warning ms-2" title="Nenhum aluno desta turma veio da planilha da secretaria">
                     <i class="bi bi-exclamation-triangle-fill me-1"></i>Turma não importada
@@ -539,7 +548,7 @@
             <div class="accordion-item">
               <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${idColapso}" ${estiloNaoImportada}>
-                  ${turma.nome} (${codigo}) <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;">${turma.alunos.length}</span>${avisoNaoImportada}${turma.ultimaAula ? `<span class="ms-2 small text-body-secondary">última atualização: ${escaparHtml(turma.ultimaAula)}</span>` : ''}
+                  ${turma.nome} (${codigo}) ${selosContagem}${avisoNaoImportada}${turma.ultimaAula ? `<span class="ms-2 small text-body-secondary">última atualização: ${escaparHtml(turma.ultimaAula)}</span>` : ''}
                 </button>
               </h2>
               <div id="${idColapso}" class="accordion-collapse collapse" data-bs-parent="#accordionRisco">
