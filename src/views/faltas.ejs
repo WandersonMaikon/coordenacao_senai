@@ -149,16 +149,28 @@
       return dia ? `${dataAula} (${dia})` : dataAula || '—';
     }
 
-    // "Matemática (8) · Informática (4)" — a UC onde a falta se concentra diz se o
-    // problema é a escola inteira ou uma matéria só. Mostra as 2 maiores pra linha
-    // não estourar; o tooltip traz a lista completa.
-    function resumoUcs(ucs) {
-      const ordenadas = [...ucs.entries()].sort((a, b) => b[1] - a[1]);
-      if (ordenadas.length === 0) return '<span class="text-body-secondary">—</span>';
-      const texto = ordenadas.map(([uc, faltas]) => `${uc || '(sem UC)'} (${faltas})`);
-      const visivel = texto.slice(0, 2).join(' · ');
-      const resto = ordenadas.length > 2 ? ` +${ordenadas.length - 2}` : '';
-      return `<span title="${escaparHtml(texto.join(' · '))}">${escaparHtml(visivel)}${resto}</span>`;
+    // Detalhe do aluno: cada dia em que faltou (mais recente primeiro) e, dentro
+    // do dia, em qual UC. Um dia com dois professores aparece com as duas UCs —
+    // falta concentrada numa UC só aponta pra matéria/horário, não pro aluno.
+    function detalheFaltasHtml(faltas) {
+      const porDia = new Map();
+      for (const falta of faltas) {
+        if (!porDia.has(falta.dataAula)) porDia.set(falta.dataAula, []);
+        porDia.get(falta.dataAula).push(falta);
+      }
+      const dias = [...porDia.entries()]
+        .sort((a, b) => (dataAulaParaDate(b[0]) || 0) - (dataAulaParaDate(a[0]) || 0));
+
+      return `
+        <ul class="list-unstyled mb-0 small">
+          ${dias.map(([dataAula, faltasDoDia]) => `
+            <li class="d-flex flex-wrap align-items-center gap-2 py-1">
+              <span class="fw-semibold" style="min-width: 9rem;">${escaparHtml(dataComDiaSemana(dataAula))}</span>
+              ${faltasDoDia.map((falta) => `<span class="badge border text-body fw-normal">${escaparHtml(falta.uc || '(sem UC)')} · ${falta.qtd} aula(s)</span>`).join('')}
+            </li>
+          `).join('')}
+        </ul>
+      `;
     }
 
     function nomeCurto(nomeCompleto) {
@@ -219,7 +231,7 @@
             const alunos = turmas.get(chaveTurma).alunos;
             const chaveAluno = item.matricula || item.nomeAluno || '—';
             if (!alunos.has(chaveAluno)) {
-              alunos.set(chaveAluno, { nome: item.nomeAluno || '—', telefone: item.aluno?.telefone || '', totalFaltas: 0, diasComFalta: new Set(), ucs: new Map(), ultimaFalta: null });
+              alunos.set(chaveAluno, { nome: item.nomeAluno || '—', telefone: item.aluno?.telefone || '', totalFaltas: 0, diasComFalta: new Set(), faltas: [], ultimaFalta: null });
             }
             const aluno = alunos.get(chaveAluno);
             const faltasDoLancamento = item.qtdFaltas || 0;
@@ -228,10 +240,9 @@
             if (faltasDoLancamento > 0) {
               aluno.diasComFalta.add(item.dataAula || '');
 
-              // Em qual UC ele está perdendo aula. Lançamento de presença não
-              // entra: a UC só interessa aqui quando houve falta nela.
-              const uc = item.uc || '';
-              aluno.ucs.set(uc, (aluno.ucs.get(uc) || 0) + faltasDoLancamento);
+              // Cada falta com dia e UC, pro detalhe que abre ao clicar no aluno.
+              // Lançamento de presença não entra: só interessa onde houve falta.
+              aluno.faltas.push({ dataAula: item.dataAula || '', uc: item.uc || '', qtd: faltasDoLancamento });
 
               // Data da falta mais recente do período, pra separar quem faltou no
               // começo do mês e já voltou de quem faltou ontem.
@@ -254,18 +265,20 @@
                 || b.totalFaltas - a.totalFaltas
                 || a.nome.localeCompare(b.nome, 'pt-BR'));
             if (listaAlunos.length === 0) return '';
-            const linhas = listaAlunos.map((aluno) => `
-              <tr>
+            const linhas = listaAlunos.map((aluno, indiceAluno) => `
+              <tr class="linha-aluno" data-detalhe="detalheFalta${indice}-${indiceAluno}" style="cursor: pointer;" title="Clique para ver os dias e UCs das faltas">
                 <td>
+                  <i class="bi bi-chevron-right me-1 small icone-detalhe"></i>
                   ${escaparHtml(aluno.nome)}
                   ${aluno.telefone ? `<a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp — ${formatarTelefone(aluno.telefone)}"><i class="bi bi-whatsapp"></i></a>` : ''}
                 </td>
                 <td class="text-end">
                   <span class="badge bg-warning bg-opacity-10 text-warning" title="Dias de aula em que faltou, no período filtrado">${formatarDiasFalta(aluno.diasComFalta.size)}</span>
-                  <span class="ms-2 small text-body-secondary" title="Aulas perdidas no período — um dia com duas UCs tem mais aulas que um dia com uma só">${aluno.totalFaltas} aula(s)</span>
                 </td>
-                <td class="small">${resumoUcs(aluno.ucs)}</td>
                 <td class="text-end small">${dataComDiaSemana(aluno.ultimaFalta)}</td>
+              </tr>
+              <tr id="detalheFalta${indice}-${indiceAluno}" class="d-none">
+                <td colspan="3" class="bg-body-tertiary ps-5">${detalheFaltasHtml(aluno.faltas)}</td>
               </tr>
             `).join('');
 
@@ -287,8 +300,7 @@
                         <thead>
                           <tr>
                             <th>Aluno</th>
-                            <th class="text-end">Dias com falta / aulas perdidas</th>
-                            <th title="Em quais UCs o aluno está perdendo aula — falta concentrada numa UC só aponta pra matéria, horário ou professor, não pro aluno">UC das faltas</th>
+                            <th class="text-end">Dias com falta</th>
                             <th class="text-end" title="Falta mais recente do aluno no período filtrado">Última falta</th>
                           </tr>
                         </thead>
@@ -330,6 +342,19 @@
     // O projeto não carrega o bootstrap.bundle.js (só o CSS), então o toggle
     // do accordion precisa ser feito manualmente aqui.
     document.getElementById('accordionFaltas').addEventListener('click', (evento) => {
+      // Clique na linha do aluno abre/fecha o detalhe dos dias e UCs. O link do
+      // WhatsApp fica de fora, senão abrir a conversa também mexeria no detalhe.
+      const linhaAluno = evento.target.closest('tr.linha-aluno');
+      if (linhaAluno && !evento.target.closest('a')) {
+        const detalhe = document.getElementById(linhaAluno.dataset.detalhe);
+        const abrir = detalhe.classList.contains('d-none');
+        detalhe.classList.toggle('d-none', !abrir);
+        const icone = linhaAluno.querySelector('.icone-detalhe');
+        icone.classList.toggle('bi-chevron-right', !abrir);
+        icone.classList.toggle('bi-chevron-down', abrir);
+        return;
+      }
+
       const botao = evento.target.closest('.accordion-button');
       if (!botao) return;
 
