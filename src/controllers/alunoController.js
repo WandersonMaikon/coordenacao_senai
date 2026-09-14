@@ -273,7 +273,7 @@ function chaveAlunoTurma(item) {
 async function calcularAlunosEmRiscoSemRecuperados() {
     const [risco, recuperados] = await Promise.all([calcularAlunosEmRisco(), calcularRecuperadosEmAcompanhamento()]);
     const emAcompanhamento = new Set(recuperados.map(chaveAlunoTurma));
-    return { ...risco, emRisco: risco.emRisco.filter((item) => !emAcompanhamento.has(chaveAlunoTurma(item))) };
+    return { ...risco, recuperados, emRisco: risco.emRisco.filter((item) => !emAcompanhamento.has(chaveAlunoTurma(item))) };
 }
 
 // GET /alunos-recuperados — tela /recuperado. Quem faltou durante o
@@ -302,6 +302,31 @@ async function listarRecuperados(req, res) {
     }
 }
 
+// Códigos de turma (entre os informados) cuja planilha da secretaria já foi
+// importada. Turma "importada" = a maioria dos alunos dela, pelos lançamentos,
+// tem telefone ou situação no cadastro — campos que só a importação grava (o
+// upsert de POST /contatos cria o aluno só com nome). Não basta um aluno só: a
+// matrícula é do aluno, não da turma, então quem também estuda numa turma já
+// importada faria a turma dele parecer importada.
+async function listarTurmasImportadas(codigosTurma) {
+    const alunosPorTurma = await prisma.lancamento.findMany({
+        where: { codigoTurma: { in: codigosTurma } },
+        select: { codigoTurma: true, matricula: true, aluno: { select: { telefone: true, situacao: true } } },
+        distinct: ['codigoTurma', 'matricula']
+    });
+
+    const contagemPorTurma = new Map();
+    for (const { codigoTurma, aluno } of alunosPorTurma) {
+        const contagem = contagemPorTurma.get(codigoTurma) || { total: 0, importados: 0 };
+        contagem.total++;
+        if (aluno && (aluno.telefone || aluno.situacao)) contagem.importados++;
+        contagemPorTurma.set(codigoTurma, contagem);
+    }
+    return new Set(
+        [...contagemPorTurma].filter(([, c]) => c.importados * 2 >= c.total).map(([codigo]) => codigo)
+    );
+}
+
 // Enriquece a lista de risco com telefone, histórico de contato e a última aula
 // da turma — o que a tela /risco precisa pra decidir quem abordar e como.
 async function listarEmRisco(req, res) {
@@ -317,7 +342,7 @@ async function listarEmRisco(req, res) {
 
         const codigosTurma = [...new Set(resultado.map((item) => item.codigoTurma).filter(Boolean))];
 
-        const [alunos, contatos, alunosPorTurma] = await Promise.all([
+        const [alunos, contatos, codigosImportados] = await Promise.all([
             prisma.aluno.findMany({
                 where: { matricula: { in: matriculas } },
                 select: { matricula: true, telefone: true }
@@ -328,30 +353,8 @@ async function listarEmRisco(req, res) {
                 where: { matricula: { in: matriculas } },
                 orderBy: { criadoEm: 'desc' }
             }),
-            // Todos os alunos (matrícula) de cada turma, pelos lançamentos — não só os
-            // em risco — com telefone/situação do cadastro. Esses dois campos só são
-            // gravados pela importação da planilha; o upsert de POST /contatos cria o
-            // aluno só com nome, então não conta como importado.
-            prisma.lancamento.findMany({
-                where: { codigoTurma: { in: codigosTurma } },
-                select: { codigoTurma: true, matricula: true, aluno: { select: { telefone: true, situacao: true } } },
-                distinct: ['codigoTurma', 'matricula']
-            })
+            listarTurmasImportadas(codigosTurma)
         ]);
-
-        // Turma "importada" = a maioria dos alunos dela veio da planilha. Não basta
-        // um aluno só: a matrícula é do aluno, não da turma, então quem também
-        // estuda numa turma já importada faria a turma dele parecer importada.
-        const contagemPorTurma = new Map();
-        for (const { codigoTurma, aluno } of alunosPorTurma) {
-            const contagem = contagemPorTurma.get(codigoTurma) || { total: 0, importados: 0 };
-            contagem.total++;
-            if (aluno && (aluno.telefone || aluno.situacao)) contagem.importados++;
-            contagemPorTurma.set(codigoTurma, contagem);
-        }
-        const codigosImportados = new Set(
-            [...contagemPorTurma].filter(([, c]) => c.importados * 2 >= c.total).map(([codigo]) => codigo)
-        );
 
         const telefonePorMatricula = new Map(alunos.map((aluno) => [aluno.matricula, aluno.telefone]));
         const ultimoContatoPorMatricula = new Map();
@@ -482,6 +485,116 @@ async function importarTelefones(req, res) {
     }
 }
 
+// Turma sem chamada lançada há mais que isso (dias corridos) ganha alerta no
+// painel. O sistema inteiro depende do professor lançar com o userscript: turma
+// sem lançamento some do "em risco" sem ninguém perceber — aluno que evadiu
+// simplesmente não aparece.
+const DIAS_SEM_CHAMADA_ALERTA = 7;
+
+// Turma sem nenhum lançamento há mais que isso sai do ranking do painel: é turma
+// encerrada (semestre passado), não turma parada — senão ficaria pra sempre com
+// alerta de "sem chamada" e empurraria as turmas de verdade pra baixo.
+const DIAS_TURMA_ENCERRADA = 60;
+
+// Status de contato que indicam que a coordenação conseguiu falar com o aluno
+// (ou com a família). "nunca_contato" é "tentou e não conseguiu", não "nunca
+// tentou" — o rótulo na tela é "Nunca contatado".
+const STATUS_COM_RETORNO = ['respondido', 'acompanhar'];
+
+function diasDesde(dataAula) {
+    if (!dataAula) return null;
+    const hoje = converterDataAula(diaNoFusoDaEscola(new Date()));
+    return Math.round((hoje - converterDataAula(dataAula)) / (24 * 60 * 60 * 1000));
+}
+
+// GET /alunos/atencao — dois blocos do painel:
+// - `contatos`: em que pé está o trabalho da coordenação com quem precisa de
+//   atenção agora (em risco + em acompanhamento na /recuperado). As fatias são
+//   excludentes e somam o total, pra caberem numa barra só.
+// - `turmas`: uma linha por turma com chamada lançada — onde agir primeiro, e
+//   quais turmas estão sem chamada recente (ponto cego do sistema).
+async function atencaoPainel(req, res) {
+    try {
+        const { turma } = req.query;
+        const { emRisco, recuperados, ultimaAulaPorTurma, matriculasPorTurma } = await calcularAlunosEmRiscoSemRecuperados();
+
+        const riscoFiltrado = turma ? emRisco.filter((item) => item.codigoTurma === turma) : emRisco;
+        const recuperadosFiltrado = turma ? recuperados.filter((item) => item.codigoTurma === turma) : recuperados;
+        const codigosTurma = turma ? (matriculasPorTurma.has(turma) ? [turma] : []) : [...matriculasPorTurma.keys()].filter(Boolean);
+
+        const [contatos, codigosImportados, nomes] = await Promise.all([
+            prisma.contato.findMany({
+                where: { matricula: { in: [...new Set(emRisco.map((item) => item.matricula))] } },
+                select: { matricula: true, status: true },
+                orderBy: { criadoEm: 'desc' }
+            }),
+            listarTurmasImportadas(codigosTurma),
+            prisma.lancamento.findMany({
+                where: { codigoTurma: { in: codigosTurma } },
+                select: { codigoTurma: true, nomeTurma: true },
+                distinct: ['codigoTurma']
+            })
+        ]);
+
+        const ultimoStatusPorMatricula = new Map();
+        for (const contato of contatos) {
+            if (!ultimoStatusPorMatricula.has(contato.matricula)) ultimoStatusPorMatricula.set(contato.matricula, contato.status);
+        }
+        const situacaoContato = (matricula) => {
+            if (!ultimoStatusPorMatricula.has(matricula)) return 'semContato';
+            return STATUS_COM_RETORNO.includes(ultimoStatusPorMatricula.get(matricula)) ? 'comRetorno' : 'semResposta';
+        };
+
+        // Matrículas distintas, como o card "em risco": quem está em risco em duas
+        // turmas é um aluno só pra coordenação contatar.
+        const contagemContatos = { semContato: 0, semResposta: 0, comRetorno: 0 };
+        for (const matricula of new Set(riscoFiltrado.map((item) => item.matricula))) {
+            contagemContatos[situacaoContato(matricula)]++;
+        }
+        const matriculasAcompanhamento = new Set(recuperadosFiltrado.map((item) => item.matricula));
+        const matriculasFaltaram = new Set(recuperadosFiltrado.filter((item) => item.diasComFalta.length > 0).map((item) => item.matricula));
+
+        const nomePorTurma = new Map(nomes.map((item) => [item.codigoTurma, item.nomeTurma]));
+        const turmas = codigosTurma.map((codigo) => {
+            const riscoDaTurma = emRisco.filter((item) => item.codigoTurma === codigo);
+            const alunos = matriculasPorTurma.get(codigo)?.size || 0;
+            const ultimaAula = ultimaAulaPorTurma.get(codigo) || null;
+            return {
+                codigoTurma: codigo,
+                nomeTurma: nomePorTurma.get(codigo) || codigo,
+                alunos,
+                emRisco: riscoDaTurma.length,
+                percentualRisco: alunos > 0 ? Math.round((riscoDaTurma.length / alunos) * 100) : 0,
+                semContato: riscoDaTurma.filter((item) => situacaoContato(item.matricula) === 'semContato').length,
+                emAcompanhamento: recuperados.filter((item) => item.codigoTurma === codigo).length,
+                importada: codigosImportados.has(codigo),
+                ultimaAula,
+                diasSemChamada: diasDesde(ultimaAula)
+            };
+        });
+
+        // Quem tem mais aluno em risco esperando contato vem primeiro — é onde a
+        // coordenação precisa agir. Empate: maior % de risco.
+        const turmasAtivas = turmas.filter((item) => item.diasSemChamada === null || item.diasSemChamada <= DIAS_TURMA_ENCERRADA);
+        turmasAtivas.sort((a, b) => b.semContato - a.semContato || b.percentualRisco - a.percentualRisco || b.emRisco - a.emRisco);
+
+        res.json({
+            status: 'ok',
+            dados: {
+                contatos: {
+                    ...contagemContatos,
+                    emAcompanhamento: matriculasAcompanhamento.size,
+                    faltaramNoAcompanhamento: matriculasFaltaram.size
+                },
+                turmas: turmasAtivas,
+                diasSemChamadaAlerta: DIAS_SEM_CHAMADA_ALERTA
+            }
+        });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
 // Números do painel. "Ativo" vem da coluna Situação da planilha da secretaria,
 // não de "não está na lista de risco": quem evade de vez para de receber
 // lançamento de falta e sairia da lista de risco sozinho, sendo contado como
@@ -575,4 +688,4 @@ async function resumoAlunos(req, res) {
     }
 }
 
-module.exports = { listarEmRisco, listarRecuperados, importarTelefones, resumoAlunos, DIAS_AULA_CONSECUTIVOS_RISCO };
+module.exports = { listarEmRisco, listarRecuperados, importarTelefones, resumoAlunos, atencaoPainel, DIAS_AULA_CONSECUTIVOS_RISCO };

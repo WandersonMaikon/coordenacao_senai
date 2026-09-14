@@ -144,6 +144,56 @@
             <div class="col-12">
               <div class="card">
                 <div class="card-body">
+                  <h5 class="mb-1">Andamento dos contatos</h5>
+                  <p class="text-body-secondary mb-3" id="subtituloContatos">
+                    Situação de quem precisa de atenção agora: alunos em risco e recuperados em acompanhamento
+                  </p>
+                  <div id="semAtencao" class="alert alert-success d-none mb-0">
+                    Nenhum aluno em risco ou em acompanhamento no momento.
+                  </div>
+                  <div id="conteudoContatos">
+                    <!-- Barra única com fatias excludentes: o comprimento de cada cor
+                         é a proporção do total, e a legenda abaixo traz os números. -->
+                    <div class="progress mb-3" style="height: 28px;" id="barraContatos"></div>
+                    <div class="row row-cols-2 row-cols-lg-4 g-3" id="legendaContatos"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row mt-4">
+            <div class="col-12">
+              <div class="card">
+                <div class="card-body">
+                  <h5 class="mb-1">Turmas que precisam de atenção</h5>
+                  <p class="text-body-secondary mb-3" id="subtituloTurmas">
+                    Ordenadas por alunos em risco ainda sem contato
+                  </p>
+                  <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                      <thead>
+                        <tr>
+                          <th>Turma</th>
+                          <th class="text-end" title="Alunos com chamada lançada nesta turma">Alunos</th>
+                          <th class="text-end" title="Alunos em risco agora e % sobre os alunos da turma">Em risco</th>
+                          <th class="text-end" title="Alunos em risco sem nenhum contato registrado">Sem contato</th>
+                          <th class="text-end" title="Recuperados em acompanhamento na tela Recuperados">Em acompanhamento</th>
+                          <th title="Dia de aula mais recente lançado pelos professores">Última chamada</th>
+                        </tr>
+                      </thead>
+                      <tbody id="tabelaTurmas"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row mt-4">
+            <div class="col-12">
+              <div class="card">
+                <div class="card-body">
                   <h5 class="mb-1">Motivos das faltas</h5>
                   <p class="text-body-secondary mb-4" id="subtituloMotivos">
                     A partir dos contatos registrados pela coordenação na tela de Alunos em risco
@@ -389,6 +439,119 @@
       }
     }
 
+    function escaparHtml(texto) {
+      return String(texto ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+    }
+
+    // Fatias do andamento dos contatos, na ordem do trabalho: do que falta fazer
+    // pro que já deu resultado. Cores do Bootstrap pra acompanhar o tema.
+    const FATIAS_CONTATO = [
+      { chave: 'semContato', rotulo: 'Sem contato', ajuda: 'Em risco, ninguém falou com o aluno ainda', cor: 'danger', link: '/risco' },
+      { chave: 'semResposta', rotulo: 'Sem resposta', ajuda: 'Em risco, a coordenação tentou mas não conseguiu falar', cor: 'warning', link: '/risco' },
+      { chave: 'comRetorno', rotulo: 'Com retorno', ajuda: 'Em risco, respondeu ou está em acompanhamento', cor: 'info', link: '/risco' },
+      { chave: 'emAcompanhamento', rotulo: 'Recuperados', ajuda: 'Marcados como recuperado, em acompanhamento nas próximas aulas', cor: 'success', link: '/recuperado' }
+    ];
+
+    function desenharContatos(contatos) {
+      const total = FATIAS_CONTATO.reduce((soma, fatia) => soma + contatos[fatia.chave], 0);
+      document.getElementById('semAtencao').classList.toggle('d-none', total > 0);
+      document.getElementById('conteudoContatos').classList.toggle('d-none', total === 0);
+      if (total === 0) return;
+
+      document.getElementById('subtituloContatos').textContent =
+        `${total} aluno(s) precisando de atenção agora: em risco e recuperados em acompanhamento`;
+
+      document.getElementById('barraContatos').innerHTML = FATIAS_CONTATO
+        .filter((fatia) => contatos[fatia.chave] > 0)
+        .map((fatia) => {
+          const percentual = (contatos[fatia.chave] / total) * 100;
+          return `<div class="progress-bar bg-${fatia.cor}" style="width: ${percentual}%" title="${fatia.rotulo}: ${contatos[fatia.chave]} (${Math.round(percentual)}%)">${percentual >= 8 ? contatos[fatia.chave] : ''}</div>`;
+        }).join('');
+
+      document.getElementById('legendaContatos').innerHTML = FATIAS_CONTATO.map((fatia) => {
+        const valor = contatos[fatia.chave];
+        // O alerta da /recuperado sobe pro painel: resgate que não durou é o
+        // primeiro número que a coordenação precisa ver nesse grupo.
+        const alertaFalta = fatia.chave === 'emAcompanhamento' && contatos.faltaramNoAcompanhamento > 0
+          ? `<div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>${contatos.faltaramNoAcompanhamento} faltou depois de recuperado</div>`
+          : '';
+        return `
+          <div class="col">
+            <a href="${fatia.link}" class="d-block text-reset text-decoration-none">
+              <div class="d-flex align-items-center gap-2">
+                <span class="rounded-circle bg-${fatia.cor}" style="width: 10px; height: 10px; display: inline-block;"></span>
+                <span class="small text-body-secondary">${fatia.rotulo}</span>
+              </div>
+              <div class="fs-4 fw-semibold">${valor} <span class="fs-6 fw-normal text-body-secondary">${Math.round((valor / total) * 100)}%</span></div>
+              <div class="small text-body-secondary">${fatia.ajuda}</div>
+              ${alertaFalta}
+            </a>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function desenharTurmas(turmas, diasAlerta) {
+      const tabela = document.getElementById('tabelaTurmas');
+      if (turmas.length === 0) {
+        tabela.innerHTML = '<tr><td colspan="6" class="text-center text-body-secondary py-4">Nenhuma turma com chamada lançada.</td></tr>';
+        return;
+      }
+
+      const semChamada = turmas.filter((t) => t.diasSemChamada !== null && t.diasSemChamada > diasAlerta).length;
+      document.getElementById('subtituloTurmas').textContent = semChamada
+        ? `Ordenadas por alunos em risco ainda sem contato — ${semChamada} turma(s) sem chamada lançada há mais de ${diasAlerta} dias`
+        : 'Ordenadas por alunos em risco ainda sem contato';
+
+      tabela.innerHTML = turmas.map((turma) => {
+        const corRisco = turma.percentualRisco >= 50 ? 'danger' : turma.percentualRisco >= 25 ? 'warning' : 'secondary';
+        // Turma parada é ponto cego: o "em risco" dela congela no último
+        // lançamento, e quem evadiu depois disso não aparece em lugar nenhum.
+        const atrasada = turma.diasSemChamada !== null && turma.diasSemChamada > diasAlerta;
+        const ultimaChamada = turma.ultimaAula
+          ? `${escaparHtml(turma.ultimaAula)} <span class="text-body-secondary">(${turma.diasSemChamada === 0 ? 'hoje' : `há ${turma.diasSemChamada} dia(s)`})</span>`
+          : '—';
+        return `
+          <tr>
+            <td>
+              ${escaparHtml(nomeTurmaLimpo(turma.nomeTurma))}
+              <div class="small text-body-secondary">
+                ${escaparHtml(turma.codigoTurma)}
+                ${turma.importada ? '' : '<a href="/importar-telefones" class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1 text-decoration-none" title="A planilha desta turma ainda não foi importada — alunos sem telefone e fora dos matriculados">Não importada</a>'}
+              </div>
+            </td>
+            <td class="text-end">${turma.alunos}</td>
+            <td class="text-end">
+              ${turma.emRisco}
+              <span class="badge bg-${corRisco}-subtle text-${corRisco}-emphasis ms-1">${turma.percentualRisco}%</span>
+            </td>
+            <td class="text-end ${turma.semContato > 0 ? 'text-danger fw-semibold' : 'text-body-secondary'}">${turma.semContato}</td>
+            <td class="text-end">${turma.emAcompanhamento || '<span class="text-body-secondary">0</span>'}</td>
+            <td class="small text-nowrap">
+              ${atrasada ? `<i class="bi bi-exclamation-triangle-fill text-warning me-1" title="Sem chamada lançada há mais de ${diasAlerta} dias — os números desta turma podem estar desatualizados"></i>` : ''}
+              ${ultimaChamada}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function carregarAtencao(turma) {
+      try {
+        const resposta = await chamarApi(`/alunos/atencao${turma ? `?turma=${encodeURIComponent(turma)}` : ''}`);
+        desenharContatos(resposta.dados.contatos);
+        desenharTurmas(resposta.dados.turmas, resposta.dados.diasSemChamadaAlerta);
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          console.error('Não foi possível carregar o andamento dos contatos:', erro);
+        }
+      }
+    }
+
     async function carregarPainel(turma) {
       const statusEl = document.getElementById('statusCarregamento');
       statusEl.className = 'alert alert-info';
@@ -456,11 +619,13 @@
     const filtroTurma = document.getElementById('filtroTurma');
     filtroTurma.addEventListener('change', () => {
       carregarPainel(filtroTurma.value);
+      carregarAtencao(filtroTurma.value);
       carregarMotivos(filtroTurma.value);
     });
 
     preencherSelectTurmas(filtroTurma, chamarApi);
     carregarPainel('');
+    carregarAtencao('');
     carregarMotivos('');
   </script>
 </body>
