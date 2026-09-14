@@ -209,7 +209,7 @@
         } else {
           resposta.dados.forEach((item) => {
             const chaveTurma = item.codigoTurma || item.nomeTurma || '—';
-            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professores: new Set(), alunos: new Map(), faltasPorDiaSemana: new Map() });
+            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professores: new Set(), alunos: new Map() });
             // A mesma turma pode ter mais de um professor lançando (uma UC cada).
             if (item.professor) turmas.get(chaveTurma).professores.add(item.professor);
 
@@ -238,14 +238,6 @@
               const data = dataAulaParaDate(item.dataAula);
               const atual = dataAulaParaDate(aluno.ultimaFalta);
               if (data && (!atual || data > atual)) aluno.ultimaFalta = item.dataAula;
-
-              // Padrão de agenda da turma: faltar toda sexta é problema de
-              // horário/trabalho/transporte, não de desmotivação.
-              const dia = diaDaSemana(item.dataAula);
-              if (dia) {
-                const porDia = turmas.get(chaveTurma).faltasPorDiaSemana;
-                porDia.set(dia, (porDia.get(dia) || 0) + faltasDoLancamento);
-              }
             }
           });
 
@@ -286,15 +278,6 @@
                       <span class="ms-2 small">Professor: ${Array.from(turma.professores).map(nomeCurto).join(' / ') || '—'}</span>
                     </span>
                     <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;" title="Alunos com pelo menos uma falta no período">${listaAlunos.length} aluno(s)</span>
-                    ${(() => {
-                      // Só vale mostrar o dia campeão quando há mais de um dia com
-                      // falta: com um dia só, "mais falta: sexta" é o único dia que
-                      // existe, e informar isso como padrão seria enganoso.
-                      const porDia = [...turma.faltasPorDiaSemana.entries()].sort((a, b) => b[1] - a[1]);
-                      if (porDia.length < 2) return '';
-                      const [dia, faltas] = porDia[0];
-                      return `<span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;" title="Dia da semana que concentra mais aulas perdidas nesta turma — padrão de agenda (trabalho, transporte, horário) costuma aparecer aqui">mais falta: ${dia} (${faltas})</span>`;
-                    })()}
                   </button>
                 </h2>
                 <div id="${idColapso}" class="accordion-collapse collapse" data-bs-parent="#accordionFaltas">
