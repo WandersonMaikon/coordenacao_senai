@@ -209,7 +209,7 @@
         } else {
           resposta.dados.forEach((item) => {
             const chaveTurma = item.codigoTurma || item.nomeTurma || '—';
-            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professores: new Set(), alunos: new Map(), aulasPerdidas: 0, faltasPorDiaSemana: new Map() });
+            if (!turmas.has(chaveTurma)) turmas.set(chaveTurma, { nome: item.nomeTurma || chaveTurma, professores: new Set(), alunos: new Map(), faltasPorDiaSemana: new Map() });
             // A mesma turma pode ter mais de um professor lançando (uma UC cada).
             if (item.professor) turmas.get(chaveTurma).professores.add(item.professor);
 
@@ -247,10 +247,6 @@
                 porDia.set(dia, (porDia.get(dia) || 0) + faltasDoLancamento);
               }
             }
-            // Aulas perdidas pela turma inteira no período — o volume de falta que
-            // aquela turma acumulou, que é o que permite comparar uma turma com a
-            // outra sem precisar abrir as duas.
-            turmas.get(chaveTurma).aulasPerdidas += item.qtdFaltas || 0;
           });
 
           accordion.innerHTML = Array.from(turmas.entries()).map(([codigo, turma], indice) => {
@@ -290,7 +286,6 @@
                       <span class="ms-2 small">Professor: ${Array.from(turma.professores).map(nomeCurto).join(' / ') || '—'}</span>
                     </span>
                     <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;" title="Alunos com pelo menos uma falta no período">${listaAlunos.length} aluno(s)</span>
-                    <span class="badge border ms-2" style="color: inherit; border-color: currentColor !important;" title="Soma das aulas perdidas por todos os alunos da turma no período">${turma.aulasPerdidas} aula(s) perdida(s)</span>
                     ${(() => {
                       // Só vale mostrar o dia campeão quando há mais de um dia com
                       // falta: com um dia só, "mais falta: sexta" é o único dia que
