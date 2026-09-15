@@ -116,6 +116,24 @@ function limiteDiaEfetivo(sessao, agora = new Date()) {
     return dias < AQUECIMENTO.dias ? Math.min(sessao.limiteDia, AQUECIMENTO.limiteDia) : sessao.limiteDia;
 }
 
+// Rótulos dos status de contato (mesmos da tela /risco).
+const ROTULO_STATUS = {
+    respondido: 'Respondido',
+    sem_resposta: 'Sem resposta',
+    acompanhar: 'Acompanhar',
+    nunca_contato: 'Não foi possível contatar',
+    recuperado: 'Recuperado'
+};
+
+// Quais status do último contato (feito durante o episódio de risco atual) ainda
+// permitem mandar a mensagem — só se o usuário marcar a opção. Respondido e
+// Acompanhar nunca entram: alguém já está conversando com o aluno, e mensagem
+// automática por cima soaria como se ninguém tivesse lido o que ele contou.
+const STATUS_REENVIO_OPCIONAL = {
+    sem_resposta: 'incluirSemResposta',
+    nunca_contato: 'incluirNaoContatado'
+};
+
 function nomeResponsavel(usuario) {
     return primeiroNome(usuario.nome) || usuario.usuario;
 }
@@ -125,8 +143,13 @@ function nomeResponsavel(usuario) {
 // ficam de fora voltam com o motivo, pra tela explicar — "por que a Maria não
 // está na lista?" é a primeira pergunta de quem confere.
 //
-// Ainda falta (etapa 3): pular quem já recebeu mensagem neste episódio de risco.
-async function montarPrevia(usuario, sessao) {
+// `opcoes.incluirSemResposta` / `opcoes.incluirNaoContatado`: incluir também quem
+// já foi contatado neste episódio, mas cujo último contato ficou "Sem resposta" /
+// "Não foi possível contatar" — o WhatsApp vira uma nova tentativa por outro canal.
+//
+// Ainda falta (etapa 3): pular quem já recebeu a mensagem automática neste
+// episódio de risco — essa regra vale independente das opções acima.
+async function montarPrevia(usuario, sessao, opcoes = {}) {
     const turmasDoUsuario = await prisma.usuarioTurma.findMany({
         where: { usuarioId: usuario.id },
         select: { codigoTurma: true }
@@ -145,7 +168,7 @@ async function montarPrevia(usuario, sessao) {
         }),
         prisma.contato.findMany({
             where: { matricula: { in: matriculas } },
-            select: { matricula: true, criadoEm: true, contatadoPor: true },
+            select: { matricula: true, criadoEm: true, contatadoPor: true, status: true },
             orderBy: { criadoEm: 'desc' }
         })
     ]);
@@ -171,22 +194,33 @@ async function montarPrevia(usuario, sessao) {
             primeiraFalta: item.primeiraFalta
         };
 
+        // Contato de um episódio anterior (antes de começar a faltar desta vez) não
+        // conta: aquele sumiço já foi resolvido, este é outro.
+        const contatoNoEpisodio = ultimoContato && ultimoContato.criadoEm.getTime() >= converterDataAula(item.primeiraFalta)
+            ? {
+                status: ultimoContato.status,
+                rotuloStatus: ROTULO_STATUS[ultimoContato.status] || ultimoContato.status || 'Sem status',
+                em: ultimoContato.criadoEm,
+                por: ultimoContato.contatadoPor
+            }
+            : null;
+
         let motivo = null;
         if (!aluno || !aluno.telefone) motivo = 'Sem telefone cadastrado';
         else if (!ehSituacaoAtiva(aluno.situacao)) motivo = `Situação na planilha: ${aluno.situacao}`;
         else if (aluno.whatsappOptOut) motivo = 'Pediu para não receber mensagens (SAIR)';
-        // Se a coordenação já falou com o aluno depois que ele começou a faltar,
-        // mensagem automática agora seria repetida e soaria descuidada.
-        else if (ultimoContato && ultimoContato.criadoEm.getTime() >= converterDataAula(item.primeiraFalta)) {
-            motivo = `Já contatado em ${ultimoContato.criadoEm.toLocaleDateString('pt-BR', { timeZone: 'America/Porto_Velho' })}${ultimoContato.contatadoPor ? ` por ${ultimoContato.contatadoPor}` : ''}`;
+        else if (contatoNoEpisodio && !opcoes[STATUS_REENVIO_OPCIONAL[contatoNoEpisodio.status]]) {
+            const quando = contatoNoEpisodio.em.toLocaleDateString('pt-BR', { timeZone: 'America/Porto_Velho' });
+            motivo = `Já contatado em ${quando}${contatoNoEpisodio.por ? ` por ${contatoNoEpisodio.por}` : ''} — ${contatoNoEpisodio.rotuloStatus}`;
         }
 
         if (motivo) {
-            naoReceberiam.push({ ...base, motivo });
+            naoReceberiam.push({ ...base, motivo, contatoNoEpisodio });
         } else {
             receberiam.push({
                 ...base,
                 telefone: aluno.telefone,
+                contatoNoEpisodio,
                 mensagem: renderizarMensagem(sessao.mensagemModelo, { ...item, responsavel })
             });
         }

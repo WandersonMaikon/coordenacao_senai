@@ -398,14 +398,18 @@ async function previaMensagem(req, res) {
     }
 }
 
-// GET /whatsapp/lote/previa — quem receberia mensagem se o envio fosse iniciado
-// agora. Não envia nada (o envio é a etapa 3).
+// GET /whatsapp/lote/previa?incluirSemResposta=1&incluirNaoContatado=1 — quem
+// receberia mensagem se o envio fosse iniciado agora. Não envia nada (etapa 3).
 async function previaLote(req, res) {
     try {
         const usuario = await buscarUsuario(req);
         if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
         const sessao = await buscarOuCriarSessao(usuario.id);
-        const previa = await whatsappLote.montarPrevia(usuario, sessao);
+        const opcoes = {
+            incluirSemResposta: req.query.incluirSemResposta === '1',
+            incluirNaoContatado: req.query.incluirNaoContatado === '1'
+        };
+        const previa = await whatsappLote.montarPrevia(usuario, sessao, opcoes);
         res.json({ status: 'ok', ...previa, limiteDiaEfetivo: whatsappLote.limiteDiaEfetivo(sessao) });
     } catch (erro) {
         respostaErro(res, erro);
