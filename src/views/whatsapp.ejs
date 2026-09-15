@@ -256,6 +256,10 @@
         document.getElementById('avisoNaoConfigurado').classList.toggle('d-none', resposta.configurado !== false);
         desenharNumero(resposta.dados);
         desenharConexao(resposta.dados, resposta.qrCode, resposta.erroSessao);
+        // Sem OpenWA configurado o botão só levaria a um erro — a faixa amarela já explica.
+        const btnConectar = document.getElementById('btnConectar');
+        btnConectar.disabled = resposta.configurado === false;
+        btnConectar.title = resposta.configurado === false ? 'O WhatsApp ainda não foi configurado no servidor' : '';
 
         const emAndamento = resposta.dados.temSessao && ['created', 'initializing', 'qr_ready', 'authenticating'].includes(resposta.dados.status);
         if (emAndamento) timerSessao = setTimeout(acompanharSessao, 3000);
@@ -309,14 +313,15 @@
       try {
         const resposta = await chamarApi('/whatsapp/sessao/conectar', { method: 'POST' });
         if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
-        await acompanharSessao();
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           Swal.fire({ title: 'Não foi possível conectar', text: erro.message, icon: 'error' });
         }
-      } finally {
-        botao.disabled = false;
       }
+      // acompanharSessao decide se o botão fica habilitado (depende de o servidor
+      // estar configurado), por isso vem por último.
+      botao.disabled = false;
+      await acompanharSessao();
     });
 
     document.getElementById('btnDesconectar').addEventListener('click', async () => {
