@@ -175,6 +175,12 @@
         window.location.href = '/login';
         throw new Error('Sessão expirada');
       }
+      // Quando o backend está reiniciando ou demora demais, quem responde é o
+      // Cloudflare, com uma página HTML — sem isto a tela mostraria só
+      // "Unexpected token '<'".
+      if (!(resposta.headers.get('content-type') || '').includes('application/json')) {
+        throw new Error(`O servidor não respondeu como esperado (HTTP ${resposta.status}). Aguarde alguns segundos e tente de novo.`);
+      }
       return resposta.json();
     }
 
