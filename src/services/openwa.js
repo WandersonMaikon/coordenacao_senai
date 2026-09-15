@@ -11,9 +11,11 @@ class ErroOpenWA extends Error {
         this.status = status;
         this.codigo = codigo;
         this.retryAfter = retryAfter;
-        // 409/503/502/504 = sessão ainda não pronta ou reconectando: tentar de novo
-        // mais tarde. 401/403 = chave errada, não adianta insistir.
-        this.retentavel = [409, 429, 502, 503, 504].includes(status) || status === null;
+        // 409/503/502/504 = sessão ainda não pronta ou reconectando; 500 = erro interno
+        // do OpenWA/whatsapp-web.js (costuma ser o WhatsApp Web instável). Nos dois
+        // casos o problema não é a mensagem: tentar de novo mais tarde, com a mesma.
+        // 401/403 = chave errada, não adianta insistir.
+        this.retentavel = [409, 429, 500, 502, 503, 504].includes(status) || status === null;
         this.fatal = [401, 403].includes(status);
     }
 }

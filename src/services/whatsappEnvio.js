@@ -215,6 +215,7 @@ async function processarLote(lote, agora = new Date()) {
     await prisma.mensagemWhatsapp.update({ where: { id: mensagem.id }, data: { status: 'enviando' } });
     await atualizarLote(lote, { aguardando: null });
 
+    let etapa = 'ao verificar se o número tem WhatsApp';
     try {
         const verificacao = await openwa.verificarNumero(sessao.sessionId, `55${mensagem.telefone}`);
         if (!verificacao?.exists) {
@@ -226,7 +227,9 @@ async function processarLote(lote, agora = new Date()) {
         }
 
         const chatId = verificacao.whatsappId || `55${mensagem.telefone}@c.us`;
+        etapa = 'ao enviar a mensagem';
         const envio = await openwa.enviarTexto(sessao.sessionId, chatId, mensagem.texto);
+        etapa = 'ao registrar o contato';
         const enviadaEm = new Date();
 
         // O envio vira contato no histórico do aluno: some do "sem contato" do
@@ -250,12 +253,15 @@ async function processarLote(lote, agora = new Date()) {
         const intervaloSeg = sessao.intervaloMinSeg + Math.floor(Math.random() * (sessao.intervaloMaxSeg - sessao.intervaloMinSeg + 1));
         await atualizarLote(lote, { aguardando: null, proximoEnvioEm: new Date(enviadaEm.getTime() + intervaloSeg * 1000) });
     } catch (erro) {
-        await tratarFalhaEnvio(erro, mensagem, sessao, lote);
+        console.error(`[whatsapp] lote ${lote.id}, mensagem ${mensagem.id}: falha ${etapa}:`, erro.message);
+        await tratarFalhaEnvio(erro, mensagem, sessao, lote, etapa);
     }
 }
 
-async function tratarFalhaEnvio(erro, mensagem, sessao, lote) {
-    const voltarPraFila = () => prisma.mensagemWhatsapp.update({ where: { id: mensagem.id }, data: { status: 'pendente' } });
+async function tratarFalhaEnvio(erro, mensagem, sessao, lote, etapa) {
+    const descricao = `Falha ${etapa}: ${erro.message}`.slice(0, 250);
+    // Mesmo quando volta pra fila, guarda o erro — a tela mostra embaixo do "Na fila".
+    const voltarPraFila = () => prisma.mensagemWhatsapp.update({ where: { id: mensagem.id }, data: { status: 'pendente', erro: descricao } });
 
     if (!(erro instanceof openwa.ErroOpenWA)) {
         await voltarPraFila();
@@ -280,13 +286,13 @@ async function tratarFalhaEnvio(erro, mensagem, sessao, lote) {
     } else {
         // Erro do próprio pedido (ex: 400) — tentar a mesma mensagem de novo daria o
         // mesmo erro. Fica como falha temporária: pode entrar num lote novo.
-        await prisma.mensagemWhatsapp.update({ where: { id: mensagem.id }, data: { status: 'falhou', erro: erro.message.slice(0, 250) } });
+        await prisma.mensagemWhatsapp.update({ where: { id: mensagem.id }, data: { status: 'falhou', erro: descricao } });
     }
 
     if (falhas >= FALHAS_PARA_PAUSAR) {
-        return pausarSessao(sessao, lote, `${falhas} falhas seguidas ao enviar (última: ${erro.message.slice(0, 120)}).`);
+        return pausarSessao(sessao, lote, `${falhas} falhas seguidas (última ${etapa}: ${erro.message.slice(0, 100)}).`);
     }
-    return atualizarLote(lote, { aguardando: 'Falha ao enviar — nova tentativa em 1 minuto.', proximoEnvioEm: new Date(Date.now() + ESPERA_FALHA_TEMPORARIA_MS) });
+    return atualizarLote(lote, { aguardando: `Falha ${etapa} — nova tentativa em 1 minuto.`, proximoEnvioEm: new Date(Date.now() + ESPERA_FALHA_TEMPORARIA_MS) });
 }
 
 // ───────────── Loop ─────────────
