@@ -11,7 +11,12 @@ const {
     obterConfig,
     salvarConfig,
     previaMensagem,
-    previaLote
+    previaLote,
+    iniciarEnvio,
+    loteAtual,
+    pararEnvio,
+    retomarSessao,
+    historico
 } = require('../controllers/whatsappController');
 const { autenticar } = require('../middlewares/auth');
 
@@ -35,5 +40,12 @@ router.put('/whatsapp/config', autenticar, salvarConfig);
 router.post('/whatsapp/config/previa', autenticar, previaMensagem);
 
 router.get('/whatsapp/lote/previa', autenticar, previaLote);
+router.post('/whatsapp/lote', autenticar, iniciarEnvio);
+router.get('/whatsapp/lote/atual', autenticar, loteAtual);
+router.post('/whatsapp/lote/:id/parar', autenticar, pararEnvio);
+router.post('/whatsapp/sessao/retomar', autenticar, retomarSessao);
+
+// Histórico de envios: todos os usuários veem todos os envios.
+router.get('/whatsapp/mensagens', autenticar, historico);
 
 module.exports = router;

@@ -1,33 +1,12 @@
 const prisma = require('../config/prisma');
 const openwa = require('../services/openwa');
 const whatsappLote = require('../services/whatsappLote');
+const whatsappEnvio = require('../services/whatsappEnvio');
+const { normalizarTelefone, mesmoTelefone } = require('../services/telefone');
 const { calcularAlunosEmRiscoSemRecuperados } = require('./alunoController');
 
 const TIPOS_NUMERO = ['pessoal', 'institucional'];
-
-// Status do OpenWA em que o número não consegue enviar e o usuário precisa agir
-// (ler o QR de novo, reabrir o WhatsApp no celular).
-const STATUS_PRECISA_ACAO = ['disconnected', 'action_required', 'failed'];
-
-const MOTIVO_NUMERO_DIFERENTE = 'O número conectado é diferente do número cadastrado.';
-
-// Aceita "(69) 99340-8643", "+55 69 99340-8643" etc. e guarda só os dígitos sem o
-// 55 — mesmo formato do telefone dos alunos.
-function normalizarTelefone(valor) {
-    let digitos = String(valor || '').replace(/\D/g, '');
-    if (digitos.length >= 12 && digitos.startsWith('55')) digitos = digitos.slice(2);
-    return digitos;
-}
-
-// Compara o número cadastrado com o que o OpenWA reportou. O WhatsApp às vezes
-// identifica celular antigo sem o 9º dígito (556999340864), então a comparação é
-// por DDD + últimos 8 dígitos.
-function mesmoTelefone(a, b) {
-    const x = normalizarTelefone(a);
-    const y = normalizarTelefone(b);
-    if (!x || !y) return false;
-    return x.slice(0, 2) === y.slice(0, 2) && x.slice(-8) === y.slice(-8);
-}
+const { STATUS_PRECISA_ACAO, MOTIVO_NUMERO_DIFERENTE } = whatsappEnvio;
 
 async function buscarUsuario(req) {
     return prisma.usuario.findUnique({ where: { usuario: req.usuario.usuario }, select: { id: true, usuario: true, nome: true } });
@@ -96,6 +75,12 @@ async function salvarMeuNumero(req, res) {
 
         const sessao = await buscarOuCriarSessao(usuario.id);
         const trocouNumero = sessao.telefone && sessao.telefone !== telefone;
+
+        // Trocar no meio de um envio mandaria o resto do lote de outro celular,
+        // assinado com um contato que o aluno não conhece.
+        if (trocouNumero && await whatsappEnvio.loteEmAndamento(sessao.id)) {
+            return res.status(409).json({ status: 'erro', mensagem: 'Há um envio em andamento. Pare o envio antes de trocar o número.' });
+        }
 
         if (trocouNumero) await encerrarSessaoOpenWA(sessao.sessionId);
 
@@ -316,7 +301,15 @@ async function liberarTurma(req, res) {
         }
 
         await prisma.usuarioTurma.delete({ where: { id: atual.id } });
-        res.json({ status: 'ok', mensagem: 'Turma liberada.' });
+        // Quem ainda estava na fila por causa desta turma não recebe mais por este número.
+        const canceladas = await prisma.mensagemWhatsapp.updateMany({
+            where: { codigoTurma: atual.codigoTurma, usuarioId: atual.usuarioId, status: 'pendente' },
+            data: { status: 'cancelada', erro: `Turma liberada por ${usuario.usuario}` }
+        });
+        res.json({
+            status: 'ok',
+            mensagem: canceladas.count ? `Turma liberada. ${canceladas.count} mensagem(ns) na fila foram canceladas.` : 'Turma liberada.'
+        });
     } catch (erro) {
         respostaErro(res, erro);
     }
@@ -405,18 +398,171 @@ async function previaLote(req, res) {
         const usuario = await buscarUsuario(req);
         if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
         const sessao = await buscarOuCriarSessao(usuario.id);
-        const opcoes = {
-            incluirSemResposta: req.query.incluirSemResposta === '1',
-            incluirNaoContatado: req.query.incluirNaoContatado === '1'
-        };
-        const previa = await whatsappLote.montarPrevia(usuario, sessao, opcoes);
+        const previa = await whatsappLote.montarPrevia(usuario, sessao, opcoesDoPedido(req.query));
         res.json({ status: 'ok', ...previa, limiteDiaEfetivo: whatsappLote.limiteDiaEfetivo(sessao) });
     } catch (erro) {
         respostaErro(res, erro);
     }
 }
 
+// ───────────── Envio ─────────────
+
+function opcoesDoPedido(fonte) {
+    return {
+        incluirSemResposta: fonte.incluirSemResposta === '1' || fonte.incluirSemResposta === true,
+        incluirNaoContatado: fonte.incluirNaoContatado === '1' || fonte.incluirNaoContatado === true
+    };
+}
+
+// POST /whatsapp/lote { incluirSemResposta, incluirNaoContatado, excluidos: ["matricula|codigoTurma"] }
+async function iniciarEnvio(req, res) {
+    try {
+        const usuario = await buscarUsuario(req);
+        if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
+        const sessao = await buscarOuCriarSessao(usuario.id);
+
+        if (!sessao.sessionId || sessao.status !== 'ready') {
+            return res.status(400).json({ status: 'erro', mensagem: 'Conecte o seu WhatsApp (aba Meu número) antes de iniciar o envio.' });
+        }
+        if (sessao.pausadoMotivo) {
+            return res.status(400).json({ status: 'erro', mensagem: `O envio por este número está pausado: ${sessao.pausadoMotivo} Resolva e clique em Retomar.` });
+        }
+
+        const excluidos = Array.isArray(req.body.excluidos) ? req.body.excluidos.map(String) : [];
+        const lote = await whatsappLote.iniciarLote(usuario, sessao, opcoesDoPedido(req.body), excluidos);
+        res.json({ status: 'ok', mensagem: `Envio iniciado para ${lote.total} aluno(s).`, loteId: lote.id });
+    } catch (erro) {
+        if (erro instanceof whatsappLote.ErroLote) return res.status(erro.status).json({ status: 'erro', mensagem: erro.message });
+        respostaErro(res, erro);
+    }
+}
+
+// GET /whatsapp/lote/atual — o lote em andamento (ou o último) com o status de cada
+// mensagem, uso do dia/mês e quando sai a próxima. A tela consulta a cada 5s.
+async function loteAtual(req, res) {
+    try {
+        const usuario = await buscarUsuario(req);
+        if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
+        const sessao = await buscarOuCriarSessao(usuario.id);
+        const agora = new Date();
+
+        const lote = await whatsappEnvio.loteEmAndamento(sessao.id)
+            || await prisma.loteWhatsapp.findFirst({ where: { sessaoId: sessao.id }, orderBy: { id: 'desc' } });
+
+        const uso = await whatsappEnvio.contarEnvios(sessao.id, agora);
+        const base = {
+            status: 'ok',
+            agora,
+            sessao: { conectado: sessao.status === 'ready' && Boolean(sessao.sessionId), status: sessao.status, pausadoMotivo: sessao.pausadoMotivo },
+            uso: { hoje: uso.hoje, limiteDia: whatsappLote.limiteDiaEfetivo(sessao, agora), mes: uso.mes, limiteMes: sessao.limiteMes }
+        };
+        if (!lote) return res.json({ ...base, lote: null, mensagens: [], contagem: {} });
+
+        const mensagens = await prisma.mensagemWhatsapp.findMany({
+            where: { loteId: lote.id },
+            orderBy: { id: 'asc' },
+            select: { id: true, matricula: true, nomeAluno: true, codigoTurma: true, nomeTurma: true, status: true, erro: true, enviadaEm: true, telefone: true }
+        });
+        const contagem = { pendente: 0, enviando: 0, enviada: 0, falhou: 0, cancelada: 0 };
+        for (const m of mensagens) {
+            const chave = whatsappEnvio.STATUS_JA_RECEBEU.includes(m.status) ? 'enviada' : m.status;
+            contagem[chave] = (contagem[chave] || 0) + 1;
+        }
+        const proxima = mensagens.find((m) => m.status === 'enviando') || mensagens.find((m) => m.status === 'pendente') || null;
+
+        res.json({ ...base, lote, mensagens, contagem, proxima: proxima ? { nomeAluno: proxima.nomeAluno, status: proxima.status } : null });
+    } catch (erro) {
+        respostaErro(res, erro);
+    }
+}
+
+// POST /whatsapp/lote/:id/parar
+async function pararEnvio(req, res) {
+    try {
+        const usuario = await buscarUsuario(req);
+        if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
+        const sessao = await buscarOuCriarSessao(usuario.id);
+
+        const lote = await prisma.loteWhatsapp.findFirst({ where: { id: Number(req.params.id), sessaoId: sessao.id } });
+        if (!lote) return res.status(404).json({ status: 'erro', mensagem: 'Envio não encontrado' });
+        if (lote.status !== 'em_andamento') return res.status(409).json({ status: 'erro', mensagem: 'Este envio já terminou.' });
+
+        await whatsappEnvio.pararLote(lote, usuario.usuario);
+        res.json({ status: 'ok', mensagem: 'Envio parado. Os alunos que ainda não receberam voltam a aparecer no próximo envio.' });
+    } catch (erro) {
+        respostaErro(res, erro);
+    }
+}
+
+// POST /whatsapp/sessao/retomar — tira a pausa de proteção. Se o problema
+// continuar (celular desconectado, número diferente), o worker pausa de novo na
+// próxima rodada, com o motivo atualizado.
+async function retomarSessao(req, res) {
+    try {
+        const usuario = await buscarUsuario(req);
+        if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
+        const sessao = await buscarOuCriarSessao(usuario.id);
+        await prisma.whatsappSessao.update({ where: { id: sessao.id }, data: { pausadoMotivo: null, falhasSeguidas: 0 } });
+        res.json({ status: 'ok', mensagem: 'Envio retomado.' });
+    } catch (erro) {
+        respostaErro(res, erro);
+    }
+}
+
+// GET /whatsapp/mensagens?turma=&usuario=&status=&pagina= — histórico de TODOS os
+// envios, visível a qualquer usuário logado: quem mandou, de qual número, pra quem.
+async function historico(req, res) {
+    try {
+        const POR_PAGINA = 50;
+        const pagina = Math.max(1, Number(req.query.pagina) || 1);
+        const where = {};
+        if (req.query.turma) where.codigoTurma = req.query.turma;
+        if (req.query.usuario) where.usuarioId = Number(req.query.usuario);
+        if (req.query.status) {
+            where.status = req.query.status === 'enviada' ? { in: whatsappEnvio.STATUS_JA_RECEBEU } : req.query.status;
+        }
+
+        const [total, mensagens, usuarios, sessoes] = await Promise.all([
+            prisma.mensagemWhatsapp.count({ where }),
+            prisma.mensagemWhatsapp.findMany({
+                where,
+                orderBy: { atualizadoEm: 'desc' },
+                skip: (pagina - 1) * POR_PAGINA,
+                take: POR_PAGINA,
+                select: { id: true, loteId: true, usuarioId: true, sessaoId: true, matricula: true, nomeAluno: true, codigoTurma: true, nomeTurma: true, status: true, erro: true, enviadaEm: true, criadoEm: true, atualizadoEm: true }
+            }),
+            prisma.usuario.findMany({ select: { id: true, usuario: true, nome: true } }),
+            prisma.whatsappSessao.findMany({ select: { id: true, telefone: true, tipo: true } })
+        ]);
+
+        const usuarioPorId = new Map(usuarios.map((u) => [u.id, u]));
+        const sessaoPorId = new Map(sessoes.map((s) => [s.id, s]));
+        const dados = mensagens.map((m) => ({
+            ...m,
+            enviadoPor: usuarioPorId.get(m.usuarioId)?.nome || usuarioPorId.get(m.usuarioId)?.usuario || '—',
+            numero: sessaoPorId.get(m.sessaoId)?.telefone || null,
+            tipoNumero: sessaoPorId.get(m.sessaoId)?.tipo || null
+        }));
+
+        res.json({
+            status: 'ok',
+            total,
+            pagina,
+            paginas: Math.max(1, Math.ceil(total / POR_PAGINA)),
+            dados,
+            usuarios: usuarios.map((u) => ({ id: u.id, nome: u.nome || u.usuario }))
+        });
+    } catch (erro) {
+        respostaErro(res, erro);
+    }
+}
+
 module.exports = {
+    iniciarEnvio,
+    loteAtual,
+    pararEnvio,
+    retomarSessao,
+    historico,
     obterMeuNumero,
     salvarMeuNumero,
     conectarSessao,

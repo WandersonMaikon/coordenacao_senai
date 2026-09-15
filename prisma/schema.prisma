@@ -58,6 +58,8 @@ model WhatsappSessao {
   // Preenchido quando o sistema para os envios sozinho (número desconectado,
   // número diferente do cadastrado, erros seguidos). null = pode enviar.
   pausadoMotivo     String?   @map("pausado_motivo") @db.VarChar(255)
+  // Erros seguidos no envio; no 3º o sistema pausa o número. Zera a cada sucesso.
+  falhasSeguidas    Int       @default(0) @map("falhas_seguidas")
   // Primeira vez que este número ficou pronto — base do "aquecimento" (limite
   // menor nos primeiros dias de um número novo).
   conectadoEm       DateTime? @map("conectado_em")
@@ -85,6 +87,68 @@ model UsuarioTurma {
 
   @@index([usuarioId])
   @@map("usuario_turmas")
+}
+
+// ─────────────────────────────────────────
+// Um "Iniciar envio" na tela /whatsapp. As mensagens do lote saem uma a uma pelo
+// worker (src/services/whatsappEnvio.js), respeitando intervalo, janela e limites
+// do número. Um lote em andamento por número.
+// ─────────────────────────────────────────
+model LoteWhatsapp {
+  id             Int       @id @default(autoincrement())
+  sessaoId       Int       @map("sessao_id")
+  usuarioId      Int       @map("usuario_id")
+  status         String    @default("em_andamento") @db.VarChar(20) // em_andamento | parado | concluido
+  total          Int
+  // Por que o lote está esperando agora ("Limite do dia atingido — retoma..."),
+  // escrito pelo worker pra tela mostrar. null = enviando normalmente.
+  aguardando     String?   @db.VarChar(255)
+  proximoEnvioEm DateTime? @map("proximo_envio_em")
+  paradoPor      String?   @map("parado_por") @db.VarChar(255)
+  iniciadoEm     DateTime  @default(now()) @map("iniciado_em")
+  finalizadoEm   DateTime? @map("finalizado_em")
+  atualizadoEm   DateTime  @updatedAt @map("atualizado_em")
+
+  @@index([sessaoId, status])
+  @@map("lotes_whatsapp")
+}
+
+// ─────────────────────────────────────────
+// Uma mensagem automática pra um aluno. Único por (matrícula, turma, primeiraFalta):
+// uma mensagem por episódio de risco. Cancelada ou falha temporária pode voltar pra
+// fila num lote novo (a mesma linha é reaproveitada); enviada nunca.
+// ─────────────────────────────────────────
+model MensagemWhatsapp {
+  id              Int       @id @default(autoincrement())
+  loteId          Int       @map("lote_id")
+  sessaoId        Int       @map("sessao_id")
+  usuarioId       Int       @map("usuario_id")
+  matricula       String    @db.VarChar(20)
+  nomeAluno       String?   @map("nome_aluno") @db.VarChar(255)
+  codigoTurma     String    @map("codigo_turma") @db.VarChar(50)
+  nomeTurma       String?   @map("nome_turma") @db.VarChar(255)
+  // dd/mm/aaaa, igual a lancamentos.data_aula — identifica o episódio de risco.
+  primeiraFalta   String    @map("primeira_falta") @db.VarChar(20)
+  telefone        String    @db.VarChar(20)
+  texto           String    @db.Text
+  // pendente | enviando | enviada | entregue | lida | falhou | cancelada
+  status          String    @default("pendente") @db.VarChar(20)
+  erro            String?   @db.VarChar(255)
+  // Falha que não adianta repetir (número sem WhatsApp, envio interrompido que
+  // pode ter saído) — o aluno não volta pra fila sozinho.
+  falhaDefinitiva Boolean   @default(false) @map("falha_definitiva")
+  chatId          String?   @map("chat_id") @db.VarChar(64)
+  messageId       String?   @map("message_id") @db.VarChar(191)
+  contatoId       Int?      @map("contato_id")
+  enviadaEm       DateTime? @map("enviada_em")
+  criadoEm        DateTime  @default(now()) @map("criado_em")
+  atualizadoEm    DateTime  @updatedAt @map("atualizado_em")
+
+  @@unique([matricula, codigoTurma, primeiraFalta])
+  @@index([loteId, status])
+  @@index([sessaoId, enviadaEm])
+  @@index([usuarioId])
+  @@map("mensagens_whatsapp")
 }
 
 // ─────────────────────────────────────────

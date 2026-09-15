@@ -22,16 +22,15 @@
           </div>
         </div>
 
-        <%# Envio, Atendimento individual e Histórico entram nas etapas 3 e 4 — ver o
-            roadmap item 7 no CLAUDE.md. O Bootstrap JS não é carregado no projeto, então
+        <%# Atendimento individual entra na etapa 4 — ver o roadmap item 7 no CLAUDE.md. O Bootstrap JS não é carregado no projeto, então
             a troca de aba é feita no script lá embaixo (data-aba). %>
         <ul class="nav nav-tabs mb-4" id="abas">
           <li class="nav-item"><a class="nav-link" href="#numero" data-aba="numero"><i class="bi bi-phone me-1"></i>Meu número</a></li>
           <li class="nav-item"><a class="nav-link" href="#turmas" data-aba="turmas"><i class="bi bi-people me-1"></i>Minhas turmas</a></li>
           <li class="nav-item"><a class="nav-link" href="#mensagem" data-aba="mensagem"><i class="bi bi-chat-text me-1"></i>Mensagem e limites</a></li>
-          <li class="nav-item"><span class="nav-link disabled" title="Disponível na próxima etapa">Envio</span></li>
-          <li class="nav-item"><span class="nav-link disabled" title="Disponível em uma próxima etapa">Atendimento individual</span></li>
-          <li class="nav-item"><span class="nav-link disabled" title="Disponível na próxima etapa">Histórico</span></li>
+          <li class="nav-item"><a class="nav-link" href="#envio" data-aba="envio"><i class="bi bi-send me-1"></i>Envio</a></li>
+          <li class="nav-item"><span class="nav-link disabled" title="Disponível na próxima etapa">Atendimento individual</span></li>
+          <li class="nav-item"><a class="nav-link" href="#historico" data-aba="historico"><i class="bi bi-clock-history me-1"></i>Histórico</a></li>
         </ul>
 
         <div id="avisoNaoConfigurado" class="alert alert-warning d-none">
@@ -153,7 +152,7 @@
               </div>
               <div class="alert alert-info small py-2">
                 <i class="bi bi-info-circle me-1"></i>
-                Esta é só uma conferência — nenhuma mensagem é enviada. O botão de iniciar o envio chega na próxima etapa.
+                Esta é só uma conferência — nenhuma mensagem é enviada daqui. Para enviar, use a aba <a href="#envio" data-ir-aba="envio">Envio</a>.
               </div>
               <div class="border rounded-3 p-3 mb-3">
                 <div class="small mb-2">
@@ -272,6 +271,98 @@
               </div>
             </div>
           </form>
+        </div>
+
+        <!-- ───────────── Envio ───────────── -->
+        <div data-painel="envio" hidden>
+          <div class="row g-3 mb-4">
+            <div class="col-md-6 col-xl-4">
+              <div class="card h-100">
+                <div class="card-body">
+                  <div class="small text-body-secondary mb-1">Meu WhatsApp</div>
+                  <div id="envioConexao">—</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-3 col-xl-4">
+              <div class="card h-100">
+                <div class="card-body">
+                  <div class="small text-body-secondary mb-1">Enviadas hoje</div>
+                  <div class="fs-4 fw-semibold" id="envioUsoHoje">—</div>
+                  <div class="progress mt-2" style="height: 6px;"><div class="progress-bar" id="envioBarraHoje" style="width: 0%"></div></div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-3 col-xl-4">
+              <div class="card h-100">
+                <div class="card-body">
+                  <div class="small text-body-secondary mb-1">Enviadas no mês</div>
+                  <div class="fs-4 fw-semibold" id="envioUsoMes">—</div>
+                  <div class="progress mt-2" style="height: 6px;"><div class="progress-bar" id="envioBarraMes" style="width: 0%"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-body" id="areaEnvio">
+              <p class="text-body-secondary mb-0">Carregando...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ───────────── Histórico ───────────── -->
+        <div data-painel="historico" hidden>
+          <div class="card">
+            <div class="card-body">
+              <h5 class="mb-1">Histórico de mensagens</h5>
+              <p class="text-body-secondary small mb-3">Todas as mensagens automáticas, de todos os usuários.</p>
+              <form id="formHistorico" class="row g-2 align-items-end mb-3">
+                <div class="col-auto">
+                  <label class="form-label small" for="historicoTurma">Turma</label>
+                  <select class="form-select form-select-sm" id="historicoTurma"><option value="">Todas</option></select>
+                </div>
+                <div class="col-auto">
+                  <label class="form-label small" for="historicoUsuario">Enviado por</label>
+                  <select class="form-select form-select-sm" id="historicoUsuario"><option value="">Todos</option></select>
+                </div>
+                <div class="col-auto">
+                  <label class="form-label small" for="historicoStatus">Situação</label>
+                  <select class="form-select form-select-sm" id="historicoStatus">
+                    <option value="">Todas</option>
+                    <option value="enviada">Enviadas</option>
+                    <option value="pendente">Na fila</option>
+                    <option value="falhou">Falharam</option>
+                    <option value="cancelada">Canceladas</option>
+                  </select>
+                </div>
+                <div class="col-auto">
+                  <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-filter me-1"></i>Filtrar</button>
+                </div>
+              </form>
+              <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Quando</th>
+                      <th>Aluno</th>
+                      <th>Turma</th>
+                      <th>Enviado por</th>
+                      <th>Situação</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tabelaHistorico"></tbody>
+                </table>
+              </div>
+              <div class="d-flex justify-content-between align-items-center mt-3 small">
+                <span class="text-body-secondary" id="historicoResumo"></span>
+                <div class="btn-group">
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="historicoAnterior">Anterior</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="historicoProxima">Próxima</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
       </div>
@@ -868,22 +959,395 @@
       }
     });
 
+    // ───────────── Envio ─────────────
+
+    const STATUS_MENSAGEM = {
+      pendente: { rotulo: 'Na fila', cor: 'secondary', icone: 'hourglass-split' },
+      enviando: { rotulo: 'Enviando…', cor: 'info', icone: 'arrow-repeat' },
+      enviada: { rotulo: 'Enviada', cor: 'success', icone: 'check' },
+      entregue: { rotulo: 'Entregue', cor: 'success', icone: 'check-all' },
+      lida: { rotulo: 'Lida', cor: 'primary', icone: 'check-all' },
+      falhou: { rotulo: 'Falhou', cor: 'danger', icone: 'x-circle' },
+      cancelada: { rotulo: 'Cancelada', cor: 'warning', icone: 'slash-circle' }
+    };
+
+    function badgeMensagem(status, erro) {
+      const s = STATUS_MENSAGEM[status] || { rotulo: status, cor: 'secondary', icone: 'dot' };
+      return `<span class="badge bg-${s.cor}-subtle text-${s.cor}-emphasis border border-${s.cor}-subtle" ${erro ? `title="${escaparHtml(erro)}"` : ''}><i class="bi bi-${s.icone} me-1"></i>${s.rotulo}</span>`
+        + (erro ? `<div class="small text-body-secondary mt-1">${escaparHtml(erro)}</div>` : '');
+    }
+
+    function formatarDataHora(dataIso) {
+      return new Date(dataIso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    }
+
+    let estadoEnvio = null;       // última resposta de /whatsapp/lote/atual
+    let confirmandoEnvio = null;  // prévia aberta na tela de confirmação
+    let diferencaRelogio = 0;     // relógio do servidor − relógio do navegador
+    let timerEnvio = null;
+    let timerContagem = null;
+
+    function pararAtualizacaoEnvio() {
+      clearInterval(timerEnvio);
+      clearInterval(timerContagem);
+      timerEnvio = timerContagem = null;
+    }
+
+    function desenharResumoEnvio(r) {
+      const conexao = document.getElementById('envioConexao');
+      if (r.sessao.pausadoMotivo) {
+        conexao.innerHTML = `
+          <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"><i class="bi bi-pause-circle-fill me-1"></i>Envio pausado</span>
+          <div class="small mt-2">${escaparHtml(r.sessao.pausadoMotivo)}</div>
+          <button type="button" class="btn btn-sm btn-warning mt-2" id="btnRetomar"><i class="bi bi-play-fill me-1"></i>Já resolvi — retomar</button>`;
+      } else if (r.sessao.conectado) {
+        conexao.innerHTML = '<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle"><i class="bi bi-check-circle-fill me-1"></i>Conectado</span>';
+      } else {
+        conexao.innerHTML = '<span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle">Não conectado</span> <a href="#numero" data-ir-aba="numero" class="small ms-1">conectar</a>';
+      }
+
+      const pct = (valor, limite) => `${Math.min(100, Math.round((valor / Math.max(1, limite)) * 100))}%`;
+      document.getElementById('envioUsoHoje').textContent = `${r.uso.hoje} / ${r.uso.limiteDia}`;
+      document.getElementById('envioBarraHoje').style.width = pct(r.uso.hoje, r.uso.limiteDia);
+      document.getElementById('envioUsoMes').textContent = `${r.uso.mes} / ${r.uso.limiteMes}`;
+      document.getElementById('envioBarraMes').style.width = pct(r.uso.mes, r.uso.limiteMes);
+    }
+
+    // Linha de "o que está acontecendo agora", com contagem regressiva que anda
+    // sozinha a cada segundo entre uma consulta e outra.
+    function textoAgora() {
+      const r = estadoEnvio;
+      if (!r?.lote || r.lote.status !== 'em_andamento') return '';
+      if (r.lote.aguardando) return `<i class="bi bi-hourglass-split me-1"></i>${escaparHtml(r.lote.aguardando)}`;
+      if (r.proxima?.status === 'enviando') return `<i class="bi bi-arrow-repeat me-1"></i>Enviando para <strong>${escaparHtml(r.proxima.nomeAluno)}</strong>…`;
+      if (!r.proxima) return '<i class="bi bi-check2-circle me-1"></i>Finalizando…';
+      const faltaMs = new Date(r.lote.proximoEnvioEm || 0).getTime() - (Date.now() + diferencaRelogio);
+      if (faltaMs <= 0) return `<i class="bi bi-send me-1"></i>Preparando a mensagem para <strong>${escaparHtml(r.proxima.nomeAluno)}</strong>…`;
+      const seg = Math.ceil(faltaMs / 1000);
+      const texto = seg >= 60 ? `${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, '0')}` : `${seg}s`;
+      return `<i class="bi bi-clock me-1"></i>Próxima mensagem em <strong>${texto}</strong>, para ${escaparHtml(r.proxima.nomeAluno)}`;
+    }
+
+    function desenharLote() {
+      const area = document.getElementById('areaEnvio');
+      const r = estadoEnvio;
+      const lote = r.lote;
+      const ativo = lote?.status === 'em_andamento';
+
+      const botaoIniciar = `<button type="button" class="btn btn-primary" id="btnIniciarEnvio" ${r.sessao.conectado && !r.sessao.pausadoMotivo ? '' : 'disabled'}><i class="bi bi-send-fill me-1"></i>${lote ? 'Iniciar novo envio' : 'Iniciar envio'}</button>`;
+
+      if (!lote) {
+        area.innerHTML = `
+          <h5 class="mb-1">Nenhum envio ainda</h5>
+          <p class="text-body-secondary">Ao iniciar, você confere a lista de alunos antes de qualquer mensagem sair.</p>
+          ${botaoIniciar}
+          ${r.sessao.conectado ? '' : '<div class="small text-body-secondary mt-2">Conecte o seu WhatsApp na aba Meu número para poder enviar.</div>'}`;
+        return;
+      }
+
+      const c = r.contagem;
+      const processadas = (c.enviada || 0) + (c.falhou || 0) + (c.cancelada || 0);
+      const pct = Math.round((processadas / Math.max(1, lote.total)) * 100);
+      const titulo = ativo ? 'Envio em andamento'
+        : lote.status === 'parado' ? `Envio parado${lote.paradoPor ? ` por ${escaparHtml(lote.paradoPor)}` : ''}`
+        : 'Envio concluído';
+
+      area.innerHTML = `
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+          <div>
+            <h5 class="mb-1">${titulo}</h5>
+            <div class="small text-body-secondary">Iniciado em ${formatarDataHora(lote.iniciadoEm)}${lote.finalizadoEm ? ` · terminou em ${formatarDataHora(lote.finalizadoEm)}` : ''}</div>
+          </div>
+          ${ativo
+            ? '<button type="button" class="btn btn-outline-danger" id="btnPararEnvio"><i class="bi bi-stop-circle me-1"></i>Parar envio</button>'
+            : botaoIniciar}
+        </div>
+
+        <div class="d-flex justify-content-between small mb-1">
+          <span><strong>${c.enviada || 0}</strong> enviada(s) de ${lote.total}</span>
+          <span class="text-body-secondary">${c.pendente || 0} na fila · ${c.falhou || 0} falha(s) · ${c.cancelada || 0} cancelada(s)</span>
+        </div>
+        <div class="progress mb-3" style="height: 10px;">
+          <div class="progress-bar bg-success" style="width: ${Math.round(((c.enviada || 0) / Math.max(1, lote.total)) * 100)}%"></div>
+          <div class="progress-bar bg-danger" style="width: ${Math.round(((c.falhou || 0) / Math.max(1, lote.total)) * 100)}%"></div>
+          <div class="progress-bar bg-warning" style="width: ${Math.round(((c.cancelada || 0) / Math.max(1, lote.total)) * 100)}%"></div>
+        </div>
+        ${ativo ? `<div class="alert alert-light border py-2 small" id="textoAgora">${textoAgora()}</div>` : ''}
+        <div class="small text-body-secondary mb-2">${pct}% processado</div>
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Aluno</th><th>Turma</th><th>Situação</th><th class="text-end">Enviada em</th></tr></thead>
+            <tbody>
+              ${r.mensagens.map((m) => `
+                <tr>
+                  <td>${escaparHtml(m.nomeAluno || '—')}<div class="small text-body-secondary">${formatarTelefone(m.telefone)}</div></td>
+                  <td class="small">${escaparHtml(nomeTurmaLimpo(m.nomeTurma) || m.codigoTurma)}</td>
+                  <td>${badgeMensagem(m.status, m.erro)}</td>
+                  <td class="text-end small text-nowrap">${m.enviadaEm ? formatarDataHora(m.enviadaEm) : '—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    }
+
+    async function carregarEnvio() {
+      if (confirmandoEnvio) return; // não atropela a tela de confirmação
+      try {
+        const r = await chamarApi('/whatsapp/lote/atual');
+        if (r.status !== 'ok') throw new Error(r.mensagem);
+        diferencaRelogio = new Date(r.agora).getTime() - Date.now();
+        estadoEnvio = r;
+        desenharResumoEnvio(r);
+        if (!confirmandoEnvio) desenharLote();
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          document.getElementById('areaEnvio').innerHTML = `<p class="text-danger mb-0">Não foi possível carregar o envio: ${escaparHtml(erro.message)}</p>`;
+        }
+      }
+    }
+
+    function iniciarAtualizacaoEnvio() {
+      pararAtualizacaoEnvio();
+      carregarEnvio();
+      timerEnvio = setInterval(carregarEnvio, 5000);
+      timerContagem = setInterval(() => {
+        const el = document.getElementById('textoAgora');
+        if (el) el.innerHTML = textoAgora();
+      }, 1000);
+    }
+
+    // Tela de confirmação: a mesma prévia da aba Minhas turmas, com uma caixa por
+    // aluno. Só vai pro servidor quem foi DESMARCADO — a lista em si é recalculada lá.
+    async function abrirConfirmacao() {
+      const area = document.getElementById('areaEnvio');
+      confirmandoEnvio = { receberiam: [] };
+      area.innerHTML = '<p class="text-body-secondary mb-0">Montando a lista...</p>';
+
+      const incluirSemResposta = localStorage.getItem('coor360_whatsapp_opcaoSemResposta') === '1';
+      const incluirNaoContatado = localStorage.getItem('coor360_whatsapp_opcaoNaoContatado') === '1';
+      const params = new URLSearchParams();
+      if (incluirSemResposta) params.set('incluirSemResposta', '1');
+      if (incluirNaoContatado) params.set('incluirNaoContatado', '1');
+
+      try {
+        const previa = await chamarApi(`/whatsapp/lote/previa${params.size ? `?${params}` : ''}`);
+        if (previa.status !== 'ok') throw new Error(previa.mensagem);
+        confirmandoEnvio = { ...previa, incluirSemResposta, incluirNaoContatado };
+
+        const opcoesTexto = [incluirSemResposta && 'sem resposta', incluirNaoContatado && 'não foi possível contatar'].filter(Boolean);
+        const lista = previa.receberiam;
+
+        area.innerHTML = `
+          <h5 class="mb-1">Confira quem vai receber</h5>
+          <p class="small text-body-secondary mb-3">
+            Desmarque quem não deve receber agora. ${opcoesTexto.length
+              ? `Incluindo quem já foi contatado e ficou: <strong>${opcoesTexto.join(', ')}</strong>.`
+              : 'Só quem ainda não teve contato neste período de faltas.'}
+            (Essas opções ficam na aba <a href="#turmas" data-ir-aba="turmas">Minhas turmas</a>.)
+          </p>
+          ${lista.length === 0
+            ? '<div class="alert alert-info">Nenhum aluno das suas turmas está apto a receber agora.</div>'
+            : `
+              <div class="table-responsive mb-3" style="max-height: 420px;">
+                <table class="table table-sm align-middle mb-0">
+                  <thead><tr>
+                    <th style="width: 2rem;"><input class="form-check-input" type="checkbox" id="marcarTodos" checked title="Marcar/desmarcar todos"></th>
+                    <th>Aluno</th><th>Turma</th><th class="text-end">Sem vir</th><th>Telefone</th>
+                  </tr></thead>
+                  <tbody>
+                    ${lista.map((a) => `
+                      <tr>
+                        <td><input class="form-check-input caixa-aluno" type="checkbox" checked value="${escaparHtml(`${a.matricula}|${a.codigoTurma}`)}"></td>
+                        <td>${escaparHtml(a.nomeAluno || '—')}${a.contatoNoEpisodio ? ` <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Nova tentativa · ${escaparHtml(a.contatoNoEpisodio.rotuloStatus)}</span>` : ''}</td>
+                        <td class="small">${escaparHtml(nomeTurmaLimpo(a.nomeTurma) || a.codigoTurma)}</td>
+                        <td class="text-end">${a.diasSemVir}</td>
+                        <td class="small text-nowrap">${formatarTelefone(a.telefone)}</td>
+                      </tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <div class="small text-body-secondary mb-3" id="resumoConfirmacao"></div>`}
+          <div class="d-flex gap-2">
+            ${lista.length ? '<button type="button" class="btn btn-primary" id="btnConfirmarEnvio"><i class="bi bi-send-fill me-1"></i>Confirmar e iniciar</button>' : ''}
+            <button type="button" class="btn btn-outline-secondary" id="btnCancelarConfirmacao">Voltar</button>
+          </div>`;
+        atualizarResumoConfirmacao();
+      } catch (erro) {
+        confirmandoEnvio = null;
+        if (erro.message !== 'Sessão expirada') {
+          area.innerHTML = `<p class="text-danger mb-2">Não foi possível montar a lista: ${escaparHtml(erro.message)}</p><button type="button" class="btn btn-outline-secondary" id="btnCancelarConfirmacao">Voltar</button>`;
+        }
+      }
+    }
+
+    function atualizarResumoConfirmacao() {
+      const resumo = document.getElementById('resumoConfirmacao');
+      const botao = document.getElementById('btnConfirmarEnvio');
+      if (!resumo || !botao) return;
+      const marcados = document.querySelectorAll('.caixa-aluno:checked').length;
+      const limite = confirmandoEnvio.limiteDiaEfetivo || 1;
+      const dias = Math.ceil(marcados / limite);
+      botao.disabled = marcados === 0;
+      botao.innerHTML = `<i class="bi bi-send-fill me-1"></i>Confirmar e iniciar (${marcados})`;
+      resumo.textContent = marcados === 0
+        ? 'Nenhum aluno marcado.'
+        : `${marcados} aluno(s) marcado(s). Com o limite de ${limite} por dia, o envio leva ${dias === 1 ? 'cerca de 1 dia' : `cerca de ${dias} dias`} — ele continua sozinho nos dias seguintes, dentro do horário configurado.`;
+    }
+
+    document.getElementById('areaEnvio').addEventListener('change', (evento) => {
+      if (evento.target.id === 'marcarTodos') {
+        document.querySelectorAll('.caixa-aluno').forEach((caixa) => { caixa.checked = evento.target.checked; });
+      }
+      if (evento.target.id === 'marcarTodos' || evento.target.classList.contains('caixa-aluno')) atualizarResumoConfirmacao();
+    });
+
+    document.getElementById('areaEnvio').addEventListener('click', async (evento) => {
+      const alvo = evento.target.closest('button');
+      if (!alvo) return;
+
+      if (alvo.id === 'btnIniciarEnvio') {
+        abrirConfirmacao();
+      } else if (alvo.id === 'btnCancelarConfirmacao') {
+        confirmandoEnvio = null;
+        carregarEnvio();
+      } else if (alvo.id === 'btnConfirmarEnvio') {
+        const excluidos = [...document.querySelectorAll('.caixa-aluno:not(:checked)')].map((caixa) => caixa.value);
+        const marcados = document.querySelectorAll('.caixa-aluno:checked').length;
+        const confirmacao = await Swal.fire({
+          title: `Enviar para ${marcados} aluno(s)?`,
+          text: 'As mensagens saem uma por vez, pelo seu WhatsApp, respeitando o intervalo e os limites. Você pode parar a qualquer momento.',
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonText: 'Iniciar envio',
+          cancelButtonText: 'Cancelar'
+        });
+        if (!confirmacao.isConfirmed) return;
+
+        alvo.disabled = true;
+        try {
+          const r = await chamarApi('/whatsapp/lote', {
+            method: 'POST',
+            body: JSON.stringify({ incluirSemResposta: confirmandoEnvio.incluirSemResposta, incluirNaoContatado: confirmandoEnvio.incluirNaoContatado, excluidos })
+          });
+          if (r.status !== 'ok') throw new Error(r.mensagem);
+          confirmandoEnvio = null;
+          carregarEnvio();
+        } catch (erro) {
+          alvo.disabled = false;
+          if (erro.message !== 'Sessão expirada') Swal.fire({ title: 'Não foi possível iniciar', text: erro.message, icon: 'error' });
+        }
+      } else if (alvo.id === 'btnPararEnvio') {
+        const confirmacao = await Swal.fire({
+          title: 'Parar o envio?',
+          text: 'Quem ainda está na fila não recebe. Esses alunos voltam a aparecer da próxima vez que você iniciar um envio.',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Parar envio',
+          confirmButtonColor: '#dc3545',
+          cancelButtonText: 'Continuar enviando'
+        });
+        if (!confirmacao.isConfirmed) return;
+        try {
+          const r = await chamarApi(`/whatsapp/lote/${estadoEnvio.lote.id}/parar`, { method: 'POST' });
+          if (r.status !== 'ok') throw new Error(r.mensagem);
+          carregarEnvio();
+        } catch (erro) {
+          if (erro.message !== 'Sessão expirada') Swal.fire({ title: 'Não foi possível parar', text: erro.message, icon: 'error' });
+        }
+      }
+    });
+
+    document.getElementById('envioConexao').addEventListener('click', async (evento) => {
+      if (evento.target.closest('#btnRetomar')) {
+        try {
+          const r = await chamarApi('/whatsapp/sessao/retomar', { method: 'POST' });
+          if (r.status !== 'ok') throw new Error(r.mensagem);
+          carregarEnvio();
+        } catch (erro) {
+          if (erro.message !== 'Sessão expirada') Swal.fire({ title: 'Não foi possível retomar', text: erro.message, icon: 'error' });
+        }
+      }
+    });
+
+    // ───────────── Histórico ─────────────
+
+    let paginaHistorico = 1;
+    let usuariosHistoricoPreenchidos = false;
+
+    async function carregarHistorico(pagina = 1) {
+      const tabela = document.getElementById('tabelaHistorico');
+      tabela.innerHTML = '<tr><td colspan="5" class="text-center text-body-secondary py-4">Carregando...</td></tr>';
+      const params = new URLSearchParams({ pagina });
+      const turma = document.getElementById('historicoTurma').value;
+      const usuario = document.getElementById('historicoUsuario').value;
+      const status = document.getElementById('historicoStatus').value;
+      if (turma) params.set('turma', turma);
+      if (usuario) params.set('usuario', usuario);
+      if (status) params.set('status', status);
+
+      try {
+        const r = await chamarApi(`/whatsapp/mensagens?${params}`);
+        if (r.status !== 'ok') throw new Error(r.mensagem);
+        paginaHistorico = r.pagina;
+
+        if (!usuariosHistoricoPreenchidos) {
+          const select = document.getElementById('historicoUsuario');
+          r.usuarios.forEach((u) => select.insertAdjacentHTML('beforeend', `<option value="${u.id}">${escaparHtml(u.nome)}</option>`));
+          usuariosHistoricoPreenchidos = true;
+        }
+
+        tabela.innerHTML = r.dados.length === 0
+          ? '<tr><td colspan="5" class="text-center text-body-secondary py-4">Nenhuma mensagem encontrada.</td></tr>'
+          : r.dados.map((m) => `
+            <tr>
+              <td class="small text-nowrap">${formatarDataHora(m.enviadaEm || m.atualizadoEm)}</td>
+              <td>${escaparHtml(m.nomeAluno || '—')}<div class="small text-body-secondary">${escaparHtml(m.matricula)}</div></td>
+              <td class="small">${escaparHtml(nomeTurmaLimpo(m.nomeTurma) || m.codigoTurma)}</td>
+              <td class="small">${escaparHtml(m.enviadoPor)}${m.numero ? `<div class="text-body-secondary">${formatarTelefone(m.numero)}${m.tipoNumero === 'institucional' ? ' · chip da escola' : ''}</div>` : ''}</td>
+              <td>${badgeMensagem(m.status, m.erro)}</td>
+            </tr>`).join('');
+
+        document.getElementById('historicoResumo').textContent = `${r.total} mensagem(ns) · página ${r.pagina} de ${r.paginas}`;
+        document.getElementById('historicoAnterior').disabled = r.pagina <= 1;
+        document.getElementById('historicoProxima').disabled = r.pagina >= r.paginas;
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          tabela.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4">Não foi possível carregar: ${escaparHtml(erro.message)}</td></tr>`;
+        }
+      }
+    }
+
+    preencherSelectTurmas(document.getElementById('historicoTurma'), chamarApi);
+    document.getElementById('formHistorico').addEventListener('submit', (evento) => {
+      evento.preventDefault();
+      carregarHistorico(1);
+    });
+    document.getElementById('historicoAnterior').addEventListener('click', () => carregarHistorico(paginaHistorico - 1));
+    document.getElementById('historicoProxima').addEventListener('click', () => carregarHistorico(paginaHistorico + 1));
+
     // ───────────── Abas ─────────────
 
-    // Cada aba carrega na primeira vez que é aberta; a de turmas recarrega sempre,
-    // porque outra pessoa pode ter assumido uma turma nesse meio tempo.
+    // Cada aba carrega na primeira vez que é aberta; turmas, envio e histórico
+    // recarregam sempre, porque outras pessoas mexem nesses dados ao mesmo tempo.
     const abasCarregadas = new Set();
 
     function abrirAba(nome) {
-      const abas = ['numero', 'turmas', 'mensagem'];
+      const abas = ['numero', 'turmas', 'mensagem', 'envio', 'historico'];
       if (!abas.includes(nome)) nome = 'numero';
 
       document.querySelectorAll('#abas [data-aba]').forEach((link) => link.classList.toggle('active', link.dataset.aba === nome));
       document.querySelectorAll('[data-painel]').forEach((painel) => { painel.hidden = painel.dataset.painel !== nome; });
 
+      // A consulta a cada 5s só roda com a aba Envio aberta.
+      if (nome === 'envio') iniciarAtualizacaoEnvio();
+      else pararAtualizacaoEnvio();
+
       if (nome === 'turmas') {
         carregarTurmas();
         carregarPrevia();
+      } else if (nome === 'historico') {
+        carregarHistorico(1);
       } else if (!abasCarregadas.has(nome)) {
         if (nome === 'numero') acompanharSessao();
         if (nome === 'mensagem') carregarConfig();
@@ -891,12 +1355,25 @@
       abasCarregadas.add(nome);
     }
 
+    function irParaAba(nome) {
+      history.replaceState(null, '', `#${nome}`);
+      abrirAba(nome);
+    }
+
     document.getElementById('abas').addEventListener('click', (evento) => {
       const link = evento.target.closest('[data-aba]');
       if (!link) return;
       evento.preventDefault();
-      history.replaceState(null, '', `#${link.dataset.aba}`);
-      abrirAba(link.dataset.aba);
+      irParaAba(link.dataset.aba);
+    });
+
+    // Links dentro do conteúdo que levam pra outra aba ("use a aba Envio").
+    document.addEventListener('click', (evento) => {
+      const link = evento.target.closest('[data-ir-aba]');
+      if (!link) return;
+      evento.preventDefault();
+      confirmandoEnvio = null;
+      irParaAba(link.dataset.irAba);
     });
 
     abrirAba(location.hash.slice(1));

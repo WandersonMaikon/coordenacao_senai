@@ -134,6 +134,13 @@ const STATUS_REENVIO_OPCIONAL = {
     nunca_contato: 'incluirNaoContatado'
 };
 
+// Status de mensagem que contam como "o aluno já recebeu".
+const STATUS_JA_RECEBEU = ['enviada', 'entregue', 'lida'];
+
+function chaveEpisodio(item) {
+    return `${item.matricula}|${item.codigoTurma}|${item.primeiraFalta}`;
+}
+
 function nomeResponsavel(usuario) {
     return primeiroNome(usuario.nome) || usuario.usuario;
 }
@@ -147,8 +154,8 @@ function nomeResponsavel(usuario) {
 // já foi contatado neste episódio, mas cujo último contato ficou "Sem resposta" /
 // "Não foi possível contatar" — o WhatsApp vira uma nova tentativa por outro canal.
 //
-// Ainda falta (etapa 3): pular quem já recebeu a mensagem automática neste
-// episódio de risco — essa regra vale independente das opções acima.
+// Independente das opções: quem já recebeu a mensagem automática neste episódio
+// de risco (ou já está na fila) nunca entra de novo.
 async function montarPrevia(usuario, sessao, opcoes = {}) {
     const turmasDoUsuario = await prisma.usuarioTurma.findMany({
         where: { usuarioId: usuario.id },
@@ -161,7 +168,7 @@ async function montarPrevia(usuario, sessao, opcoes = {}) {
     const candidatos = emRisco.filter((item) => codigos.has(item.codigoTurma));
     const matriculas = [...new Set(candidatos.map((item) => item.matricula))];
 
-    const [alunos, contatos] = await Promise.all([
+    const [alunos, contatos, mensagens] = await Promise.all([
         prisma.aluno.findMany({
             where: { matricula: { in: matriculas } },
             select: { matricula: true, telefone: true, situacao: true, whatsappOptOut: true }
@@ -170,9 +177,14 @@ async function montarPrevia(usuario, sessao, opcoes = {}) {
             where: { matricula: { in: matriculas } },
             select: { matricula: true, criadoEm: true, contatadoPor: true, status: true },
             orderBy: { criadoEm: 'desc' }
+        }),
+        prisma.mensagemWhatsapp.findMany({
+            where: { matricula: { in: matriculas } },
+            select: { matricula: true, codigoTurma: true, primeiraFalta: true, status: true, falhaDefinitiva: true, erro: true, enviadaEm: true, atualizadoEm: true }
         })
     ]);
     const alunoPorMatricula = new Map(alunos.map((a) => [a.matricula, a]));
+    const mensagemPorEpisodio = new Map(mensagens.map((m) => [chaveEpisodio(m), m]));
     const ultimoContatoPorMatricula = new Map();
     for (const contato of contatos) {
         if (!ultimoContatoPorMatricula.has(contato.matricula)) ultimoContatoPorMatricula.set(contato.matricula, contato);
@@ -205,8 +217,17 @@ async function montarPrevia(usuario, sessao, opcoes = {}) {
             }
             : null;
 
+        const mensagem = mensagemPorEpisodio.get(chaveEpisodio(item));
+        const dataCurta = (data) => new Date(data).toLocaleDateString('pt-BR', { timeZone: 'America/Porto_Velho' });
+
         let motivo = null;
-        if (!aluno || !aluno.telefone) motivo = 'Sem telefone cadastrado';
+        if (mensagem && STATUS_JA_RECEBEU.includes(mensagem.status)) {
+            motivo = `Já recebeu a mensagem automática em ${dataCurta(mensagem.enviadaEm || mensagem.atualizadoEm)}`;
+        } else if (mensagem && ['pendente', 'enviando'].includes(mensagem.status)) {
+            motivo = 'Já está na fila de envio';
+        } else if (mensagem && mensagem.status === 'falhou' && mensagem.falhaDefinitiva) {
+            motivo = `Envio anterior falhou: ${mensagem.erro || 'erro desconhecido'}`;
+        } else if (!aluno || !aluno.telefone) motivo = 'Sem telefone cadastrado';
         else if (!ehSituacaoAtiva(aluno.situacao)) motivo = `Situação na planilha: ${aluno.situacao}`;
         else if (aluno.whatsappOptOut) motivo = 'Pediu para não receber mensagens (SAIR)';
         else if (contatoNoEpisodio && !opcoes[STATUS_REENVIO_OPCIONAL[contatoNoEpisodio.status]]) {
@@ -233,7 +254,73 @@ async function montarPrevia(usuario, sessao, opcoes = {}) {
     return { receberiam, naoReceberiam, turmas: codigos.size };
 }
 
+class ErroLote extends Error {
+    constructor(mensagem, status = 400) {
+        super(mensagem);
+        this.status = status;
+    }
+}
+
+// Cria o lote a partir da prévia recalculada AQUI, no servidor — a tela só manda
+// quem desmarcou. Assim ninguém entra na fila por uma lista velha aberta no
+// navegador (um aluno que voltou a vir, ou que outra pessoa acabou de contatar).
+async function iniciarLote(usuario, sessao, opcoes, excluidos) {
+    const ativo = await prisma.loteWhatsapp.findFirst({ where: { sessaoId: sessao.id, status: 'em_andamento' } });
+    if (ativo) throw new ErroLote('Já existe um envio em andamento. Pare o envio atual antes de iniciar outro.', 409);
+
+    const previa = await montarPrevia(usuario, sessao, opcoes);
+    const chavesExcluidas = new Set(excluidos || []);
+    const lista = previa.receberiam.filter((a) => !chavesExcluidas.has(`${a.matricula}|${a.codigoTurma}`));
+    if (lista.length === 0) throw new ErroLote('Nenhum aluno selecionado para receber a mensagem.');
+
+    // O primeiro envio respeita o intervalo mínimo desde a última mensagem deste
+    // número — parar e iniciar de novo não pode virar um jeito de pular o intervalo.
+    const ultima = await prisma.mensagemWhatsapp.findFirst({
+        where: { sessaoId: sessao.id, enviadaEm: { not: null } },
+        orderBy: { enviadaEm: 'desc' },
+        select: { enviadaEm: true }
+    });
+    const agora = Date.now();
+    const liberadoEm = ultima ? ultima.enviadaEm.getTime() + sessao.intervaloMinSeg * 1000 : agora;
+
+    return prisma.$transaction(async (tx) => {
+        const lote = await tx.loteWhatsapp.create({
+            data: { sessaoId: sessao.id, usuarioId: usuario.id, total: lista.length, proximoEnvioEm: new Date(Math.max(agora, liberadoEm)) }
+        });
+        for (const aluno of lista) {
+            const dados = {
+                loteId: lote.id,
+                sessaoId: sessao.id,
+                usuarioId: usuario.id,
+                nomeAluno: aluno.nomeAluno,
+                nomeTurma: aluno.nomeTurma,
+                telefone: aluno.telefone,
+                texto: aluno.mensagem,
+                status: 'pendente',
+                erro: null,
+                falhaDefinitiva: false,
+                chatId: null,
+                messageId: null,
+                contatoId: null,
+                enviadaEm: null
+            };
+            // Linha cancelada (ou com falha temporária) de um lote anterior do mesmo
+            // episódio é reaproveitada — a chave única não deixa criar outra.
+            await tx.mensagemWhatsapp.upsert({
+                where: { matricula_codigoTurma_primeiraFalta: { matricula: aluno.matricula, codigoTurma: aluno.codigoTurma, primeiraFalta: aluno.primeiraFalta } },
+                update: dados,
+                create: { ...dados, matricula: aluno.matricula, codigoTurma: aluno.codigoTurma, primeiraFalta: aluno.primeiraFalta }
+            });
+        }
+        return lote;
+    });
+}
+
 module.exports = {
+    ErroLote,
+    STATUS_JA_RECEBEU,
+    ROTULO_STATUS,
+    iniciarLote,
     TETOS,
     AQUECIMENTO,
     MENSAGEM_PADRAO,

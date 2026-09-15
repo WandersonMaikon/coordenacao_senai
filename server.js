@@ -12,6 +12,7 @@ const viewRoutes = require('./src/routes/viewRoutes');
 const userscriptRoutes = require('./src/routes/userscriptRoutes');
 const whatsappRoutes = require('./src/routes/whatsappRoutes');
 const prisma = require('./src/config/prisma');
+const { iniciarWorker: iniciarWorkerWhatsapp } = require('./src/services/whatsappEnvio');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -58,6 +59,8 @@ app.listen(PORT, () => {
     console.log(`📋 Veja os lançamentos em: http://localhost:${PORT}/lancamentos`);
     console.log(`⚠️  Veja alunos em risco em: http://localhost:${PORT}/alunos-risco`);
     console.log(`🧩 Userscript dos professores em: http://localhost:${PORT}/sge-captura.user.js`);
+    // Envio de WhatsApp em lote (tela /whatsapp) — só liga se o OpenWA estiver configurado.
+    iniciarWorkerWhatsapp();
 });
 
 // Encerra a conexão do Prisma corretamente quando o servidor for finalizado
