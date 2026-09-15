@@ -25,6 +25,7 @@ model Usuario {
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
   whatsappSessao WhatsappSessao?
+  turmasWhatsapp UsuarioTurma[]
 
   @@map("usuarios")
 }
@@ -66,6 +67,24 @@ model WhatsappSessao {
   usuario Usuario @relation(fields: [usuarioId], references: [id])
 
   @@map("whatsapp_sessoes")
+}
+
+// ─────────────────────────────────────────
+// Turmas que cada usuário assumiu na tela /whatsapp — os alunos em risco delas
+// recebem mensagem do número desse usuário. codigoTurma é ÚNICO: uma turma tem um
+// responsável só, e é a constraint (não uma checagem no código) que impede dois
+// usuários de assumirem a mesma turma no mesmo instante.
+// ─────────────────────────────────────────
+model UsuarioTurma {
+  id          Int      @id @default(autoincrement())
+  usuarioId   Int      @map("usuario_id")
+  codigoTurma String   @unique @map("codigo_turma") @db.VarChar(50)
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@index([usuarioId])
+  @@map("usuario_turmas")
 }
 
 // ─────────────────────────────────────────
@@ -118,6 +137,8 @@ model Aluno {
   cpf         String?  @db.VarChar(20)
   nascimento  DateTime?
   situacao    String?  @db.VarChar(50)
+  // Respondeu SAIR no WhatsApp: não recebe mais mensagem automática nenhuma.
+  whatsappOptOut Boolean @default(false) @map("whatsapp_opt_out")
   criadoEm    DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 

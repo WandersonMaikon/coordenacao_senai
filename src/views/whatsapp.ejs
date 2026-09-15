@@ -22,15 +22,16 @@
           </div>
         </div>
 
-        <%# As outras abas (turmas, mensagem e limites, envio, atendimento individual,
-            histórico) entram nas próximas etapas — ver o roadmap item 7 no CLAUDE.md. %>
-        <ul class="nav nav-tabs mb-4">
-          <li class="nav-item"><span class="nav-link active"><i class="bi bi-phone me-1"></i>Meu número</span></li>
-          <li class="nav-item"><span class="nav-link disabled">Minhas turmas</span></li>
-          <li class="nav-item"><span class="nav-link disabled">Mensagem e limites</span></li>
-          <li class="nav-item"><span class="nav-link disabled">Envio</span></li>
-          <li class="nav-item"><span class="nav-link disabled">Atendimento individual</span></li>
-          <li class="nav-item"><span class="nav-link disabled">Histórico</span></li>
+        <%# Envio, Atendimento individual e Histórico entram nas etapas 3 e 4 — ver o
+            roadmap item 7 no CLAUDE.md. O Bootstrap JS não é carregado no projeto, então
+            a troca de aba é feita no script lá embaixo (data-aba). %>
+        <ul class="nav nav-tabs mb-4" id="abas">
+          <li class="nav-item"><a class="nav-link" href="#numero" data-aba="numero"><i class="bi bi-phone me-1"></i>Meu número</a></li>
+          <li class="nav-item"><a class="nav-link" href="#turmas" data-aba="turmas"><i class="bi bi-people me-1"></i>Minhas turmas</a></li>
+          <li class="nav-item"><a class="nav-link" href="#mensagem" data-aba="mensagem"><i class="bi bi-chat-text me-1"></i>Mensagem e limites</a></li>
+          <li class="nav-item"><span class="nav-link disabled" title="Disponível na próxima etapa">Envio</span></li>
+          <li class="nav-item"><span class="nav-link disabled" title="Disponível em uma próxima etapa">Atendimento individual</span></li>
+          <li class="nav-item"><span class="nav-link disabled" title="Disponível na próxima etapa">Histórico</span></li>
         </ul>
 
         <div id="avisoNaoConfigurado" class="alert alert-warning d-none">
@@ -46,6 +47,7 @@
           considere um chip da escola.
         </div>
 
+        <div data-painel="numero" hidden>
         <div class="row g-4">
           <div class="col-lg-5">
             <div class="card h-100">
@@ -98,6 +100,162 @@
             </div>
           </div>
         </div>
+        </div>
+
+        <!-- ───────────── Minhas turmas ───────────── -->
+        <div data-painel="turmas" hidden>
+          <div class="card mb-4">
+            <div class="card-body">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <h5 class="mb-1">Turmas</h5>
+                  <p class="text-body-secondary small mb-0">
+                    Assuma as turmas que você vai atender. Os alunos em risco delas recebem mensagem do
+                    <strong>seu</strong> número. Cada turma fica com uma pessoa só.
+                  </p>
+                </div>
+                <select class="form-select form-select-sm w-auto" id="filtroTurmas">
+                  <option value="todas">Todas as turmas</option>
+                  <option value="minhas">Só as minhas</option>
+                  <option value="disponiveis">Só as disponíveis</option>
+                </select>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Turma</th>
+                      <th class="text-end" title="Alunos em risco agora (sem contar os recuperados em acompanhamento)">Em risco</th>
+                      <th>Responsável</th>
+                      <th class="text-end"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="tabelaTurmas">
+                    <tr><td colspan="4" class="text-center text-body-secondary py-4">Carregando...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-body">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <h5 class="mb-1">Quem receberia agora</h5>
+                  <p class="text-body-secondary small mb-0" id="resumoPrevia">
+                    Alunos em risco das suas turmas que receberiam a mensagem se o envio fosse iniciado agora.
+                  </p>
+                </div>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="btnAtualizarPrevia">
+                  <i class="bi bi-arrow-clockwise me-1"></i>Atualizar
+                </button>
+              </div>
+              <div class="alert alert-info small py-2">
+                <i class="bi bi-info-circle me-1"></i>
+                Esta é só uma conferência — nenhuma mensagem é enviada. O botão de iniciar o envio chega na próxima etapa.
+              </div>
+              <div id="conteudoPrevia"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ───────────── Mensagem e limites ───────────── -->
+        <div data-painel="mensagem" hidden>
+          <form id="formConfig">
+            <div class="row g-4">
+              <div class="col-lg-7">
+                <div class="card h-100">
+                  <div class="card-body">
+                    <h5 class="mb-1">Mensagem</h5>
+                    <p class="text-body-secondary small mb-3">
+                      Clique numa variável para inserir no ponto do cursor — ela é trocada pelos dados de cada aluno.
+                    </p>
+                    <div class="d-flex flex-wrap gap-1 mb-2" id="botoesVariaveis"></div>
+                    <textarea class="form-control" id="campoMensagem" rows="7" maxlength="1000"></textarea>
+                    <div class="d-flex justify-content-between small mt-1">
+                      <button type="button" class="btn btn-link btn-sm p-0" id="btnMensagemPadrao">Restaurar mensagem padrão</button>
+                      <span class="text-body-secondary" id="contadorMensagem"></span>
+                    </div>
+
+                    <h6 class="mt-4 mb-2">Como o aluno vai receber</h6>
+                    <p class="text-body-secondary small mb-2">
+                      Exemplo com uma aluna fictícia. O menu de motivos e o "SAIR" são
+                      <strong>adicionados automaticamente</strong> no final — é por eles que o sistema entende a resposta.
+                    </p>
+                    <div class="p-3 rounded-3 small" id="previaMensagem"
+                         style="background: #dcf8c6; color: #111; white-space: pre-wrap; max-width: 34rem;"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-lg-5">
+                <div class="card h-100">
+                  <div class="card-body">
+                    <h5 class="mb-1">Limites de envio</h5>
+                    <p class="text-body-secondary small mb-3">
+                      Protegem o seu número de bloqueio. Quanto mais devagar, menor o risco.
+                    </p>
+
+                    <div id="avisoAquecimento" class="alert alert-warning small py-2 d-none"></div>
+
+                    <label class="form-label">Intervalo entre mensagens (segundos)</label>
+                    <div class="row g-2 mb-1">
+                      <div class="col">
+                        <div class="input-group">
+                          <span class="input-group-text">mín.</span>
+                          <input type="number" class="form-control" id="campoIntervaloMin" min="60" step="1" required>
+                        </div>
+                      </div>
+                      <div class="col">
+                        <div class="input-group">
+                          <span class="input-group-text">máx.</span>
+                          <input type="number" class="form-control" id="campoIntervaloMax" min="60" step="1" required>
+                        </div>
+                      </div>
+                    </div>
+                    <p class="small text-body-secondary mb-3" id="textoIntervalo">
+                      Cada mensagem sai num tempo sorteado entre o mínimo e o máximo — um ritmo fixo parece robô.
+                    </p>
+
+                    <div class="row g-2 mb-3">
+                      <div class="col">
+                        <label class="form-label" for="campoLimiteDia">Máximo por dia</label>
+                        <input type="number" class="form-control" id="campoLimiteDia" min="1" step="1" required>
+                      </div>
+                      <div class="col">
+                        <label class="form-label" for="campoLimiteMes">Máximo por mês</label>
+                        <input type="number" class="form-control" id="campoLimiteMes" min="1" step="1" required>
+                      </div>
+                    </div>
+
+                    <label class="form-label">Horário de envio</label>
+                    <div class="row g-2 mb-1">
+                      <div class="col">
+                        <div class="input-group">
+                          <span class="input-group-text">das</span>
+                          <input type="time" class="form-control" id="campoJanelaInicio" required>
+                        </div>
+                      </div>
+                      <div class="col">
+                        <div class="input-group">
+                          <span class="input-group-text">às</span>
+                          <input type="time" class="form-control" id="campoJanelaFim" required>
+                        </div>
+                      </div>
+                    </div>
+                    <p class="small text-body-secondary mb-4">De segunda a sábado. Fora desse horário o envio espera.</p>
+
+                    <p class="small text-body-secondary mb-3" id="textoTetos"></p>
+
+                    <button type="submit" class="btn btn-primary" id="btnSalvarConfig">Salvar mensagem e limites</button>
+                    <span id="statusConfig" class="ms-2 small"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
 
       </div>
     </main>
@@ -106,6 +264,7 @@
 
   </div>
 
+  <script src="/js/turmas.js"></script>
   <script>
     const token = localStorage.getItem('coor360_token');
 
@@ -157,6 +316,9 @@
     function formatarTelefone(telefone) {
       let digitos = String(telefone || '').replace(/\D/g, '');
       if (digitos.length >= 12 && digitos.startsWith('55')) digitos = digitos.slice(2);
+      // O WhatsApp reporta alguns celulares sem o 9º dígito (69 9230-6863): celular
+      // começa com 6-9 depois do DDD, então devolve o 9 só na exibição.
+      if (digitos.length === 10 && /[6-9]/.test(digitos[2])) digitos = `${digitos.slice(0, 2)}9${digitos.slice(2)}`;
       if (digitos.length === 11) return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 7)}-${digitos.slice(7)}`;
       if (digitos.length === 10) return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 6)}-${digitos.slice(6)}`;
       return digitos;
@@ -353,7 +515,356 @@
       }
     });
 
-    acompanharSessao();
+    // ───────────── Minhas turmas ─────────────
+
+    let turmasCarregadas = [];
+    let usuarioEhAdmin = false;
+
+    function desenharTurmas() {
+      const filtro = document.getElementById('filtroTurmas').value;
+      const tabela = document.getElementById('tabelaTurmas');
+
+      // Minhas primeiro, depois as disponíveis, depois as de outras pessoas;
+      // dentro de cada grupo, mais alunos em risco antes.
+      const grupo = (t) => (t.minha ? 0 : t.responsavel ? 2 : 1);
+      const lista = turmasCarregadas
+        .filter((t) => filtro === 'todas' || (filtro === 'minhas' && t.minha) || (filtro === 'disponiveis' && !t.responsavel))
+        .sort((a, b) => grupo(a) - grupo(b) || b.emRisco - a.emRisco || (a.nomeTurma || '').localeCompare(b.nomeTurma || '', 'pt-BR'));
+
+      if (lista.length === 0) {
+        tabela.innerHTML = `<tr><td colspan="4" class="text-center text-body-secondary py-4">${filtro === 'minhas' ? 'Você ainda não assumiu nenhuma turma.' : 'Nenhuma turma encontrada.'}</td></tr>`;
+        return;
+      }
+
+      tabela.innerHTML = lista.map((t) => {
+        const codigo = escaparHtml(t.codigoTurma);
+        let responsavel;
+        let acao;
+        if (t.minha) {
+          responsavel = '<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle"><i class="bi bi-check-circle-fill me-1"></i>Minha</span>';
+          acao = `<button type="button" class="btn btn-sm btn-outline-danger" data-liberar="${codigo}">Liberar</button>`;
+        } else if (t.responsavel) {
+          responsavel = `<span class="text-body-secondary"><i class="bi bi-person-fill me-1"></i>Com ${escaparHtml(t.responsavel.nome || t.responsavel.usuario)}</span>`;
+          acao = usuarioEhAdmin
+            ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-liberar="${codigo}" data-outra-pessoa="${escaparHtml(t.responsavel.nome || t.responsavel.usuario)}" title="Como administrador, você pode liberar a turma de outra pessoa">Liberar</button>`
+            : '';
+        } else {
+          responsavel = '<span class="text-body-secondary">Disponível</span>';
+          acao = `<button type="button" class="btn btn-sm btn-primary" data-assumir="${codigo}">Assumir</button>`;
+        }
+        return `
+          <tr>
+            <td>${escaparHtml(nomeTurmaLimpo(t.nomeTurma) || t.codigoTurma)}<div class="small text-body-secondary">${codigo}</div></td>
+            <td class="text-end">${t.emRisco ? `<span class="badge bg-danger-subtle text-danger-emphasis">${t.emRisco}</span>` : '<span class="text-body-secondary">0</span>'}</td>
+            <td>${responsavel}</td>
+            <td class="text-end">${acao}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function carregarTurmas() {
+      try {
+        const resposta = await chamarApi('/whatsapp/turmas');
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        turmasCarregadas = resposta.dados;
+        usuarioEhAdmin = resposta.admin;
+        desenharTurmas();
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          document.getElementById('tabelaTurmas').innerHTML =
+            `<tr><td colspan="4" class="text-center text-danger py-4">Não foi possível carregar as turmas: ${escaparHtml(erro.message)}</td></tr>`;
+        }
+      }
+    }
+
+    function linhaPrevia(aluno, indice) {
+      return `
+        <tr>
+          <td>${escaparHtml(aluno.nomeAluno || '—')}<div class="small text-body-secondary">${escaparHtml(aluno.matricula)}</div></td>
+          <td class="small">${escaparHtml(nomeTurmaLimpo(aluno.nomeTurma) || aluno.codigoTurma)}</td>
+          <td class="text-end">${aluno.diasSemVir} ${aluno.diasSemVir === 1 ? 'dia' : 'dias'}</td>
+          <td class="small text-nowrap">${formatarTelefone(aluno.telefone)}</td>
+          <td class="text-end"><button type="button" class="btn btn-link btn-sm p-0" data-ver-mensagem="${indice}">ver mensagem</button></td>
+        </tr>
+        <tr id="mensagemPrevia${indice}" hidden>
+          <td colspan="5" class="bg-body-tertiary">
+            <div class="p-3 rounded-3 small" style="background: #dcf8c6; color: #111; white-space: pre-wrap; max-width: 34rem;">${escaparHtml(aluno.mensagem)}</div>
+          </td>
+        </tr>
+      `;
+    }
+
+    async function carregarPrevia() {
+      const conteudo = document.getElementById('conteudoPrevia');
+      const resumo = document.getElementById('resumoPrevia');
+      conteudo.innerHTML = '<p class="text-body-secondary small mb-0">Calculando...</p>';
+      try {
+        const resposta = await chamarApi('/whatsapp/lote/previa');
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+
+        if (resposta.turmas === 0) {
+          resumo.textContent = 'Alunos em risco das suas turmas que receberiam a mensagem se o envio fosse iniciado agora.';
+          conteudo.innerHTML = '<p class="text-body-secondary mb-0">Assuma pelo menos uma turma acima para ver quem receberia.</p>';
+          return;
+        }
+
+        const total = resposta.receberiam.length;
+        // Com o limite diário, um lote grande leva dias — melhor saber antes de iniciar.
+        const dias = total > 0 ? Math.ceil(total / resposta.limiteDiaEfetivo) : 0;
+        resumo.innerHTML = total === 0
+          ? `Ninguém receberia agora nas suas ${resposta.turmas} turma(s).`
+          : `<strong>${total} aluno(s)</strong> receberiam, nas suas ${resposta.turmas} turma(s). Com o limite atual de ${resposta.limiteDiaEfetivo} por dia, o envio levaria ${dias === 1 ? 'cerca de 1 dia' : `cerca de ${dias} dias`}.`;
+
+        let htmlConteudo = total === 0
+          ? '<p class="text-body-secondary">Nenhum aluno em risco das suas turmas está apto a receber agora.</p>'
+          : `
+            <div class="table-responsive mb-3">
+              <table class="table table-sm align-middle mb-0">
+                <thead><tr><th>Aluno</th><th>Turma</th><th class="text-end">Sem vir</th><th>Telefone</th><th></th></tr></thead>
+                <tbody>${resposta.receberiam.map(linhaPrevia).join('')}</tbody>
+              </table>
+            </div>`;
+
+        if (resposta.naoReceberiam.length > 0) {
+          htmlConteudo += `
+            <details>
+              <summary class="small text-body-secondary">${resposta.naoReceberiam.length} aluno(s) em risco não receberiam — ver motivo</summary>
+              <div class="table-responsive mt-2">
+                <table class="table table-sm align-middle mb-0">
+                  <thead><tr><th>Aluno</th><th>Turma</th><th>Por que não</th></tr></thead>
+                  <tbody>
+                    ${resposta.naoReceberiam.map((a) => `
+                      <tr>
+                        <td>${escaparHtml(a.nomeAluno || '—')}<div class="small text-body-secondary">${escaparHtml(a.matricula)}</div></td>
+                        <td class="small">${escaparHtml(nomeTurmaLimpo(a.nomeTurma) || a.codigoTurma)}</td>
+                        <td class="small">${escaparHtml(a.motivo)}</td>
+                      </tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </details>`;
+        }
+        conteudo.innerHTML = htmlConteudo;
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          conteudo.innerHTML = `<p class="text-danger small mb-0">Não foi possível calcular a prévia: ${escaparHtml(erro.message)}</p>`;
+        }
+      }
+    }
+
+    document.getElementById('filtroTurmas').addEventListener('change', desenharTurmas);
+    document.getElementById('btnAtualizarPrevia').addEventListener('click', carregarPrevia);
+
+    document.getElementById('conteudoPrevia').addEventListener('click', (evento) => {
+      const botao = evento.target.closest('[data-ver-mensagem]');
+      if (!botao) return;
+      const linha = document.getElementById(`mensagemPrevia${botao.dataset.verMensagem}`);
+      linha.hidden = !linha.hidden;
+      botao.textContent = linha.hidden ? 'ver mensagem' : 'ocultar';
+    });
+
+    document.getElementById('tabelaTurmas').addEventListener('click', async (evento) => {
+      const assumir = evento.target.closest('[data-assumir]');
+      const liberar = evento.target.closest('[data-liberar]');
+      if (!assumir && !liberar) return;
+
+      const botao = assumir || liberar;
+      const codigo = assumir ? assumir.dataset.assumir : liberar.dataset.liberar;
+
+      if (liberar) {
+        const outraPessoa = liberar.dataset.outraPessoa;
+        const confirmacao = await Swal.fire({
+          title: 'Liberar a turma?',
+          text: outraPessoa
+            ? `A turma está com ${outraPessoa}. Ela deixa de receber mensagens pelo número dessa pessoa e fica disponível para outro usuário assumir.`
+            : 'Os alunos desta turma deixam de receber mensagens pelo seu número, e a turma fica disponível para outro usuário assumir.',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Liberar',
+          cancelButtonText: 'Cancelar'
+        });
+        if (!confirmacao.isConfirmed) return;
+      }
+
+      botao.disabled = true;
+      try {
+        const resposta = await chamarApi(`/whatsapp/turmas/${encodeURIComponent(codigo)}`, { method: assumir ? 'POST' : 'DELETE' });
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          Swal.fire({ title: assumir ? 'Não foi possível assumir' : 'Não foi possível liberar', text: erro.message, icon: 'error' });
+        }
+      }
+      // Recarrega sempre: num 409 outra pessoa acabou de assumir, e a tela precisa mostrar isso.
+      await carregarTurmas();
+      carregarPrevia();
+    });
+
+    // ───────────── Mensagem e limites ─────────────
+
+    let mensagemPadrao = '';
+    let timerPreviaMensagem = null;
+
+    function formatarDuracao(segundos) {
+      const min = Math.floor(segundos / 60);
+      const seg = segundos % 60;
+      if (min === 0) return `${seg} s`;
+      return seg ? `${min} min ${seg} s` : `${min} min`;
+    }
+
+    function atualizarTextosLimites() {
+      const min = Number(document.getElementById('campoIntervaloMin').value);
+      const max = Number(document.getElementById('campoIntervaloMax').value);
+      if (min && max) {
+        document.getElementById('textoIntervalo').textContent =
+          `Cada mensagem sai entre ${formatarDuracao(min)} e ${formatarDuracao(max)} depois da anterior, num tempo sorteado — um ritmo fixo parece robô.`;
+      }
+      const campo = document.getElementById('campoMensagem');
+      document.getElementById('contadorMensagem').textContent = `${campo.value.length}/${campo.maxLength}`;
+    }
+
+    async function atualizarPreviaMensagem() {
+      try {
+        const resposta = await chamarApi('/whatsapp/config/previa', {
+          method: 'POST',
+          body: JSON.stringify({ mensagemModelo: document.getElementById('campoMensagem').value })
+        });
+        if (resposta.status === 'ok') document.getElementById('previaMensagem').textContent = resposta.texto;
+      } catch (erro) {
+        // A prévia é só conforto visual; se falhar, o salvar ainda funciona.
+      }
+    }
+
+    function agendarPreviaMensagem() {
+      atualizarTextosLimites();
+      clearTimeout(timerPreviaMensagem);
+      timerPreviaMensagem = setTimeout(atualizarPreviaMensagem, 500);
+    }
+
+    function preencherConfig(dados) {
+      document.getElementById('campoMensagem').value = dados.mensagemModelo;
+      document.getElementById('campoIntervaloMin').value = dados.intervaloMinSeg;
+      document.getElementById('campoIntervaloMax').value = dados.intervaloMaxSeg;
+      document.getElementById('campoLimiteDia').value = dados.limiteDia;
+      document.getElementById('campoLimiteMes').value = dados.limiteMes;
+      document.getElementById('campoJanelaInicio').value = dados.janelaInicio;
+      document.getElementById('campoJanelaFim').value = dados.janelaFim;
+      atualizarTextosLimites();
+      atualizarPreviaMensagem();
+    }
+
+    async function carregarConfig() {
+      try {
+        const resposta = await chamarApi('/whatsapp/config');
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        const { tetos, aquecimento } = resposta;
+
+        document.getElementById('botoesVariaveis').innerHTML = resposta.variaveis
+          .map((v) => `<button type="button" class="btn btn-sm btn-outline-secondary" data-variavel="${v}">${v}</button>`)
+          .join('');
+
+        document.getElementById('textoTetos').textContent =
+          `Limites máximos do sistema: intervalo mínimo de ${formatarDuracao(tetos.intervaloMinSeg)}, até ${tetos.limiteDiaMax} mensagens por dia e ${tetos.limiteMesMax} por mês, entre ${tetos.janelaMaisCedo} e ${tetos.janelaMaisTarde}.`;
+
+        const aviso = document.getElementById('avisoAquecimento');
+        aviso.classList.toggle('d-none', !resposta.dados.emAquecimento);
+        aviso.innerHTML = `<i class="bi bi-thermometer-half me-1"></i>Número novo: nos primeiros ${aquecimento.dias} dias depois de conectar, o sistema envia no máximo <strong>${aquecimento.limiteDia} por dia</strong>, mesmo que o limite abaixo seja maior.`;
+
+        mensagemPadrao = resposta.mensagemPadrao;
+        preencherConfig(resposta.dados);
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          document.getElementById('statusConfig').className = 'ms-2 small text-danger';
+          document.getElementById('statusConfig').textContent = `Não foi possível carregar: ${erro.message}`;
+        }
+      }
+    }
+
+    document.getElementById('botoesVariaveis').addEventListener('click', (evento) => {
+      const botao = evento.target.closest('[data-variavel]');
+      if (!botao) return;
+      const campo = document.getElementById('campoMensagem');
+      const inicio = campo.selectionStart ?? campo.value.length;
+      const fim = campo.selectionEnd ?? campo.value.length;
+      campo.value = campo.value.slice(0, inicio) + botao.dataset.variavel + campo.value.slice(fim);
+      campo.focus();
+      campo.selectionStart = campo.selectionEnd = inicio + botao.dataset.variavel.length;
+      agendarPreviaMensagem();
+    });
+
+    document.getElementById('campoMensagem').addEventListener('input', agendarPreviaMensagem);
+    ['campoIntervaloMin', 'campoIntervaloMax'].forEach((id) =>
+      document.getElementById(id).addEventListener('input', atualizarTextosLimites));
+
+    document.getElementById('btnMensagemPadrao').addEventListener('click', () => {
+      if (!mensagemPadrao) return;
+      document.getElementById('campoMensagem').value = mensagemPadrao;
+      agendarPreviaMensagem();
+    });
+
+    document.getElementById('formConfig').addEventListener('submit', async (evento) => {
+      evento.preventDefault();
+      const statusEl = document.getElementById('statusConfig');
+      statusEl.className = 'ms-2 small text-body';
+      statusEl.textContent = 'Salvando...';
+      try {
+        const resposta = await chamarApi('/whatsapp/config', {
+          method: 'PUT',
+          body: JSON.stringify({
+            mensagemModelo: document.getElementById('campoMensagem').value,
+            intervaloMinSeg: Number(document.getElementById('campoIntervaloMin').value),
+            intervaloMaxSeg: Number(document.getElementById('campoIntervaloMax').value),
+            limiteDia: Number(document.getElementById('campoLimiteDia').value),
+            limiteMes: Number(document.getElementById('campoLimiteMes').value),
+            janelaInicio: document.getElementById('campoJanelaInicio').value,
+            janelaFim: document.getElementById('campoJanelaFim').value
+          })
+        });
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        statusEl.className = 'ms-2 small text-success';
+        statusEl.textContent = resposta.mensagem;
+        preencherConfig(resposta.dados);
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          statusEl.className = 'ms-2 small text-danger';
+          statusEl.textContent = erro.message;
+        }
+      }
+    });
+
+    // ───────────── Abas ─────────────
+
+    // Cada aba carrega na primeira vez que é aberta; a de turmas recarrega sempre,
+    // porque outra pessoa pode ter assumido uma turma nesse meio tempo.
+    const abasCarregadas = new Set();
+
+    function abrirAba(nome) {
+      const abas = ['numero', 'turmas', 'mensagem'];
+      if (!abas.includes(nome)) nome = 'numero';
+
+      document.querySelectorAll('#abas [data-aba]').forEach((link) => link.classList.toggle('active', link.dataset.aba === nome));
+      document.querySelectorAll('[data-painel]').forEach((painel) => { painel.hidden = painel.dataset.painel !== nome; });
+
+      if (nome === 'turmas') {
+        carregarTurmas();
+        carregarPrevia();
+      } else if (!abasCarregadas.has(nome)) {
+        if (nome === 'numero') acompanharSessao();
+        if (nome === 'mensagem') carregarConfig();
+      }
+      abasCarregadas.add(nome);
+    }
+
+    document.getElementById('abas').addEventListener('click', (evento) => {
+      const link = evento.target.closest('[data-aba]');
+      if (!link) return;
+      evento.preventDefault();
+      history.replaceState(null, '', `#${link.dataset.aba}`);
+      abrirAba(link.dataset.aba);
+    });
+
+    abrirAba(location.hash.slice(1));
   </script>
 </body>
 

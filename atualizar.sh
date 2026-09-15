@@ -12,7 +12,13 @@ echo ""
 echo "======================================"
 echo "🐳 2. Reconstruindo e reiniciando os containers..."
 echo "======================================"
-docker compose --profile tunnel up -d --build
+# Só o node_retencao é reconstruído a cada deploy. O openwa_retencao é construído
+# a partir do GitHub, e reconstruir derrubaria o WhatsApp conectado de todo mundo a
+# cada push. O segundo "up" (sem --build) sobe o que estiver parado e só recria o
+# OpenWA se a configuração dele no compose mudar. Para atualizar a versão do OpenWA:
+#   docker compose up -d --build openwa_retencao
+docker compose --profile tunnel up -d --build node_retencao
+docker compose --profile tunnel up -d
 
 echo ""
 echo "======================================"

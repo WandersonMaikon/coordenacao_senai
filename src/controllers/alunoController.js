@@ -688,4 +688,17 @@ async function resumoAlunos(req, res) {
     }
 }
 
-module.exports = { listarEmRisco, listarRecuperados, importarTelefones, resumoAlunos, atencaoPainel, DIAS_AULA_CONSECUTIVOS_RISCO };
+module.exports = {
+    listarEmRisco,
+    listarRecuperados,
+    importarTelefones,
+    resumoAlunos,
+    atencaoPainel,
+    DIAS_AULA_CONSECUTIVOS_RISCO,
+    // Reaproveitados pelo envio de WhatsApp (src/services/whatsappLote.js)
+    calcularAlunosEmRiscoSemRecuperados,
+    ehSituacaoAtiva,
+    converterDataAula,
+    diaNoFusoDaEscola,
+    FUSO_ESCOLA
+};
