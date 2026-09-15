@@ -24,7 +24,48 @@ model Usuario {
   criadoEm  DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
+  whatsappSessao WhatsappSessao?
+
   @@map("usuarios")
+}
+
+// ─────────────────────────────────────────
+// Número de WhatsApp de cada usuário da coordenação, conectado no OpenWA
+// (container openwa_retencao). Um número por usuário: pessoal ou chip da escola.
+// ─────────────────────────────────────────
+model WhatsappSessao {
+  id                Int       @id @default(autoincrement())
+  usuarioId         Int       @unique @map("usuario_id")
+  // Número que o usuário cadastrou (só dígitos, sem o 55). É com ele que o
+  // número realmente conectado no QR é conferido — ler o QR com outro celular
+  // pausa o envio.
+  telefone          String?   @db.VarChar(20)
+  // O que o OpenWA reportou depois de conectar (formato dele, com 55).
+  telefoneConectado String?   @map("telefone_conectado") @db.VarChar(20)
+  tipo              String    @default("pessoal") @db.VarChar(20) // pessoal | institucional
+  // id da sessão no OpenWA (uuid). null = nunca conectou ou trocou de número.
+  sessionId         String?   @map("session_id") @db.VarChar(64)
+  // Último status visto no OpenWA — só cache pra tela, a fonte é o OpenWA.
+  status            String?   @db.VarChar(30)
+  mensagemModelo    String?   @map("mensagem_modelo") @db.Text
+  intervaloMinSeg   Int       @default(90) @map("intervalo_min_seg")
+  intervaloMaxSeg   Int       @default(180) @map("intervalo_max_seg")
+  limiteDia         Int       @default(25) @map("limite_dia")
+  limiteMes         Int       @default(500) @map("limite_mes")
+  janelaInicio      String    @default("08:00") @map("janela_inicio") @db.VarChar(5)
+  janelaFim         String    @default("19:00") @map("janela_fim") @db.VarChar(5)
+  // Preenchido quando o sistema para os envios sozinho (número desconectado,
+  // número diferente do cadastrado, erros seguidos). null = pode enviar.
+  pausadoMotivo     String?   @map("pausado_motivo") @db.VarChar(255)
+  // Primeira vez que este número ficou pronto — base do "aquecimento" (limite
+  // menor nos primeiros dias de um número novo).
+  conectadoEm       DateTime? @map("conectado_em")
+  criadoEm          DateTime  @default(now()) @map("criado_em")
+  atualizadoEm      DateTime  @updatedAt @map("atualizado_em")
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
+  @@map("whatsapp_sessoes")
 }
 
 // ─────────────────────────────────────────

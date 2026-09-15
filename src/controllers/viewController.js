@@ -18,6 +18,10 @@ function paginaRecuperado(req, res) {
     res.render('recuperado');
 }
 
+function paginaWhatsapp(req, res) {
+    res.render('whatsapp');
+}
+
 function paginaImportarTelefones(req, res) {
     res.render('importar-telefones');
 }
@@ -26,4 +30,4 @@ function paginaUsuarios(req, res) {
     res.render('usuarios');
 }
 
-module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaRecuperado, paginaImportarTelefones, paginaUsuarios };
+module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaRecuperado, paginaWhatsapp, paginaImportarTelefones, paginaUsuarios };

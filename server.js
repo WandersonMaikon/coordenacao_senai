@@ -10,6 +10,7 @@ const contatoRoutes = require('./src/routes/contatoRoutes');
 const usuarioRoutes = require('./src/routes/usuarioRoutes');
 const viewRoutes = require('./src/routes/viewRoutes');
 const userscriptRoutes = require('./src/routes/userscriptRoutes');
+const whatsappRoutes = require('./src/routes/whatsappRoutes');
 const prisma = require('./src/config/prisma');
 
 const app = express();
@@ -48,6 +49,7 @@ app.use('/auth', usuarioRoutes);
 app.use(lancamentoRoutes);
 app.use(alunoRoutes);
 app.use(contatoRoutes);
+app.use(whatsappRoutes);
 
 app.listen(PORT, () => {
     console.log(`✅ Servidor rodando em http://localhost:${PORT}`);

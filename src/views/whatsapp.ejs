@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <%- include('partials/head', { titulo: 'WhatsApp' }) %>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+</head>
+<body>
+  <div class="page-layout">
+
+    <%- include('partials/header') %>
+
+    <%- include('partials/sidebar', { paginaAtual: 'whatsapp' }) %>
+
+    <main class="app-wrapper">
+      <div class="container-fluid">
+
+        <div class="app-page-head d-flex flex-wrap gap-3 align-items-center justify-content-between">
+          <div class="clearfix">
+            <h1 class="app-page-title">WhatsApp</h1>
+            <span>Conecte o seu número para enviar mensagens aos alunos em risco das suas turmas</span>
+          </div>
+        </div>
+
+        <%# As outras abas (turmas, mensagem e limites, envio, atendimento individual,
+            histórico) entram nas próximas etapas — ver o roadmap item 7 no CLAUDE.md. %>
+        <ul class="nav nav-tabs mb-4">
+          <li class="nav-item"><span class="nav-link active"><i class="bi bi-phone me-1"></i>Meu número</span></li>
+          <li class="nav-item"><span class="nav-link disabled">Minhas turmas</span></li>
+          <li class="nav-item"><span class="nav-link disabled">Mensagem e limites</span></li>
+          <li class="nav-item"><span class="nav-link disabled">Envio</span></li>
+          <li class="nav-item"><span class="nav-link disabled">Atendimento individual</span></li>
+          <li class="nav-item"><span class="nav-link disabled">Histórico</span></li>
+        </ul>
+
+        <div id="avisoNaoConfigurado" class="alert alert-warning d-none">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>
+          O WhatsApp ainda não foi configurado no servidor (serviço OpenWA). Fale com o administrador do sistema.
+        </div>
+
+        <div class="alert alert-light border small">
+          <i class="bi bi-info-circle me-1"></i>
+          O envio usa o WhatsApp Web de forma <strong>não oficial</strong>. Existe risco de o WhatsApp
+          restringir ou bloquear o número, principalmente se muitas mensagens forem enviadas em pouco
+          tempo. Os limites de envio existem para reduzir esse risco. Se usar o seu número pessoal,
+          considere um chip da escola.
+        </div>
+
+        <div class="row g-4">
+          <div class="col-lg-5">
+            <div class="card h-100">
+              <div class="card-body">
+                <h5 class="mb-3">Número cadastrado</h5>
+                <form id="formNumero">
+                  <div class="mb-3">
+                    <label class="form-label" for="campoTelefone">Número do WhatsApp (com DDD)</label>
+                    <input type="tel" class="form-control" id="campoTelefone" placeholder="(69) 99999-9999" required>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label d-block">Tipo do número</label>
+                    <div class="form-check form-check-inline">
+                      <input class="form-check-input" type="radio" name="tipo" id="tipoPessoal" value="pessoal" checked>
+                      <label class="form-check-label" for="tipoPessoal">Pessoal</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                      <input class="form-check-input" type="radio" name="tipo" id="tipoInstitucional" value="institucional">
+                      <label class="form-check-label" for="tipoInstitucional">Chip da escola</label>
+                    </div>
+                  </div>
+                  <button type="submit" class="btn btn-primary" id="btnSalvarNumero">Salvar número</button>
+                  <span id="statusNumero" class="ms-2 small"></span>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-7">
+            <div class="card h-100">
+              <div class="card-body">
+                <h5 class="mb-3">Conexão</h5>
+
+                <div id="estadoConexao" class="mb-3"></div>
+
+                <div id="blocoQr" class="text-center d-none mb-3">
+                  <img id="imagemQr" alt="QR code para conectar o WhatsApp" style="width: 260px; max-width: 100%;">
+                  <ol class="text-start small text-body-secondary mt-3 mb-0 mx-auto" style="max-width: 360px;">
+                    <li>Abra o WhatsApp no celular do número cadastrado</li>
+                    <li>Toque em <strong>Configurações › Aparelhos conectados</strong></li>
+                    <li>Toque em <strong>Conectar um aparelho</strong> e aponte para este código</li>
+                  </ol>
+                </div>
+
+                <div class="d-flex flex-wrap gap-2">
+                  <button type="button" class="btn btn-success" id="btnConectar"><i class="bi bi-qr-code me-1"></i>Conectar WhatsApp</button>
+                  <button type="button" class="btn btn-outline-danger d-none" id="btnDesconectar"><i class="bi bi-x-circle me-1"></i>Desconectar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <%- include('partials/footer') %>
+
+  </div>
+
+  <script>
+    const token = localStorage.getItem('coor360_token');
+
+    if (!token) {
+      window.location.href = '/login';
+    }
+
+    function sair() {
+      localStorage.removeItem('coor360_token');
+      window.location.href = '/login';
+    }
+    document.getElementById('btnSair').addEventListener('click', sair);
+    document.getElementById('btnSairMenu').addEventListener('click', sair);
+
+    const html = document.documentElement;
+
+    document.getElementById('btnToggleMenu').addEventListener('click', function () {
+      this.classList.toggle('active');
+      if (window.matchMedia('(max-width: 1199.98px)').matches) {
+        document.getElementById('menubar').classList.toggle('open');
+      } else if (html.getAttribute('data-app-sidebar') === 'mini') {
+        html.removeAttribute('data-app-sidebar');
+      } else {
+        html.setAttribute('data-app-sidebar', 'mini');
+      }
+    });
+
+    const btnTema = document.getElementById('btnTema');
+    function aplicarTema(tema) {
+      html.setAttribute('data-bs-theme', tema);
+      btnTema.classList.toggle('active', tema === 'dark');
+    }
+    aplicarTema(localStorage.getItem('coor360_tema') || 'light');
+    btnTema.addEventListener('click', () => {
+      const atual = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+      aplicarTema(atual);
+      localStorage.setItem('coor360_tema', atual);
+    });
+
+    function escaparHtml(texto) {
+      return String(texto ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+    }
+
+    // "69993408643" → "(69) 99340-8643"; o OpenWA reporta com 55 na frente.
+    function formatarTelefone(telefone) {
+      let digitos = String(telefone || '').replace(/\D/g, '');
+      if (digitos.length >= 12 && digitos.startsWith('55')) digitos = digitos.slice(2);
+      if (digitos.length === 11) return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 7)}-${digitos.slice(7)}`;
+      if (digitos.length === 10) return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 6)}-${digitos.slice(6)}`;
+      return digitos;
+    }
+
+    async function chamarApi(caminho, opcoes = {}) {
+      const resposta = await fetch(caminho, {
+        ...opcoes,
+        headers: {
+          Authorization: 'Bearer ' + token,
+          ...(opcoes.body ? { 'Content-Type': 'application/json' } : {})
+        }
+      });
+      if (resposta.status === 401) {
+        localStorage.removeItem('coor360_token');
+        window.location.href = '/login';
+        throw new Error('Sessão expirada');
+      }
+      return resposta.json();
+    }
+
+    // Rótulos dos status do OpenWA pra quem não é técnico.
+    const STATUS_SESSAO = {
+      created: { rotulo: 'Preparando', cor: 'secondary' },
+      initializing: { rotulo: 'Iniciando o WhatsApp no servidor…', cor: 'info' },
+      qr_ready: { rotulo: 'Aguardando leitura do QR code', cor: 'warning' },
+      authenticating: { rotulo: 'Conectando…', cor: 'info' },
+      ready: { rotulo: 'Conectado', cor: 'success' },
+      disconnected: { rotulo: 'Desconectado', cor: 'danger' },
+      action_required: { rotulo: 'Precisa de ação no celular', cor: 'danger' },
+      failed: { rotulo: 'Falhou', cor: 'danger' }
+    };
+
+    let dadosAtuais = null;
+    let timerSessao = null;
+
+    function pararAcompanhamento() {
+      if (timerSessao) clearTimeout(timerSessao);
+      timerSessao = null;
+    }
+
+    function desenharNumero(dados) {
+      dadosAtuais = dados;
+      if (dados.telefone && document.activeElement !== document.getElementById('campoTelefone')) {
+        document.getElementById('campoTelefone').value = formatarTelefone(dados.telefone);
+      }
+      document.getElementById(dados.tipo === 'institucional' ? 'tipoInstitucional' : 'tipoPessoal').checked = true;
+      document.getElementById('btnSalvarNumero').textContent = dados.telefone ? 'Salvar / trocar número' : 'Salvar número';
+    }
+
+    function desenharConexao(dados, qrCode, erroSessao) {
+      const estado = document.getElementById('estadoConexao');
+      const btnConectar = document.getElementById('btnConectar');
+      const btnDesconectar = document.getElementById('btnDesconectar');
+      const blocoQr = document.getElementById('blocoQr');
+
+      const info = dados.status ? (STATUS_SESSAO[dados.status] || { rotulo: dados.status, cor: 'secondary' }) : null;
+      const linhas = [];
+
+      if (!dados.telefone) {
+        linhas.push('<p class="text-body-secondary mb-0">Cadastre o seu número ao lado para poder conectar.</p>');
+      } else if (!dados.temSessao) {
+        linhas.push('<span class="badge bg-secondary-subtle text-secondary-emphasis border">Não conectado</span>');
+      } else {
+        linhas.push(`<span class="badge bg-${info.cor}-subtle text-${info.cor}-emphasis border border-${info.cor}-subtle">${escaparHtml(info.rotulo)}</span>`);
+      }
+
+      if (dados.status === 'ready' && dados.telefoneConectado) {
+        linhas.push(`<div class="mt-2">Número conectado: <strong>${formatarTelefone(dados.telefoneConectado)}</strong></div>`);
+      }
+      if (dados.numeroConfere === false) {
+        linhas.push(`<div class="alert alert-danger py-2 mt-2 mb-0 small"><i class="bi bi-exclamation-triangle-fill me-1"></i>O WhatsApp conectado (${formatarTelefone(dados.telefoneConectado)}) não é o número cadastrado (${formatarTelefone(dados.telefone)}). Desconecte e leia o QR com o celular certo, ou corrija o número cadastrado.</div>`);
+      }
+      if (dados.pausadoMotivo && dados.numeroConfere !== false) {
+        linhas.push(`<div class="alert alert-warning py-2 mt-2 mb-0 small"><i class="bi bi-pause-circle-fill me-1"></i>${escaparHtml(dados.pausadoMotivo)}</div>`);
+      }
+      if (erroSessao && dados.status !== 'ready') {
+        linhas.push(`<div class="small text-danger mt-2">${escaparHtml(erroSessao)}</div>`);
+      }
+      estado.innerHTML = linhas.join('');
+
+      blocoQr.classList.toggle('d-none', !qrCode);
+      if (qrCode) document.getElementById('imagemQr').src = qrCode;
+
+      const conectado = dados.temSessao && ['ready', 'authenticating', 'qr_ready', 'initializing', 'created'].includes(dados.status);
+      btnConectar.classList.toggle('d-none', conectado || !dados.telefone);
+      btnDesconectar.classList.toggle('d-none', !dados.temSessao);
+    }
+
+    // Enquanto o número não está pronto, consulta a cada 3s pra trocar o QR
+    // (ele expira) e perceber quando o celular leu o código.
+    async function acompanharSessao() {
+      pararAcompanhamento();
+      try {
+        const resposta = await chamarApi('/whatsapp/sessao');
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        document.getElementById('avisoNaoConfigurado').classList.toggle('d-none', resposta.configurado !== false);
+        desenharNumero(resposta.dados);
+        desenharConexao(resposta.dados, resposta.qrCode, resposta.erroSessao);
+
+        const emAndamento = resposta.dados.temSessao && ['created', 'initializing', 'qr_ready', 'authenticating'].includes(resposta.dados.status);
+        if (emAndamento) timerSessao = setTimeout(acompanharSessao, 3000);
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          document.getElementById('estadoConexao').innerHTML =
+            `<div class="alert alert-warning py-2 mb-0 small">Não foi possível consultar o WhatsApp agora: ${escaparHtml(erro.message)}</div>`;
+        }
+      }
+    }
+
+    document.getElementById('formNumero').addEventListener('submit', async (evento) => {
+      evento.preventDefault();
+      const statusEl = document.getElementById('statusNumero');
+      const telefone = document.getElementById('campoTelefone').value;
+      const tipo = document.querySelector('input[name="tipo"]:checked').value;
+
+      const digitosNovos = telefone.replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '');
+      if (dadosAtuais?.telefone && dadosAtuais.telefone !== digitosNovos && dadosAtuais.temSessao) {
+        const confirmacao = await Swal.fire({
+          title: 'Trocar o número?',
+          text: 'O WhatsApp conectado hoje será desconectado e você vai precisar ler o QR code com o celular do novo número.',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Trocar número',
+          cancelButtonText: 'Cancelar'
+        });
+        if (!confirmacao.isConfirmed) return;
+      }
+
+      statusEl.className = 'ms-2 small text-body';
+      statusEl.textContent = 'Salvando...';
+      try {
+        const resposta = await chamarApi('/whatsapp/meu-numero', { method: 'PUT', body: JSON.stringify({ telefone, tipo }) });
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        statusEl.className = 'ms-2 small text-success';
+        statusEl.textContent = resposta.mensagem;
+        document.getElementById('campoTelefone').blur();
+        await acompanharSessao();
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          statusEl.className = 'ms-2 small text-danger';
+          statusEl.textContent = erro.message || 'Não foi possível salvar.';
+        }
+      }
+    });
+
+    document.getElementById('btnConectar').addEventListener('click', async () => {
+      const botao = document.getElementById('btnConectar');
+      botao.disabled = true;
+      try {
+        const resposta = await chamarApi('/whatsapp/sessao/conectar', { method: 'POST' });
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        await acompanharSessao();
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          Swal.fire({ title: 'Não foi possível conectar', text: erro.message, icon: 'error' });
+        }
+      } finally {
+        botao.disabled = false;
+      }
+    });
+
+    document.getElementById('btnDesconectar').addEventListener('click', async () => {
+      const confirmacao = await Swal.fire({
+        title: 'Desconectar o WhatsApp?',
+        text: 'Os envios por este número param. O número continua cadastrado e pode ser conectado de novo.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Desconectar',
+        cancelButtonText: 'Cancelar'
+      });
+      if (!confirmacao.isConfirmed) return;
+
+      pararAcompanhamento();
+      try {
+        const resposta = await chamarApi('/whatsapp/sessao/desconectar', { method: 'POST' });
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        await acompanharSessao();
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          Swal.fire({ title: 'Não foi possível desconectar', text: erro.message, icon: 'error' });
+        }
+      }
+    });
+
+    acompanharSessao();
+  </script>
+</body>
+
+</html>

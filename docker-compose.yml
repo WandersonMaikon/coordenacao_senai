@@ -24,6 +24,32 @@ services:
     networks:
       - retencao_net
 
+  # Gateway de WhatsApp (não oficial) usado pela tela /whatsapp. Sem porta
+  # publicada e fora do tunnel: só o node_retencao fala com ele, pela rede interna
+  # (http://openwa_retencao:2785/api). Não tem imagem publicada — é construído a
+  # partir do repositório, na versão fixada em OPENWA_VERSION.
+  # No primeiro start a chave admin sai no log e em /app/data/.api-key; com ela,
+  # crie uma chave "operator" e coloque em OPENWA_API_KEY no .env.
+  openwa_retencao:
+    build: https://github.com/rmyndharis/OpenWA.git#${OPENWA_VERSION:-v0.23.4}
+    container_name: openwa_retencao
+    restart: unless-stopped
+    stop_grace_period: 45s
+    environment:
+      NODE_ENV: production
+      # whatsapp-web.js abre um Chromium por número conectado (~300-500 MB cada),
+      # mas imita o WhatsApp Web de verdade — menor risco de bloqueio que o Baileys.
+      ENGINE_TYPE: whatsapp-web.js
+      DATABASE_TYPE: sqlite
+      AUTO_START_SESSIONS: "true"
+    volumes:
+      # Sessões conectadas (sobrevivem a rebuild — sem isso todo mundo teria que
+      # ler o QR code de novo a cada deploy) e a chave admin gerada.
+      - openwa_data:/app/data
+    mem_limit: ${OPENWA_MEM_LIMIT:-2g}
+    networks:
+      - retencao_net
+
   cloudflared_retencao:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared_retencao
@@ -41,3 +67,4 @@ networks:
 
 volumes:
   retencao_db_data:
+  openwa_data:
