@@ -48,11 +48,23 @@ RESPOSTA=$(docker compose exec -T node_retencao curl -s -X POST "$URL_INTERNA/au
   -H "X-API-Key: $ADMIN" -H "Content-Type: application/json" \
   -d '{"name":"coor360-backend","role":"operator"}')
 
-OPERADOR=$(echo "$RESPOSTA" | grep -o 'owa_k1_[A-Za-z0-9_-]*' | head -n 1)
+# A resposta traz também o prefixo curto da chave (o mesmo "owa_k1_5…" do log),
+# então pega o maior texto começando com owa_k1_ — é a chave completa.
+OPERADOR=$(echo "$RESPOSTA" | grep -o 'owa_k1_[^"]*' | awk '{ print length, $0 }' | sort -nr | head -n 1 | cut -d' ' -f2-)
 
 if [ -z "$OPERADOR" ]; then
   echo "ERRO ao criar a chave. Resposta do OpenWA (chaves escondidas):"
-  echo "$RESPOSTA" | sed 's/owa_k1_[A-Za-z0-9_-]*/***/g'
+  echo "$RESPOSTA" | sed 's/owa_k1_[^"]*/***/g'
+  exit 1
+fi
+
+# Só grava no .env uma chave que o OpenWA aceita de verdade.
+CODIGO=$(docker compose exec -T node_retencao curl -s -o /dev/null -w '%{http_code}' \
+  -H "X-API-Key: $OPERADOR" "$URL_INTERNA/sessions" || true)
+if [ "$CODIGO" != "200" ]; then
+  echo "ERRO: a chave criada não foi aceita pelo OpenWA (HTTP $CODIGO). O .env não foi alterado."
+  echo "Campos da resposta (valores escondidos):"
+  echo "$RESPOSTA" | sed 's/:\s*"[^"]*"/:"***"/g'
   exit 1
 fi
 
