@@ -273,13 +273,13 @@ async function tratarFalhaEnvio(erro, mensagem, sessao, lote, etapa) {
         await voltarPraFila();
         throw erro;
     }
-    // Erro interno na VERIFICAÇÃO do número: a sessão diz "ready", mas o WhatsApp
-    // Web por dentro não está funcionando (no log do OpenWA: "[comms] sendIq called
-    // before startComms"; na resposta vem só "Internal server error"). Insistir não
-    // resolve: pausa já, com a instrução do que fazer.
-    if (erro.status === 500 && etapa.startsWith('ao verificar')) {
+    // A VERIFICAÇÃO do número deu erro interno (500) ou travou (sem resposta em 30s):
+    // a sessão diz "ready", mas o WhatsApp Web por dentro não está funcionando (no log
+    // do OpenWA: "[comms] sendIq called before startComms"). Visto em produção em
+    // 15-16/09/2026. Insistir não resolve e não é problema do aluno: pausa já.
+    if ((erro.status === 500 || erro.status === null) && etapa.startsWith('ao verificar')) {
         await voltarPraFila();
-        return pausarSessao(sessao, lote, 'O WhatsApp conectado parou de responder por dentro. Desconecte e conecte o número de novo (aba Meu número).');
+        return pausarSessao(sessao, lote, 'O WhatsApp conectado não está respondendo às consultas. Desconecte e conecte o número de novo (aba Meu número); se continuar, fale com o administrador.');
     }
     if (erro.fatal) {
         await voltarPraFila();

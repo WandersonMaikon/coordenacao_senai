@@ -42,6 +42,14 @@ services:
       ENGINE_TYPE: whatsapp-web.js
       DATABASE_TYPE: sqlite
       AUTO_START_SESSIONS: "true"
+      # Versão do WhatsApp Web usada pelo motor. Vazio = o OpenWA escolhe uma versão
+      # "conhecida" num registro de terceiros; "off" = usa a versão atual do próprio
+      # WhatsApp. Trocar pra "off" é a primeira coisa a tentar se o número conecta mas
+      # não responde (erro "sendIq called before startComms" ou checagem travando).
+      WWEBJS_WEB_VERSION: ${WWEBJS_WEB_VERSION:-}
+      # Tempo pro WhatsApp Web terminar de carregar (padrão do OpenWA: 30000 ms).
+      # Servidor lento/com pouca memória precisa de mais.
+      WWEBJS_AUTH_TIMEOUT_MS: ${WWEBJS_AUTH_TIMEOUT_MS:-120000}
     volumes:
       # Sessões conectadas (sobrevivem a rebuild — sem isso todo mundo teria que
       # ler o QR code de novo a cada deploy) e a chave admin gerada.
