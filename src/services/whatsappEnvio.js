@@ -7,7 +7,7 @@
 
 const prisma = require('../config/prisma');
 const openwa = require('./openwa');
-const { mesmoTelefone, chatIdBrasil } = require('./telefone');
+const { mesmoTelefone } = require('./telefone');
 const { limiteDiaEfetivo, STATUS_JA_RECEBEU } = require('./whatsappLote');
 const { calcularAlunosEmRiscoSemRecuperados } = require('../controllers/alunoController');
 
@@ -217,20 +217,14 @@ async function processarLote(lote, agora = new Date()) {
 
     let etapa = 'ao verificar se o número tem WhatsApp';
     try {
-        let verificacao = null;
-        try {
-            verificacao = await openwa.verificarNumero(sessao.sessionId, `55${mensagem.telefone}`);
-        } catch (erro) {
-            // Erro interno do OpenWA só na verificação (visto em produção:
-            // "[comms] sendIq called before startComms" — o WhatsApp Web diz que
-            // está pronto mas a consulta de contatos ainda não subiu). Não trava o
-            // envio: segue com o endereço montado pela regra brasileira, e se o
-            // número não tiver WhatsApp o próprio envio falha.
-            if (!(erro instanceof openwa.ErroOpenWA) || erro.status !== 500) throw erro;
-            console.warn(`[whatsapp] verificação indisponível (mensagem ${mensagem.id}), enviando sem verificar:`, erro.message);
-        }
+        // Se esta verificação falhar, NÃO envia "mesmo assim": em produção o erro
+        // "[comms] sendIq called before startComms" mostrou que a conexão interna do
+        // WhatsApp Web inteira não subiu — o send-text respondia 201 e a mensagem
+        // nunca saía. Verificar é o que prova que o número consegue falar com o
+        // WhatsApp antes de marcar algo como enviado.
+        const verificacao = await openwa.verificarNumero(sessao.sessionId, `55${mensagem.telefone}`);
 
-        if (verificacao && !verificacao.exists) {
+        if (!verificacao?.exists) {
             await prisma.mensagemWhatsapp.update({
                 where: { id: mensagem.id },
                 data: { status: 'falhou', falhaDefinitiva: true, erro: 'Este número não tem WhatsApp' }
@@ -238,7 +232,7 @@ async function processarLote(lote, agora = new Date()) {
             return;
         }
 
-        const chatId = verificacao?.whatsappId || chatIdBrasil(mensagem.telefone);
+        const chatId = verificacao.whatsappId || `55${mensagem.telefone}@c.us`;
         etapa = 'ao enviar a mensagem';
         const envio = await openwa.enviarTexto(sessao.sessionId, chatId, mensagem.texto);
         etapa = 'ao registrar o contato';
@@ -278,6 +272,14 @@ async function tratarFalhaEnvio(erro, mensagem, sessao, lote, etapa) {
     if (!(erro instanceof openwa.ErroOpenWA)) {
         await voltarPraFila();
         throw erro;
+    }
+    // Erro interno na VERIFICAÇÃO do número: a sessão diz "ready", mas o WhatsApp
+    // Web por dentro não está funcionando (no log do OpenWA: "[comms] sendIq called
+    // before startComms"; na resposta vem só "Internal server error"). Insistir não
+    // resolve: pausa já, com a instrução do que fazer.
+    if (erro.status === 500 && etapa.startsWith('ao verificar')) {
+        await voltarPraFila();
+        return pausarSessao(sessao, lote, 'O WhatsApp conectado parou de responder por dentro. Desconecte e conecte o número de novo (aba Meu número).');
     }
     if (erro.fatal) {
         await voltarPraFila();
