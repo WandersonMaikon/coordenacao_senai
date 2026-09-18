@@ -235,3 +235,27 @@ model Contato {
   @@index([matricula])
   @@map("contatos")
 }
+
+// ─────────────────────────────────────────
+// Caso encerrado pela coordenação na tela /recuperado: o aluno some do risco e do
+// acompanhamento **mesmo continuando a faltar**, até alguém reabrir. Existe porque
+// há situações que o sistema não tem como saber que estão resolvidas (aluno mudou
+// de turma, trancou, combinou reposição, a família explicou a ausência).
+//
+// Reabrir apaga a linha — o histórico fica nos `Contato` que a marcação e a
+// reabertura criam, então não se perde quem fez o quê.
+// ─────────────────────────────────────────
+model CasoResolvido {
+  id           Int      @id @default(autoincrement())
+  matricula    String   @db.VarChar(20)
+  codigoTurma  String   @map("codigo_turma") @db.VarChar(50)
+  nomeAluno    String?  @map("nome_aluno") @db.VarChar(255)
+  nomeTurma    String?  @map("nome_turma") @db.VarChar(255)
+  motivo       String?  @db.VarChar(50)
+  observacao   String?  @db.Text
+  resolvidoPor String?  @map("resolvido_por") @db.VarChar(255)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+
+  @@unique([matricula, codigoTurma])
+  @@map("casos_resolvidos")
+}

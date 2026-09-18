@@ -270,10 +270,28 @@ function chaveAlunoTurma(item) {
 // Lista de risco sem quem está em acompanhamento na /recuperado — o aluno sai de
 // uma tela e vai pra outra. Usada pela /risco e pelo painel, pros dois números
 // baterem.
+// Pares (aluno, turma) que a coordenação encerrou na tela /recuperado. Ficam fora
+// do risco e do acompanhamento mesmo faltando, até alguém reabrir o caso.
+async function listarCasosResolvidos() {
+    const casos = await prisma.casoResolvido.findMany({ select: { matricula: true, codigoTurma: true } });
+    return new Set(casos.map(chaveAlunoTurma));
+}
+
 async function calcularAlunosEmRiscoSemRecuperados() {
-    const [risco, recuperados] = await Promise.all([calcularAlunosEmRisco(), calcularRecuperadosEmAcompanhamento()]);
+    const [risco, recuperados, resolvidos] = await Promise.all([
+        calcularAlunosEmRisco(),
+        calcularRecuperadosEmAcompanhamento(),
+        listarCasosResolvidos()
+    ]);
     const emAcompanhamento = new Set(recuperados.map(chaveAlunoTurma));
-    return { ...risco, recuperados, emRisco: risco.emRisco.filter((item) => !emAcompanhamento.has(chaveAlunoTurma(item))) };
+    const fora = (item) => emAcompanhamento.has(chaveAlunoTurma(item)) || resolvidos.has(chaveAlunoTurma(item));
+    return {
+        ...risco,
+        resolvidos,
+        // O acompanhamento também não mostra caso encerrado (ver listarRecuperados).
+        recuperados: recuperados.filter((item) => !resolvidos.has(chaveAlunoTurma(item))),
+        emRisco: risco.emRisco.filter((item) => !fora(item))
+    };
 }
 
 // GET /alunos-recuperados — tela /recuperado. Quem faltou durante o
@@ -281,7 +299,7 @@ async function calcularAlunosEmRiscoSemRecuperados() {
 async function listarRecuperados(req, res) {
     try {
         const { turma } = req.query;
-        const recuperados = await calcularRecuperadosEmAcompanhamento();
+        const { recuperados } = await calcularAlunosEmRiscoSemRecuperados();
         const resultado = turma ? recuperados.filter((item) => item.codigoTurma === turma) : recuperados;
 
         const alunos = await prisma.aluno.findMany({
@@ -595,6 +613,86 @@ async function atencaoPainel(req, res) {
     }
 }
 
+// POST /casos-resolvidos — encerra o caso de um aluno numa turma. Ele sai do risco
+// e do acompanhamento mesmo continuando a faltar. A marcação vira também um
+// `Contato` (status "recuperado"), pra ficar no histórico do aluno e contar no
+// gráfico de motivos do painel — é ali que se vê por que os casos se resolvem.
+async function resolverCaso(req, res) {
+    try {
+        const { matricula, codigoTurma, nomeAluno, nomeTurma, motivo, observacao } = req.body;
+        if (!matricula || !codigoTurma) {
+            return res.status(400).json({ status: 'erro', mensagem: 'Informe matrícula e turma' });
+        }
+
+        // A FK de Contato exige o aluno; nem todo aluno em risco veio da planilha.
+        await prisma.aluno.upsert({
+            where: { matricula },
+            update: {},
+            create: { matricula, nome: nomeAluno || null }
+        });
+
+        const contato = await prisma.contato.create({
+            data: {
+                matricula,
+                canal: 'presencial',
+                status: 'recuperado',
+                motivo: motivo || null,
+                observacao: `Caso encerrado na tela de Recuperados${observacao ? `: ${observacao}` : '.'}`,
+                contatadoPor: req.usuario.usuario
+            }
+        });
+
+        const caso = await prisma.casoResolvido.upsert({
+            where: { matricula_codigoTurma: { matricula, codigoTurma } },
+            update: { motivo: motivo || null, observacao: observacao || null, resolvidoPor: req.usuario.usuario, nomeAluno, nomeTurma },
+            create: { matricula, codigoTurma, nomeAluno, nomeTurma, motivo: motivo || null, observacao: observacao || null, resolvidoPor: req.usuario.usuario }
+        });
+
+        res.json({ status: 'ok', mensagem: 'Caso encerrado. O aluno sai do risco até alguém reabrir.', dados: caso, contatoId: contato.id });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+// GET /casos-resolvidos — lista os casos encerrados (tela /recuperado).
+async function listarCasosResolvidosRota(req, res) {
+    try {
+        const { turma } = req.query;
+        const casos = await prisma.casoResolvido.findMany({
+            where: turma ? { codigoTurma: turma } : {},
+            orderBy: { criadoEm: 'desc' }
+        });
+        res.json({ status: 'ok', total: casos.length, dados: casos });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+// DELETE /casos-resolvidos/:matricula/:codigoTurma — reabre: o aluno volta a ser
+// avaliado pelas faltas normalmente (entra em risco se a sequência estiver aberta).
+async function reabrirCaso(req, res) {
+    try {
+        const { matricula, codigoTurma } = req.params;
+        const caso = await prisma.casoResolvido.findUnique({ where: { matricula_codigoTurma: { matricula, codigoTurma } } });
+        if (!caso) return res.status(404).json({ status: 'erro', mensagem: 'Este caso não está encerrado.' });
+
+        await prisma.casoResolvido.delete({ where: { id: caso.id } });
+        await prisma.contato.create({
+            data: {
+                matricula,
+                canal: 'presencial',
+                status: 'acompanhar',
+                observacao: 'Caso reaberto: o aluno volta a ser acompanhado pelas faltas.',
+                contatadoPor: req.usuario.usuario
+            }
+        });
+
+        res.json({ status: 'ok', mensagem: 'Caso reaberto. O aluno volta a ser avaliado pelas faltas.' });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
 // Números do painel. "Ativo" vem da coluna Situação da planilha da secretaria,
 // não de "não está na lista de risco": quem evade de vez para de receber
 // lançamento de falta e sairia da lista de risco sozinho, sendo contado como
@@ -694,6 +792,9 @@ module.exports = {
     importarTelefones,
     resumoAlunos,
     atencaoPainel,
+    resolverCaso,
+    listarCasosResolvidosRota,
+    reabrirCaso,
     DIAS_AULA_CONSECUTIVOS_RISCO,
     // Reaproveitados pelo envio de WhatsApp (src/services/whatsappLote.js)
     calcularAlunosEmRiscoSemRecuperados,

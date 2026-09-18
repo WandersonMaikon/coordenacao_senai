@@ -1,3 +1,5 @@
+const { MOTIVOS } = require('../config/motivos');
+
 function paginaLogin(req, res) {
     res.render('auth/login');
 }
@@ -15,7 +17,9 @@ function paginaRisco(req, res) {
 }
 
 function paginaRecuperado(req, res) {
-    res.render('recuperado');
+    // A lista de motivos vai do servidor pra view: é a mesma de src/config/motivos.js
+    // usada no menu do WhatsApp, então não vira uma segunda cópia pra manter.
+    res.render('recuperado', { motivos: MOTIVOS });
 }
 
 function paginaWhatsapp(req, res) {

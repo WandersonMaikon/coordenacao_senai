@@ -61,9 +61,37 @@
                     <th title="Quando e por quem o aluno foi marcado como recuperado">Recuperado em</th>
                     <th title="Dias de aula lançados pelos professores desde que o aluno foi marcado como recuperado">Acompanhamento</th>
                     <th>Faltas desde que voltou</th>
+                    <th class="text-end"></th>
                   </tr>
                 </thead>
                 <tbody id="tabelaRecuperados"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt-4 d-none" id="cardResolvidos">
+          <div class="card-header d-flex align-items-center justify-content-between border-0 pb-0">
+            <h6 class="card-title mb-0">Casos encerrados <span class="text-body fw-normal" id="totalResolvidos"></span></h6>
+          </div>
+          <div class="card-body p-0 pt-3">
+            <div class="alert alert-light border small mx-3">
+              <i class="bi bi-info-circle me-1"></i>
+              Estes alunos <strong>não aparecem mais em risco</strong>, mesmo que os professores lancem
+              novas faltas. Se a situação voltar a preocupar, reabra o caso.
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Aluno</th>
+                    <th>Turma</th>
+                    <th>Motivo</th>
+                    <th>Encerrado em</th>
+                    <th class="text-end"></th>
+                  </tr>
+                </thead>
+                <tbody id="tabelaResolvidos"></tbody>
               </table>
             </div>
           </div>
@@ -78,6 +106,10 @@
 
   <script src="/js/turmas.js"></script>
   <script>
+    // Mesma lista de src/config/motivos.js usada no menu do WhatsApp (vem do
+    // viewController), pra não virar uma segunda cópia pra manter.
+    const MOTIVOS = <%- JSON.stringify(motivos) %>;
+
     const token = localStorage.getItem('coor360_token');
 
     if (!token) {
@@ -144,8 +176,14 @@
       return nomeCompleto.trim().split(/\s+/).slice(0, 2).join(' ');
     }
 
-    async function chamarApi(caminho) {
-      const resposta = await fetch(caminho, { headers: { Authorization: 'Bearer ' + token } });
+    async function chamarApi(caminho, opcoes = {}) {
+      const resposta = await fetch(caminho, {
+        ...opcoes,
+        headers: {
+          Authorization: 'Bearer ' + token,
+          ...(opcoes.body ? { 'Content-Type': 'application/json' } : {})
+        }
+      });
       if (resposta.status === 401) {
         localStorage.removeItem('coor360_token');
         window.location.href = '/login';
@@ -202,11 +240,137 @@
           </td>
           <td>${colunaAcompanhamento(aluno, meta)}</td>
           <td>${colunaFaltas(aluno)}</td>
+          <td class="text-end">
+            <button type="button" class="btn btn-sm btn-outline-success text-nowrap"
+                    data-resolver="${escaparHtml(aluno.matricula)}" data-turma="${escaparHtml(aluno.codigoTurma || '')}"
+                    data-nome="${escaparHtml(aluno.nomeAluno || '')}" data-nome-turma="${escaparHtml(aluno.nomeTurma || '')}"
+                    title="O aluno sai do risco e do acompanhamento, mesmo que receba novas faltas">
+              <i class="bi bi-check2-circle me-1"></i>Situação resolvida
+            </button>
+          </td>
         </tr>
       `;
     }
 
+    // Encerrar o caso é o que tira o aluno do risco "para sempre" — por isso pede
+    // motivo e observação, que viram um contato no histórico dele e entram no
+    // gráfico de motivos do painel.
+    async function resolverCaso(botao) {
+      const opcoes = MOTIVOS.map((m) => `<option value="${m.chave}">${escaparHtml(m.rotulo)}</option>`).join('');
+      const { value: dados } = await Swal.fire({
+        title: 'Situação resolvida?',
+        html: `
+          <p class="small text-start mb-3">
+            <strong>${escaparHtml(botao.dataset.nome)}</strong> sai da lista de risco e do acompanhamento,
+            e <strong>não volta a aparecer mesmo com novas faltas</strong>, até alguém reabrir o caso.
+          </p>
+          <label class="form-label small d-block text-start">Motivo</label>
+          <select id="campoMotivoCaso" class="form-select mb-3">${opcoes}</select>
+          <label class="form-label small d-block text-start">O que foi resolvido?</label>
+          <textarea id="campoObsCaso" class="form-control" rows="3" placeholder="Ex: mudou para a turma da noite; trancou a matrícula; combinou reposição com o professor"></textarea>`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Encerrar caso',
+        cancelButtonText: 'Cancelar',
+        preConfirm: () => ({
+          motivo: document.getElementById('campoMotivoCaso').value,
+          observacao: document.getElementById('campoObsCaso').value.trim()
+        })
+      });
+      if (!dados) return;
+
+      try {
+        const resposta = await chamarApi('/casos-resolvidos', {
+          method: 'POST',
+          body: JSON.stringify({
+            matricula: botao.dataset.resolver,
+            codigoTurma: botao.dataset.turma,
+            nomeAluno: botao.dataset.nome,
+            nomeTurma: botao.dataset.nomeTurma,
+            motivo: dados.motivo,
+            observacao: dados.observacao
+          })
+        });
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        await carregarRecuperados(document.getElementById('filtroTurma').value);
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          Swal.fire({ title: 'Não foi possível encerrar', text: erro.message, icon: 'error' });
+        }
+      }
+    }
+
+    async function reabrirCaso(botao) {
+      const confirmacao = await Swal.fire({
+        title: 'Reabrir o caso?',
+        text: `${botao.dataset.nome} volta a ser avaliado pelas faltas e pode aparecer em risco de novo.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Reabrir',
+        cancelButtonText: 'Cancelar'
+      });
+      if (!confirmacao.isConfirmed) return;
+
+      try {
+        const resposta = await chamarApi(`/casos-resolvidos/${encodeURIComponent(botao.dataset.reabrir)}/${encodeURIComponent(botao.dataset.turma)}`, { method: 'DELETE' });
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        await carregarRecuperados(document.getElementById('filtroTurma').value);
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          Swal.fire({ title: 'Não foi possível reabrir', text: erro.message, icon: 'error' });
+        }
+      }
+    }
+
+    async function carregarResolvidos(turma) {
+      const card = document.getElementById('cardResolvidos');
+      try {
+        const resposta = await chamarApi(turma ? `/casos-resolvidos?turma=${encodeURIComponent(turma)}` : '/casos-resolvidos');
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+
+        card.classList.toggle('d-none', resposta.total === 0);
+        if (resposta.total === 0) return;
+
+        document.getElementById('totalResolvidos').textContent = `(${resposta.total})`;
+        document.getElementById('tabelaResolvidos').innerHTML = resposta.dados.map((caso) => {
+          const motivo = MOTIVOS.find((m) => m.chave === caso.motivo);
+          return `
+            <tr>
+              <td>${escaparHtml(caso.nomeAluno || '—')}<div class="small text-body-secondary">${escaparHtml(caso.matricula)}</div></td>
+              <td class="small">${escaparHtml(nomeTurmaLimpo(caso.nomeTurma) || caso.codigoTurma)}</td>
+              <td class="small">
+                ${escaparHtml(motivo ? motivo.rotulo : (caso.motivo || '—'))}
+                ${caso.observacao ? `<div class="text-body-secondary fst-italic">"${escaparHtml(caso.observacao)}"</div>` : ''}
+              </td>
+              <td class="small">
+                ${formatarData(caso.criadoEm)}
+                <div class="text-body-secondary">por ${escaparHtml(nomeCurto(caso.resolvidoPor))}</div>
+              </td>
+              <td class="text-end">
+                <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap"
+                        data-reabrir="${escaparHtml(caso.matricula)}" data-turma="${escaparHtml(caso.codigoTurma)}" data-nome="${escaparHtml(caso.nomeAluno || caso.matricula)}">
+                  <i class="bi bi-arrow-counterclockwise me-1"></i>Reabrir
+                </button>
+              </td>
+            </tr>`;
+        }).join('');
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') console.error('Não foi possível carregar os casos encerrados:', erro);
+      }
+    }
+
+    document.addEventListener('click', (evento) => {
+      const resolver = evento.target.closest('[data-resolver]');
+      if (resolver) return resolverCaso(resolver);
+      const reabrir = evento.target.closest('[data-reabrir]');
+      if (reabrir) return reabrirCaso(reabrir);
+    });
+
     async function carregarRecuperados(turma) {
+      // Os casos encerrados carregam em paralelo: eles não estão em acompanhamento,
+      // mas é nesta tela que se consulta e se reabre um caso.
+      carregarResolvidos(turma);
+
       const statusEl = document.getElementById('statusCarregamento');
       const cardResultado = document.getElementById('cardResultado');
       statusEl.className = 'alert alert-info';
