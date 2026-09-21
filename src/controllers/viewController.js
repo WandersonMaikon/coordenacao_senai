@@ -30,8 +30,12 @@ function paginaImportarTelefones(req, res) {
     res.render('importar-telefones');
 }
 
+function paginaTelefones(req, res) {
+    res.render('telefones');
+}
+
 function paginaUsuarios(req, res) {
     res.render('usuarios');
 }
 
-module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaRecuperado, paginaWhatsapp, paginaImportarTelefones, paginaUsuarios };
+module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaRecuperado, paginaWhatsapp, paginaImportarTelefones, paginaTelefones, paginaUsuarios };

@@ -203,6 +203,11 @@ model Aluno {
   situacao    String?  @db.VarChar(50)
   // Respondeu SAIR no WhatsApp: não recebe mais mensagem automática nenhuma.
   whatsappOptOut Boolean @default(false) @map("whatsapp_opt_out")
+  // Telefone corrigido na mão pela tela /telefones. Enquanto preenchido, a
+  // importação da planilha não sobrescreve o telefone: a planilha da secretaria
+  // costuma estar mais velha que a correção que a coordenação acabou de fazer.
+  telefoneEditadoEm  DateTime? @map("telefone_editado_em")
+  telefoneEditadoPor String?   @map("telefone_editado_por") @db.VarChar(100)
   criadoEm    DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 

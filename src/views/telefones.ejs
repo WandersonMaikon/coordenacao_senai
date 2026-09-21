@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <%- include('partials/head', { titulo: 'Telefones dos alunos' }) %>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+</head>
+<body>
+  <div class="page-layout">
+
+    <%- include('partials/header') %>
+
+    <%- include('partials/sidebar', { paginaAtual: 'telefones' }) %>
+
+    <main class="app-wrapper">
+      <div class="container-fluid">
+
+        <div class="app-page-head d-flex flex-wrap gap-3 align-items-center justify-content-between">
+          <div class="clearfix">
+            <h1 class="app-page-title">Telefones dos alunos</h1>
+            <span>Corrija o telefone de quem trocou de número — a correção feita aqui não é desfeita pela próxima importação de planilha</span>
+          </div>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-body">
+            <form id="formBusca" class="row g-3 align-items-end">
+              <div class="col-sm-8 col-md-6">
+                <label class="form-label" for="campoBusca">Buscar aluno</label>
+                <input type="search" class="form-control" id="campoBusca" placeholder="Nome ou matrícula" minlength="2" required>
+                <div class="form-text">Digite pelo menos 2 caracteres do nome, ou a matrícula.</div>
+              </div>
+              <div class="col-sm-4">
+                <button type="submit" class="btn btn-primary" id="btnBuscar">
+                  <i class="bi bi-search me-1"></i> Buscar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div id="statusBusca" class="alert alert-info">Busque um aluno para ver e alterar o telefone.</div>
+
+        <div class="card d-none" id="cardResultado">
+          <div class="card-header d-flex align-items-center justify-content-between border-0 pb-0">
+            <h6 class="card-title mb-0">Alunos encontrados <span class="text-body fw-normal" id="totalResultado"></span></h6>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Matrícula</th>
+                    <th>Nome</th>
+                    <th>Situação</th>
+                    <th>Telefone</th>
+                    <th class="text-end">Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="corpoTabelaAlunos"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <%- include('partials/footer') %>
+
+  </div>
+
+  <script>
+    const token = localStorage.getItem('coor360_token');
+
+    if (!token) {
+      window.location.href = '/login';
+    }
+
+    function sair() {
+      localStorage.removeItem('coor360_token');
+      window.location.href = '/login';
+    }
+    document.getElementById('btnSair').addEventListener('click', sair);
+    document.getElementById('btnSairMenu').addEventListener('click', sair);
+
+    const html = document.documentElement;
+
+    document.getElementById('btnToggleMenu').addEventListener('click', function () {
+      this.classList.toggle('active');
+      if (window.matchMedia('(max-width: 1199.98px)').matches) {
+        document.getElementById('menubar').classList.toggle('open');
+      } else if (html.getAttribute('data-app-sidebar') === 'mini') {
+        html.removeAttribute('data-app-sidebar');
+      } else {
+        html.setAttribute('data-app-sidebar', 'mini');
+      }
+    });
+
+    const btnTema = document.getElementById('btnTema');
+    function aplicarTema(tema) {
+      html.setAttribute('data-bs-theme', tema);
+      btnTema.classList.toggle('active', tema === 'dark');
+    }
+    aplicarTema(localStorage.getItem('coor360_tema') || 'light');
+    btnTema.addEventListener('click', () => {
+      const atual = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+      aplicarTema(atual);
+      localStorage.setItem('coor360_tema', atual);
+    });
+
+    async function chamarApi(caminho, opcoes = {}) {
+      const resposta = await fetch(caminho, {
+        ...opcoes,
+        headers: {
+          Authorization: 'Bearer ' + token,
+          ...(opcoes.body ? { 'Content-Type': 'application/json' } : {}),
+          ...opcoes.headers
+        }
+      });
+      if (resposta.status === 401) {
+        localStorage.removeItem('coor360_token');
+        window.location.href = '/login';
+        throw new Error('Sessão expirada');
+      }
+      return resposta.json();
+    }
+
+    function escaparHtml(texto) {
+      return (texto || '').toString().replace(/[&<>"']/g, (caractere) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[caractere]);
+    }
+
+    // Mesmo formato da tela de Alunos em risco — o banco guarda só dígitos
+    function formatarTelefone(telefone) {
+      if (!telefone) return '';
+      if (telefone.length !== 11) return telefone;
+      return `(${telefone.slice(0, 2)}) ${telefone.slice(2, 7)}-${telefone.slice(7)}`;
+    }
+
+    function formatarDataHora(dataIso) {
+      return new Date(dataIso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function linhaAlunoHtml(aluno) {
+      const telefone = aluno.telefone || '';
+      // Quem pediu SAIR no WhatsApp não volta a receber envio automático nem com
+      // o número corrigido — quem edita precisa saber disso.
+      const selo = aluno.whatsappOptOut
+        ? '<span class="badge bg-warning-subtle text-warning-emphasis ms-2">pediu SAIR</span>'
+        : '';
+      const edicao = aluno.telefoneEditadoEm
+        ? `<div class="form-text mb-0">alterado por ${escaparHtml(aluno.telefoneEditadoPor) || '—'} em ${formatarDataHora(aluno.telefoneEditadoEm)}</div>`
+        : '';
+
+      return `
+        <tr data-matricula="${escaparHtml(aluno.matricula)}">
+          <td>${escaparHtml(aluno.matricula)}</td>
+          <td>${escaparHtml(aluno.nome) || '—'}${selo}</td>
+          <td>${escaparHtml(aluno.situacao) || '—'}</td>
+          <td>
+            <span class="telefoneTexto">
+              ${telefone ? escaparHtml(formatarTelefone(telefone)) : '<span class="text-body-secondary">sem telefone</span>'}
+              ${telefone ? `<a href="https://wa.me/55${escaparHtml(telefone)}" target="_blank" rel="noopener" class="text-success ms-2" title="Chamar no WhatsApp"><i class="bi bi-whatsapp"></i></a>` : ''}
+            </span>
+            <span class="telefoneEdicao d-none">
+              <input type="text" class="form-control form-control-sm campoTelefone" value="${escaparHtml(telefone)}" placeholder="(69) 99999-9999">
+            </span>
+            ${edicao}
+            <span class="statusLinha form-text text-warning mb-0 d-none"></span>
+          </td>
+          <td class="text-end text-nowrap">
+            <button type="button" class="btn btn-sm btn-outline-primary btnEditar" title="Alterar telefone">
+              <i class="bi bi-pencil-fill"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-primary btnSalvar d-none">Salvar</button>
+            <button type="button" class="btn btn-sm btn-outline-light btnCancelar d-none">Cancelar</button>
+          </td>
+        </tr>
+      `;
+    }
+
+    function alternarEdicao(linha, editando) {
+      linha.querySelector('.telefoneTexto').classList.toggle('d-none', editando);
+      linha.querySelector('.telefoneEdicao').classList.toggle('d-none', !editando);
+      linha.querySelector('.btnEditar').classList.toggle('d-none', editando);
+      linha.querySelector('.btnSalvar').classList.toggle('d-none', !editando);
+      linha.querySelector('.btnCancelar').classList.toggle('d-none', !editando);
+      linha.querySelector('.statusLinha').classList.add('d-none');
+      if (editando) linha.querySelector('.campoTelefone').focus();
+    }
+
+    async function salvarTelefone(linha) {
+      const matricula = linha.dataset.matricula;
+      const campo = linha.querySelector('.campoTelefone');
+      const status = linha.querySelector('.statusLinha');
+      const botaoSalvar = linha.querySelector('.btnSalvar');
+      const valor = campo.value.trim();
+
+      // Campo vazio apaga o telefone do aluno — confirma antes, porque sem
+      // telefone ele some do WhatsApp e do link das outras telas.
+      if (!valor) {
+        const confirmacao = await Swal.fire({
+          title: 'Apagar o telefone?',
+          text: 'O aluno vai ficar sem telefone cadastrado e não vai receber mensagem no WhatsApp.',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Apagar',
+          cancelButtonText: 'Cancelar'
+        });
+        if (!confirmacao.isConfirmed) return;
+      }
+
+      botaoSalvar.disabled = true;
+      status.className = 'statusLinha form-text text-body mb-0';
+      status.textContent = 'Salvando...';
+
+      try {
+        const resposta = await chamarApi(`/alunos/${encodeURIComponent(matricula)}/telefone`, {
+          method: 'PUT',
+          body: JSON.stringify({ telefone: valor })
+        });
+
+        if (resposta.status !== 'ok') {
+          throw new Error(resposta.mensagem || 'Erro ao salvar');
+        }
+
+        linha.outerHTML = linhaAlunoHtml(resposta.dados);
+
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          status.className = 'statusLinha form-text text-warning mb-0';
+          status.textContent = erro.message || 'Não foi possível salvar agora.';
+          status.classList.remove('d-none');
+        }
+      } finally {
+        botaoSalvar.disabled = false;
+      }
+    }
+
+    // Delegação: as linhas são recriadas a cada busca e a cada salvamento
+    document.getElementById('corpoTabelaAlunos').addEventListener('click', (evento) => {
+      const linha = evento.target.closest('tr');
+      if (!linha) return;
+
+      if (evento.target.closest('.btnEditar')) alternarEdicao(linha, true);
+      if (evento.target.closest('.btnCancelar')) {
+        linha.querySelector('.campoTelefone').value = linha.querySelector('.campoTelefone').defaultValue;
+        alternarEdicao(linha, false);
+      }
+      if (evento.target.closest('.btnSalvar')) salvarTelefone(linha);
+    });
+
+    document.getElementById('formBusca').addEventListener('submit', async (evento) => {
+      evento.preventDefault();
+
+      const busca = document.getElementById('campoBusca').value.trim();
+      const statusEl = document.getElementById('statusBusca');
+      const cardResultado = document.getElementById('cardResultado');
+      const botao = document.getElementById('btnBuscar');
+
+      botao.disabled = true;
+      statusEl.className = 'alert alert-info';
+      statusEl.textContent = 'Buscando...';
+      statusEl.classList.remove('d-none');
+      cardResultado.classList.add('d-none');
+
+      try {
+        const resposta = await chamarApi(`/alunos/buscar?busca=${encodeURIComponent(busca)}`);
+
+        if (resposta.status !== 'ok') {
+          throw new Error(resposta.mensagem || 'Erro na busca');
+        }
+
+        if (!resposta.dados.length) {
+          statusEl.className = 'alert alert-warning';
+          statusEl.textContent = 'Nenhum aluno encontrado. Se ele nunca teve chamada lançada nem veio na planilha, ainda não está no sistema.';
+          return;
+        }
+
+        document.getElementById('corpoTabelaAlunos').innerHTML = resposta.dados.map(linhaAlunoHtml).join('');
+        document.getElementById('totalResultado').textContent = resposta.dados.length === resposta.limite
+          ? `(${resposta.dados.length}+ — refine a busca)`
+          : `(${resposta.dados.length})`;
+
+        statusEl.classList.add('d-none');
+        cardResultado.classList.remove('d-none');
+
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          statusEl.className = 'alert alert-warning';
+          statusEl.textContent = erro.message || 'Não foi possível buscar agora.';
+        }
+      } finally {
+        botao.disabled = false;
+      }
+    });
+  </script>
+</body>
+
+</html>

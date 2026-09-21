@@ -39,11 +39,23 @@
           <span class="menu-label">WhatsApp</span>
         </a>
       </li>
-      <li class="menu-item">
-        <a class="menu-link <%= paginaAtual === 'importar-telefones' ? 'active' : '' %>" href="/importar-telefones">
+      <li class="menu-item menu-arrow <%= ['telefones', 'importar-telefones'].includes(paginaAtual) ? 'open' : '' %>">
+        <a class="menu-link <%= ['telefones', 'importar-telefones'].includes(paginaAtual) ? 'open' : '' %>" href="javascript:void(0);">
           <i class="bi bi-telephone-fill"></i>
-          <span class="menu-label">Importar contatos</span>
+          <span class="menu-label">Contatos</span>
         </a>
+        <ul class="menu-inner">
+          <li class="menu-item">
+            <a class="menu-link <%= paginaAtual === 'telefones' ? 'active' : '' %>" href="/telefones">
+              <span class="menu-label">Telefones dos alunos</span>
+            </a>
+          </li>
+          <li class="menu-item">
+            <a class="menu-link <%= paginaAtual === 'importar-telefones' ? 'active' : '' %>" href="/importar-telefones">
+              <span class="menu-label">Importar planilha</span>
+            </a>
+          </li>
+        </ul>
       </li>
       <li class="menu-item" id="menuUsuarios">
         <a class="menu-link <%= paginaAtual === 'usuarios' ? 'active' : '' %>" href="/usuarios">
@@ -74,5 +86,17 @@
     } catch (erro) {
       // token inválido — as próprias chamadas fetch() da página vão redirecionar pro /login
     }
+  })();
+
+  // Abre/fecha os submenus (o CSS do tema já mostra .menu-inner quando o
+  // li.menu-item está .open). Fica aqui no partial pra valer em todas as
+  // páginas sem repetir no script inline de cada view.
+  (function () {
+    document.querySelectorAll('.menubar > li.menu-arrow > .menu-link').forEach((link) => {
+      link.addEventListener('click', () => {
+        link.parentElement.classList.toggle('open');
+        link.classList.toggle('open');
+      });
+    });
   })();
 </script>

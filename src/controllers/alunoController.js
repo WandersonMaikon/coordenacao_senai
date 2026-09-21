@@ -456,6 +456,16 @@ async function importarTelefones(req, res) {
 
         let importados = 0;
         let semTelefone = 0;
+        // Telefones corrigidos na tela /telefones: a planilha não sobrescreve.
+        // Quem edita na mão está vendo o número novo do aluno na frente; a
+        // planilha da secretaria costuma ser mais velha que essa correção.
+        const editadosNoPainel = new Set(
+            (await prisma.aluno.findMany({
+                where: { telefoneEditadoEm: { not: null } },
+                select: { matricula: true }
+            })).map((aluno) => aluno.matricula)
+        );
+        let telefonesPreservados = 0;
         // Contagem por situação encontrada na planilha, devolvida na resposta: é
         // como a coordenação descobre quais valores a secretaria usa de verdade
         // e confere se SITUACOES_ATIVAS cobre todos eles.
@@ -478,7 +488,11 @@ async function importarTelefones(req, res) {
             // Só sobrescreve o que a planilha realmente traz: uma planilha sem
             // telefone pra um aluno não pode apagar o telefone que já temos dele.
             const campos = {};
-            if (telefone) campos.telefone = telefone;
+            if (telefone && editadosNoPainel.has(matricula)) {
+                telefonesPreservados++;
+            } else if (telefone) {
+                campos.telefone = telefone;
+            }
             if (nome) campos.nome = nome;
             if (situacao) campos.situacao = situacao;
 
@@ -495,10 +509,102 @@ async function importarTelefones(req, res) {
 
         res.json({
             status: 'ok',
-            mensagem: `${importados} aluno(s) importado(s)${semTelefone > 0 ? `, ${semTelefone} sem telefone na planilha` : ''}`,
-            situacoes
+            mensagem: `${importados} aluno(s) importado(s)`
+                + (semTelefone > 0 ? `, ${semTelefone} sem telefone na planilha` : '')
+                + (telefonesPreservados > 0 ? `, ${telefonesPreservados} telefone(s) corrigido(s) no painel foram mantidos` : ''),
+            situacoes,
+            telefonesPreservados
         });
     } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+// Quantos alunos a busca da tela /telefones devolve no máximo. É busca pra
+// achar um aluno específico, não listagem: a tela pede pra refinar se estourar.
+const LIMITE_BUSCA_ALUNOS = 50;
+
+// Busca aluno por parte do nome ou da matrícula, pra tela /telefones. Sem termo
+// não devolve nada: são dados de menores, uma chamada sem filtro despejaria a
+// escola inteira.
+async function buscarAlunos(req, res) {
+    const busca = (req.query.busca || '').toString().trim();
+
+    if (busca.length < 2) {
+        return res.status(400).json({ status: 'erro', mensagem: 'Digite pelo menos 2 caracteres pra buscar' });
+    }
+
+    try {
+        const alunos = await prisma.aluno.findMany({
+            where: {
+                OR: [
+                    { nome: { contains: busca } },
+                    { matricula: { contains: busca } }
+                ]
+            },
+            select: {
+                matricula: true,
+                nome: true,
+                telefone: true,
+                situacao: true,
+                whatsappOptOut: true,
+                telefoneEditadoEm: true,
+                telefoneEditadoPor: true
+            },
+            orderBy: { nome: 'asc' },
+            take: LIMITE_BUSCA_ALUNOS
+        });
+
+        res.json({ status: 'ok', dados: alunos, limite: LIMITE_BUSCA_ALUNOS });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+// Corrige o telefone de um aluno que trocou de número no meio do semestre. O
+// número fica marcado como editado na mão (telefoneEditadoEm), e a partir daí a
+// importação da planilha não o sobrescreve mais.
+async function atualizarTelefone(req, res) {
+    const { matricula } = req.params;
+    const { telefone } = req.body;
+
+    // Mesma normalização da importação: `alunos.telefone` guarda só dígitos e
+    // sem o 55 — é o formato de que dependem o link wa.me das telas e a
+    // comparação com o número conectado no WhatsApp.
+    const digitos = (telefone || '').toString().replace(/\D/g, '');
+
+    if (digitos && (digitos.length < 10 || digitos.length > 11)) {
+        return res.status(400).json({ status: 'erro', mensagem: 'O telefone precisa ter DDD + 8 ou 9 dígitos' });
+    }
+
+    try {
+        const aluno = await prisma.aluno.update({
+            where: { matricula },
+            // Campo vazio apaga o telefone de propósito: é como se registra que
+            // o número antigo não serve mais e ninguém tem o novo ainda.
+            data: {
+                telefone: digitos || null,
+                telefoneEditadoEm: new Date(),
+                telefoneEditadoPor: req.usuario.usuario
+            },
+            select: {
+                matricula: true,
+                nome: true,
+                telefone: true,
+                situacao: true,
+                whatsappOptOut: true,
+                telefoneEditadoEm: true,
+                telefoneEditadoPor: true
+            }
+        });
+
+        res.json({ status: 'ok', dados: aluno });
+    } catch (erro) {
+        // Aluno só existe aqui se veio da planilha ou de um lançamento — a tela
+        // não cadastra aluno novo.
+        if (erro.code === 'P2025') {
+            return res.status(404).json({ status: 'erro', mensagem: 'Aluno não encontrado' });
+        }
         res.status(500).json({ status: 'erro', mensagem: erro.message });
     }
 }
@@ -790,6 +896,8 @@ module.exports = {
     listarEmRisco,
     listarRecuperados,
     importarTelefones,
+    buscarAlunos,
+    atualizarTelefone,
     resumoAlunos,
     atencaoPainel,
     resolverCaso,
