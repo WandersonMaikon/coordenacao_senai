@@ -24,22 +24,22 @@
 
         <div class="card mb-4">
           <div class="card-body">
-            <form id="formBusca" class="row g-3 align-items-end">
+            <form id="formBusca" class="row g-3 align-items-end" autocomplete="off">
               <div class="col-sm-8 col-md-6">
                 <label class="form-label" for="campoBusca">Buscar aluno</label>
-                <input type="search" class="form-control" id="campoBusca" placeholder="Nome ou matrícula" minlength="2" required>
-                <div class="form-text">Digite pelo menos 2 caracteres do nome, ou a matrícula.</div>
-              </div>
-              <div class="col-sm-4">
-                <button type="submit" class="btn btn-primary" id="btnBuscar">
-                  <i class="bi bi-search me-1"></i> Buscar
-                </button>
+                <div class="position-relative">
+                  <input type="search" class="form-control" id="campoBusca" placeholder="Nome ou matrícula" minlength="2" autocomplete="off">
+                  <span class="position-absolute top-50 end-0 translate-middle-y me-3 d-none" id="iconeBuscando">
+                    <span class="spinner-border spinner-border-sm text-body-secondary"></span>
+                  </span>
+                </div>
+                <div class="form-text">Os alunos aparecem conforme você digita — a partir de 2 caracteres do nome, ou da matrícula.</div>
               </div>
             </form>
           </div>
         </div>
 
-        <div id="statusBusca" class="alert alert-info">Busque um aluno para ver e alterar o telefone.</div>
+        <div id="statusBusca" class="alert alert-info">Digite o nome ou a matrícula do aluno para ver e alterar o telefone.</div>
 
         <div class="card d-none" id="cardResultado">
           <div class="card-header d-flex align-items-center justify-content-between border-0 pb-0">
@@ -150,6 +150,11 @@
       const selo = aluno.whatsappOptOut
         ? '<span class="badge bg-warning-subtle text-warning-emphasis ms-2">pediu SAIR</span>'
         : '';
+      // Achado pelo lançamento do professor: a planilha da turma dele ainda não
+      // foi importada, então não há situação nem telefone cadastrados.
+      const seloSemCadastro = aluno.semCadastro
+        ? '<span class="badge bg-secondary-subtle text-secondary-emphasis ms-2" title="Turma ainda não importada — o cadastro é criado quando você salvar o telefone">só em chamada</span>'
+        : '';
       const edicao = aluno.telefoneEditadoEm
         ? `<div class="form-text mb-0">alterado por ${escaparHtml(aluno.telefoneEditadoPor) || '—'} em ${formatarDataHora(aluno.telefoneEditadoEm)}</div>`
         : '';
@@ -157,7 +162,7 @@
       return `
         <tr data-matricula="${escaparHtml(aluno.matricula)}">
           <td>${escaparHtml(aluno.matricula)}</td>
-          <td>${escaparHtml(aluno.nome) || '—'}${selo}</td>
+          <td>${escaparHtml(aluno.nome) || '—'}${selo}${seloSemCadastro}</td>
           <td>${escaparHtml(aluno.situacao) || '—'}</td>
           <td>
             <span class="telefoneTexto">
@@ -252,30 +257,41 @@
       if (evento.target.closest('.btnSalvar')) salvarTelefone(linha);
     });
 
-    document.getElementById('formBusca').addEventListener('submit', async (evento) => {
-      evento.preventDefault();
+    // Busca conforme digita. O contador de requisição resolve a corrida entre
+    // respostas: uma busca antiga que chega atrasada não sobrescreve a atual.
+    let buscaEmAndamento = 0;
+    let temporizadorBusca = null;
+    const ESPERA_DIGITACAO_MS = 300;
 
-      const busca = document.getElementById('campoBusca').value.trim();
+    async function buscar(termo) {
       const statusEl = document.getElementById('statusBusca');
       const cardResultado = document.getElementById('cardResultado');
-      const botao = document.getElementById('btnBuscar');
+      const icone = document.getElementById('iconeBuscando');
+      const requisicao = ++buscaEmAndamento;
 
-      botao.disabled = true;
-      statusEl.className = 'alert alert-info';
-      statusEl.textContent = 'Buscando...';
-      statusEl.classList.remove('d-none');
-      cardResultado.classList.add('d-none');
+      if (termo.length < 2) {
+        cardResultado.classList.add('d-none');
+        statusEl.className = 'alert alert-info';
+        statusEl.textContent = 'Digite o nome ou a matrícula do aluno para ver e alterar o telefone.';
+        statusEl.classList.remove('d-none');
+        return;
+      }
+
+      icone.classList.remove('d-none');
 
       try {
-        const resposta = await chamarApi(`/alunos/buscar?busca=${encodeURIComponent(busca)}`);
+        const resposta = await chamarApi(`/alunos/buscar?busca=${encodeURIComponent(termo)}`);
+        if (requisicao !== buscaEmAndamento) return;
 
         if (resposta.status !== 'ok') {
           throw new Error(resposta.mensagem || 'Erro na busca');
         }
 
         if (!resposta.dados.length) {
+          cardResultado.classList.add('d-none');
           statusEl.className = 'alert alert-warning';
           statusEl.textContent = 'Nenhum aluno encontrado. Se ele nunca teve chamada lançada nem veio na planilha, ainda não está no sistema.';
+          statusEl.classList.remove('d-none');
           return;
         }
 
@@ -288,13 +304,29 @@
         cardResultado.classList.remove('d-none');
 
       } catch (erro) {
+        if (requisicao !== buscaEmAndamento) return;
         if (erro.message !== 'Sessão expirada') {
+          cardResultado.classList.add('d-none');
           statusEl.className = 'alert alert-warning';
           statusEl.textContent = erro.message || 'Não foi possível buscar agora.';
+          statusEl.classList.remove('d-none');
         }
       } finally {
-        botao.disabled = false;
+        if (requisicao === buscaEmAndamento) icone.classList.add('d-none');
       }
+    }
+
+    document.getElementById('campoBusca').addEventListener('input', (evento) => {
+      const termo = evento.target.value.trim();
+      clearTimeout(temporizadorBusca);
+      temporizadorBusca = setTimeout(() => buscar(termo), ESPERA_DIGITACAO_MS);
+    });
+
+    // Enter não recarrega a página; só antecipa a busca que já ia acontecer
+    document.getElementById('formBusca').addEventListener('submit', (evento) => {
+      evento.preventDefault();
+      clearTimeout(temporizadorBusca);
+      buscar(document.getElementById('campoBusca').value.trim());
     });
   </script>
 </body>

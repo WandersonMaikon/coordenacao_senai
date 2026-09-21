@@ -524,6 +524,17 @@ async function importarTelefones(req, res) {
 // achar um aluno específico, não listagem: a tela pede pra refinar se estourar.
 const LIMITE_BUSCA_ALUNOS = 50;
 
+// Campos que a tela /telefones mostra de cada aluno
+const CAMPOS_ALUNO_BUSCA = {
+    matricula: true,
+    nome: true,
+    telefone: true,
+    situacao: true,
+    whatsappOptOut: true,
+    telefoneEditadoEm: true,
+    telefoneEditadoPor: true
+};
+
 // Busca aluno por parte do nome ou da matrícula, pra tela /telefones. Sem termo
 // não devolve nada: são dados de menores, uma chamada sem filtro despejaria a
 // escola inteira.
@@ -535,27 +546,73 @@ async function buscarAlunos(req, res) {
     }
 
     try {
-        const alunos = await prisma.aluno.findMany({
-            where: {
-                OR: [
-                    { nome: { contains: busca } },
-                    { matricula: { contains: busca } }
-                ]
-            },
-            select: {
-                matricula: true,
-                nome: true,
-                telefone: true,
-                situacao: true,
-                whatsappOptOut: true,
-                telefoneEditadoEm: true,
-                telefoneEditadoPor: true
-            },
-            orderBy: { nome: 'asc' },
-            take: LIMITE_BUSCA_ALUNOS
-        });
+        // O nome do aluno mora em dois lugares: `alunos.nome`, que só quem veio
+        // da planilha da secretaria tem, e `lancamentos.nome_aluno`, que todo
+        // aluno com chamada lançada tem. Procurar só na tabela `alunos` não
+        // acha quem está em turma ainda não importada — justamente quem tende a
+        // estar sem telefone e ser o alvo desta tela.
+        const [cadastrados, lancados] = await Promise.all([
+            prisma.aluno.findMany({
+                where: {
+                    OR: [
+                        { nome: { contains: busca } },
+                        { matricula: { contains: busca } }
+                    ]
+                },
+                select: CAMPOS_ALUNO_BUSCA,
+                take: LIMITE_BUSCA_ALUNOS
+            }),
+            prisma.lancamento.findMany({
+                where: {
+                    OR: [
+                        { nomeAluno: { contains: busca } },
+                        { matricula: { contains: busca } }
+                    ]
+                },
+                select: { matricula: true, nomeAluno: true },
+                distinct: ['matricula'],
+                take: LIMITE_BUSCA_ALUNOS
+            })
+        ]);
 
-        res.json({ status: 'ok', dados: alunos, limite: LIMITE_BUSCA_ALUNOS });
+        const nomeDoLancamento = new Map(
+            lancados.filter((item) => item.nomeAluno).map((item) => [item.matricula, item.nomeAluno])
+        );
+        const porMatricula = new Map(cadastrados.map((aluno) => [aluno.matricula, aluno]));
+        const matriculas = [...new Set([...porMatricula.keys(), ...lancados.map((item) => item.matricula)])];
+
+        // Quem veio pelo lançamento pode já ter linha em `alunos` (criada por um
+        // contato, por exemplo) sem o nome preenchido — então o cadastro dele
+        // precisa ser buscado à parte, senão o telefone que já existe some.
+        const semCadastroCarregado = matriculas.filter((matricula) => !porMatricula.has(matricula));
+        if (semCadastroCarregado.length) {
+            const extras = await prisma.aluno.findMany({
+                where: { matricula: { in: semCadastroCarregado } },
+                select: CAMPOS_ALUNO_BUSCA
+            });
+            extras.forEach((aluno) => porMatricula.set(aluno.matricula, aluno));
+        }
+
+        const dados = matriculas
+            .map((matricula) => {
+                const aluno = porMatricula.get(matricula);
+                return {
+                    matricula,
+                    nome: (aluno && aluno.nome) || nomeDoLancamento.get(matricula) || null,
+                    telefone: aluno ? aluno.telefone : null,
+                    situacao: aluno ? aluno.situacao : null,
+                    whatsappOptOut: aluno ? aluno.whatsappOptOut : false,
+                    telefoneEditadoEm: aluno ? aluno.telefoneEditadoEm : null,
+                    telefoneEditadoPor: aluno ? aluno.telefoneEditadoPor : null,
+                    // Aparece só em lançamento: a planilha da turma dele ainda
+                    // não foi importada. Salvar o telefone cria o cadastro.
+                    semCadastro: !aluno
+                };
+            })
+            .sort((a, b) => (a.nome || 'zzz').localeCompare(b.nome || 'zzz', 'pt-BR'))
+            .slice(0, LIMITE_BUSCA_ALUNOS);
+
+        res.json({ status: 'ok', dados, limite: LIMITE_BUSCA_ALUNOS });
     } catch (erro) {
         res.status(500).json({ status: 'erro', mensagem: erro.message });
     }
@@ -578,6 +635,24 @@ async function atualizarTelefone(req, res) {
     }
 
     try {
+        // Aluno de turma ainda não importada não tem linha em `alunos` — só
+        // lançamento. Criar o cadastro aqui é o mesmo que `POST /contatos` faz:
+        // é justamente esse aluno que costuma estar sem telefone. Sem nenhum
+        // lançamento, porém, a matrícula não existe no sistema: é erro de
+        // digitação, e criar a linha só sujaria a contagem do painel.
+        const cadastro = await prisma.aluno.findUnique({ where: { matricula }, select: { matricula: true } });
+        if (!cadastro) {
+            const lancamento = await prisma.lancamento.findFirst({
+                where: { matricula },
+                select: { nomeAluno: true },
+                orderBy: { criadoEm: 'desc' }
+            });
+            if (!lancamento) {
+                return res.status(404).json({ status: 'erro', mensagem: 'Aluno não encontrado' });
+            }
+            await prisma.aluno.create({ data: { matricula, nome: lancamento.nomeAluno || null } });
+        }
+
         const aluno = await prisma.aluno.update({
             where: { matricula },
             // Campo vazio apaga o telefone de propósito: é como se registra que
@@ -587,15 +662,7 @@ async function atualizarTelefone(req, res) {
                 telefoneEditadoEm: new Date(),
                 telefoneEditadoPor: req.usuario.usuario
             },
-            select: {
-                matricula: true,
-                nome: true,
-                telefone: true,
-                situacao: true,
-                whatsappOptOut: true,
-                telefoneEditadoEm: true,
-                telefoneEditadoPor: true
-            }
+            select: CAMPOS_ALUNO_BUSCA
         });
 
         res.json({ status: 'ok', dados: aluno });
