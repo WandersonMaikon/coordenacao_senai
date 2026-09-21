@@ -1,3 +1,29 @@
+<style>
+  /* O tema desenha a setinha do submenu num ::after com a fonte
+     "uicons-regular-straight", que não veio junto com o CSS — aparecia um
+     quadrado vazio. Trocamos pelo chevron do Bootstrap Icons, que as páginas já
+     carregam, mantendo o giro de 90° quando o submenu abre. */
+  .app-navbar .menu-arrow > .menu-link::after {
+    display: none;
+  }
+  .app-navbar .menu-arrow > .menu-link > .menu-seta {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-right: 0;
+    font-size: 12px;
+    color: inherit;
+    transition: 0.2s transform linear;
+  }
+  .app-navbar .menu-arrow > .menu-link.open > .menu-seta {
+    transform: translateY(-50%) rotate(90deg);
+  }
+  [data-app-sidebar=mini] .app-menubar .menu-seta {
+    display: none;
+  }
+</style>
+
 <aside class="app-menubar" id="menubar">
   <div class="app-navbar-brand">
     <a class="navbar-brand-logo" href="/painel">
@@ -43,6 +69,7 @@
         <a class="menu-link <%= ['telefones', 'importar-telefones'].includes(paginaAtual) ? 'open' : '' %>" href="javascript:void(0);">
           <i class="bi bi-telephone-fill"></i>
           <span class="menu-label">Contatos</span>
+          <i class="bi bi-chevron-right menu-seta"></i>
         </a>
         <ul class="menu-inner">
           <li class="menu-item">
