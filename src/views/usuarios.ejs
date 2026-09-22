@@ -229,13 +229,17 @@
           throw new Error(resposta.mensagem || 'Erro ao salvar');
         }
 
+        // O formulário some no alternarFormNovoUsuario, levando junto qualquer
+        // mensagem inline — a notificação é o que confirma que gravou.
         alternarFormNovoUsuario(false);
+        notificar.ok(`Usuário "${corpo.usuario}" salvo.`);
         carregarUsuarios();
 
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           statusForm.className = 'statusFormUsuario ms-2 text-warning';
           statusForm.textContent = erro.message || 'Não foi possível salvar agora.';
+          notificar.erro(erro.message || 'Não foi possível salvar o usuário agora.');
         }
       } finally {
         botaoSalvar.disabled = false;

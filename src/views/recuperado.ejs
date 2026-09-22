@@ -292,6 +292,7 @@
           })
         });
         if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        notificar.ok('Caso encerrado. O aluno sai do risco e do acompanhamento.');
         await carregarRecuperados(document.getElementById('filtroTurma').value);
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
@@ -314,6 +315,7 @@
       try {
         const resposta = await chamarApi(`/casos-resolvidos/${encodeURIComponent(botao.dataset.reabrir)}/${encodeURIComponent(botao.dataset.turma)}`, { method: 'DELETE' });
         if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        notificar.ok('Caso reaberto. O aluno volta a ser avaliado pelas faltas.');
         await carregarRecuperados(document.getElementById('filtroTurma').value);
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {

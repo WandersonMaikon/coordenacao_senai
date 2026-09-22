@@ -416,12 +416,14 @@
 
         statusForm.className = 'statusFormContato ms-2 text-success';
         statusForm.textContent = 'Contato apagado.';
+        notificar.ok('Contato apagado.');
         // Recarrega o histórico e, com ele, o badge de último contato da linha.
         await carregarHistorico(indice, form.dataset.matricula);
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           statusForm.className = 'statusFormContato ms-2 text-warning';
           statusForm.textContent = erro.message || 'Não foi possível apagar agora.';
+          notificar.erro(erro.message || 'Não foi possível apagar o contato agora.');
         }
       }
     }
@@ -668,6 +670,7 @@
 
         statusForm.className = 'statusFormContato ms-2 text-success';
         const mensagemOk = idEditando ? 'Contato atualizado.' : 'Contato registrado.';
+        notificar.ok(mensagemOk);
 
         // Sai da edição antes de recarregar: sairModoEdicao dá reset() no form,
         // o que apagaria a mensagem se viesse depois.
@@ -689,6 +692,7 @@
         if (erro.message !== 'Sessão expirada') {
           statusForm.className = 'statusFormContato ms-2 text-warning';
           statusForm.textContent = 'Não foi possível salvar agora.';
+          notificar.erro(erro.message || 'Não foi possível salvar o contato agora.');
         }
       } finally {
         botaoSalvar.disabled = false;

@@ -124,6 +124,11 @@
         resultado.className = `alert ${dados.status === 'ok' ? 'alert-success' : 'alert-warning'}`;
         resultado.textContent = dados.mensagem;
 
+        // O bloco de resultado fica logo abaixo do formulário e o usuário pode
+        // já ter rolado a tela; a notificação avisa de qualquer posição.
+        if (dados.status === 'ok') notificar.ok(dados.mensagem);
+        else notificar.erro(dados.mensagem);
+
         // Mostra os valores que a coluna "Situação" trouxe. É o que permite
         // conferir se a lista de situações consideradas ativas (SITUACOES_ATIVAS,
         // no alunoController) cobre o que a secretaria realmente usa.
@@ -151,6 +156,7 @@
       } catch (erro) {
         resultado.className = 'alert alert-warning';
         resultado.textContent = 'Não foi possível importar a planilha agora.';
+        notificar.erro('Não foi possível importar a planilha agora.');
       } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-upload me-1"></i> Importar';

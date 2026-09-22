@@ -231,13 +231,17 @@
           throw new Error(resposta.mensagem || 'Erro ao salvar');
         }
 
+        // A linha é recriada com o dado novo, então a única confirmação que
+        // sobra pro usuário é a notificação.
         linha.outerHTML = linhaAlunoHtml(resposta.dados);
+        notificar.ok(valor ? 'Telefone atualizado.' : 'Telefone apagado.');
 
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           status.className = 'statusLinha form-text text-warning mb-0';
           status.textContent = erro.message || 'Não foi possível salvar agora.';
           status.classList.remove('d-none');
+          notificar.erro(erro.message || 'Não foi possível salvar o telefone agora.');
         }
       } finally {
         botaoSalvar.disabled = false;

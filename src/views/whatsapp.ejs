@@ -573,12 +573,14 @@
         if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
         statusEl.className = 'ms-2 small text-success';
         statusEl.textContent = resposta.mensagem;
+        notificar.ok(resposta.mensagem);
         document.getElementById('campoTelefone').blur();
         await acompanharSessao();
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           statusEl.className = 'ms-2 small text-danger';
           statusEl.textContent = erro.message || 'Não foi possível salvar.';
+          notificar.erro(erro.message || 'Não foi possível salvar o número.');
         }
       }
     });
@@ -615,6 +617,7 @@
       try {
         const resposta = await chamarApi('/whatsapp/sessao/desconectar', { method: 'POST' });
         if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        notificar.ok('WhatsApp desconectado. O número segue cadastrado.');
         await acompanharSessao();
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
@@ -817,6 +820,7 @@
       try {
         const resposta = await chamarApi(`/whatsapp/turmas/${encodeURIComponent(codigo)}`, { method: assumir ? 'POST' : 'DELETE' });
         if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        notificar.ok(assumir ? 'Turma assumida.' : 'Turma liberada.');
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           Swal.fire({ title: assumir ? 'Não foi possível assumir' : 'Não foi possível liberar', text: erro.message, icon: 'error' });
@@ -950,11 +954,13 @@
         if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
         statusEl.className = 'ms-2 small text-success';
         statusEl.textContent = resposta.mensagem;
+        notificar.ok(resposta.mensagem);
         preencherConfig(resposta.dados);
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           statusEl.className = 'ms-2 small text-danger';
           statusEl.textContent = erro.message;
+          notificar.erro(erro.message || 'Não foi possível salvar a mensagem e os limites.');
         }
       }
     });
@@ -1231,6 +1237,7 @@
             body: JSON.stringify({ incluirSemResposta: confirmandoEnvio.incluirSemResposta, incluirNaoContatado: confirmandoEnvio.incluirNaoContatado, excluidos })
           });
           if (r.status !== 'ok') throw new Error(r.mensagem);
+          notificar.ok(`Envio iniciado para ${marcados} aluno(s).`);
           confirmandoEnvio = null;
           carregarEnvio();
         } catch (erro) {
@@ -1251,6 +1258,7 @@
         try {
           const r = await chamarApi(`/whatsapp/lote/${estadoEnvio.lote.id}/parar`, { method: 'POST' });
           if (r.status !== 'ok') throw new Error(r.mensagem);
+          notificar.ok('Envio parado. Quem estava na fila não recebeu.');
           carregarEnvio();
         } catch (erro) {
           if (erro.message !== 'Sessão expirada') Swal.fire({ title: 'Não foi possível parar', text: erro.message, icon: 'error' });
@@ -1263,6 +1271,7 @@
         try {
           const r = await chamarApi('/whatsapp/sessao/retomar', { method: 'POST' });
           if (r.status !== 'ok') throw new Error(r.mensagem);
+          notificar.ok('Envio retomado.');
           carregarEnvio();
         } catch (erro) {
           if (erro.message !== 'Sessão expirada') Swal.fire({ title: 'Não foi possível retomar', text: erro.message, icon: 'error' });
