@@ -14,7 +14,8 @@
       "PowerShell(node \"C:\\\\Users\\\\Wande\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Wande-Repositorios-senai-retencao-backend\\\\3d3ce9c8-04aa-4272-afe3-5746ca0bd62c\\\\scratchpad\\\\teste-risco.js\")",
       "PowerShell(node \"C:\\\\Users\\\\Wande\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Wande-Repositorios-senai-retencao-backend\\\\3d3ce9c8-04aa-4272-afe3-5746ca0bd62c\\\\scratchpad\\\\conferir-limpo.js\")",
       "PowerShell(node \"C:\\\\Users\\\\Wande\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Wande-Repositorios-senai-retencao-backend\\\\3d3ce9c8-04aa-4272-afe3-5746ca0bd62c\\\\scratchpad\\\\render-views.js\")",
-      "PowerShell(git check-ignore -v CLAUDE.md)"
+      "PowerShell(git check-ignore -v CLAUDE.md)",
+      "PowerShell(node \"C:\\\\Users\\\\Wande\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Wande-Repositorios-senai-retencao-backend\\\\3d3ce9c8-04aa-4272-afe3-5746ca0bd62c\\\\scratchpad\\\\teste-professores.js\")"
     ]
   }
 }
