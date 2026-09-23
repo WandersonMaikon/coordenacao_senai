@@ -4,6 +4,7 @@ const whatsappLote = require('../services/whatsappLote');
 const whatsappEnvio = require('../services/whatsappEnvio');
 const { normalizarTelefone, mesmoTelefone } = require('../services/telefone');
 const { calcularAlunosEmRiscoSemRecuperados } = require('./alunoController');
+const { carregarTurmasEncerradas } = require('./turmaController');
 
 const TIPOS_NUMERO = ['pessoal', 'institucional'];
 const { STATUS_PRECISA_ACAO, MOTIVO_NUMERO_DIFERENTE } = whatsappEnvio;
@@ -228,7 +229,7 @@ async function listarTurmas(req, res) {
         const usuario = await buscarUsuario(req);
         if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
 
-        const [turmas, assumidas, { emRisco }] = await Promise.all([
+        const [turmas, assumidas, { emRisco, turmasEncerradas }] = await Promise.all([
             prisma.lancamento.findMany({
                 where: { codigoTurma: { not: null } },
                 distinct: ['codigoTurma'],
@@ -243,7 +244,8 @@ async function listarTurmas(req, res) {
         const riscoPorTurma = new Map();
         for (const item of emRisco) riscoPorTurma.set(item.codigoTurma, (riscoPorTurma.get(item.codigoTurma) || 0) + 1);
 
-        const dados = turmas.map((turma) => {
+        // Turma encerrada não é oferecida: não se cobra falta de curso que acabou.
+        const dados = turmas.filter((turma) => !turmasEncerradas.has(turma.codigoTurma)).map((turma) => {
             const assumida = responsavelPorTurma.get(turma.codigoTurma);
             return {
                 codigoTurma: turma.codigoTurma,
@@ -271,6 +273,13 @@ async function assumirTurma(req, res) {
         const { codigoTurma } = req.params;
         const existe = await prisma.lancamento.findFirst({ where: { codigoTurma }, select: { id: true } });
         if (!existe) return res.status(404).json({ status: 'erro', mensagem: 'Turma não encontrada' });
+
+        // A lista já não oferece turma encerrada, mas a checagem é aqui: o filtro
+        // da tela é só exibição.
+        const encerradas = await carregarTurmasEncerradas();
+        if (encerradas.has(codigoTurma)) {
+            return res.status(409).json({ status: 'erro', mensagem: 'Esta turma está encerrada. Reabra no painel antes de assumi-la.' });
+        }
 
         try {
             await prisma.usuarioTurma.create({ data: { usuarioId: usuario.id, codigoTurma } });

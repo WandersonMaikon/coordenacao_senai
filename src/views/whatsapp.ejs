@@ -1327,7 +1327,9 @@
       }
     }
 
-    preencherSelectTurmas(document.getElementById('historicoTurma'), chamarApi);
+    // O histórico é consulta do que já foi enviado: turma encerrada precisa
+    // continuar filtrável, mesmo não recebendo mais mensagem.
+    preencherSelectTurmas(document.getElementById('historicoTurma'), chamarApi, true);
     document.getElementById('formHistorico').addEventListener('submit', (evento) => {
       evento.preventDefault();
       carregarHistorico(1);

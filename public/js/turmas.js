@@ -14,17 +14,26 @@ function nomeTurmaLimpo(nome) {
 
 // Preenche um <select> com as turmas de GET /turmas, mantendo a primeira opção
 // (o "Todas as turmas" que cada tela já traz no HTML).
-async function preencherSelectTurmas(select, chamarApi) {
+// Turma encerrada só entra com `incluirEncerradas` — é o checkbox das telas.
+// Como pode ser chamada de novo quando o checkbox muda, limpa as opções que ela
+// mesma criou antes (tudo menos a primeira).
+async function preencherSelectTurmas(select, chamarApi, incluirEncerradas) {
   try {
-    const resposta = await chamarApi('/turmas');
+    const resposta = await chamarApi(incluirEncerradas ? '/turmas?incluirEncerradas=1' : '/turmas');
+    const selecionada = select.value;
+    while (select.options.length > 1) select.remove(1);
     resposta.dados.forEach((turma) => {
       const opcao = document.createElement('option');
       opcao.value = turma.codigoTurma;
-      opcao.textContent = turma.nomeTurma
+      const nome = turma.nomeTurma
         ? `${nomeTurmaLimpo(turma.nomeTurma)} (${turma.codigoTurma})`
         : turma.codigoTurma;
+      opcao.textContent = turma.encerrada ? `${nome} — encerrada` : nome;
       select.appendChild(opcao);
     });
+    // Se a turma escolhida ainda está na lista, mantém a seleção (desmarcar
+    // "incluir encerradas" com uma turma encerrada escolhida volta pra "todas").
+    select.value = [...select.options].some((o) => o.value === selecionada) ? selecionada : select.options[0].value;
   } catch (erro) {
     console.error('Não foi possível carregar a lista de turmas:', erro);
   }

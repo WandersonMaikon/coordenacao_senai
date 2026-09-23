@@ -264,3 +264,25 @@ model CasoResolvido {
   @@unique([matricula, codigoTurma])
   @@map("casos_resolvidos")
 }
+
+// ─────────────────────────────────────────
+// Turma encerrada pela coordenação (tela /painel). Turma que terminou o semestre
+// nunca para de aparecer sozinha: os alunos ficam com a sequência de faltas em
+// aberto no último dia de aula e nada mais vai fechá-la, porque não haverá mais
+// chamada. Encerrar tira a turma do trabalho do dia a dia (risco, faltas, painel,
+// WhatsApp) **sem apagar nada** — lançamentos e contatos continuam no banco e
+// voltam a aparecer com ?incluirEncerradas=1 ou filtrando a turma direto.
+//
+// Reabrir apaga a linha: a turma volta a ser avaliada normalmente.
+// ─────────────────────────────────────────
+model TurmaEncerrada {
+  id           Int      @id @default(autoincrement())
+  codigoTurma  String   @unique @map("codigo_turma") @db.VarChar(50)
+  nomeTurma    String?  @map("nome_turma") @db.VarChar(255)
+  motivo       String?  @db.VarChar(50)
+  observacao   String?  @db.Text
+  encerradaPor String?  @map("encerrada_por") @db.VarChar(255)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+
+  @@map("turmas_encerradas")
+}

@@ -39,6 +39,12 @@
                 </select>
               </div>
               <div class="col-auto">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="filtroIncluirEncerradas">
+                  <label class="form-check-label" for="filtroIncluirEncerradas">Incluir turmas encerradas</label>
+                </div>
+              </div>
+              <div class="col-auto">
                 <button type="submit" class="btn btn-primary">
                   <i class="bi bi-filter me-1"></i> Filtrar
                 </button>
@@ -194,6 +200,8 @@
       return resposta.json();
     }
 
+    const incluirEncerradas = () => document.getElementById('filtroIncluirEncerradas').checked;
+
     async function carregarFaltas(dataInicio, dataFim, turma) {
       const statusEl = document.getElementById('statusCarregamento');
       const cardResultado = document.getElementById('cardResultado');
@@ -207,6 +215,7 @@
         if (dataInicio) params.set('dataInicio', dataInicio);
         if (dataFim) params.set('dataFim', dataFim);
         if (turma) params.set('turma', turma);
+        if (incluirEncerradas()) params.set('incluirEncerradas', '1');
         const query = params.toString();
         const caminho = query ? `/lancamentos?${query}` : '/lancamentos';
         const resposta = await chamarApi(caminho);
@@ -395,10 +404,23 @@
     document.getElementById('btnLimparFiltro').addEventListener('click', () => {
       definirPeriodoPadrao();
       document.getElementById('filtroTurma').value = '';
+      document.getElementById('filtroIncluirEncerradas').checked = false;
+      preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi, false);
       carregarFaltas(document.getElementById('filtroDataInicio').value, document.getElementById('filtroDataFim').value, '');
     });
 
-    preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi);
+    // Marcar/desmarcar repopula o select (as encerradas entram ou saem da lista)
+    // e recarrega com o mesmo período.
+    document.getElementById('filtroIncluirEncerradas').addEventListener('change', async () => {
+      await preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi, incluirEncerradas());
+      carregarFaltas(
+        document.getElementById('filtroDataInicio').value,
+        document.getElementById('filtroDataFim').value,
+        document.getElementById('filtroTurma').value
+      );
+    });
+
+    preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi, false);
     definirPeriodoPadrao();
     carregarFaltas(document.getElementById('filtroDataInicio').value, document.getElementById('filtroDataFim').value, '');
   </script>

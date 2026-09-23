@@ -1,5 +1,6 @@
 const XLSX = require('xlsx');
 const prisma = require('../config/prisma');
+const { carregarTurmasEncerradas } = require('./turmaController');
 
 // Nº de dias de aula seguidos com falta (sem nenhuma presença no meio) que
 // colocam o aluno em risco. Não é soma acumulada do período todo: assim que o
@@ -277,19 +278,38 @@ async function listarCasosResolvidos() {
     return new Set(casos.map(chaveAlunoTurma));
 }
 
-async function calcularAlunosEmRiscoSemRecuperados() {
-    const [risco, recuperados, resolvidos] = await Promise.all([
+// `incluirEncerradas` só é ligado pelas telas que oferecem o checkbox "incluir
+// turmas encerradas" (risco, faltas, painel). O default `false` é o que faz a
+// turma encerrada sumir de todo o resto — inclusive do WhatsApp, que nunca deve
+// cobrar falta de curso que acabou.
+async function calcularAlunosEmRiscoSemRecuperados({ incluirEncerradas = false } = {}) {
+    const [risco, recuperados, resolvidos, turmasEncerradas] = await Promise.all([
         calcularAlunosEmRisco(),
         calcularRecuperadosEmAcompanhamento(),
-        listarCasosResolvidos()
+        listarCasosResolvidos(),
+        carregarTurmasEncerradas()
     ]);
     const emAcompanhamento = new Set(recuperados.map(chaveAlunoTurma));
-    const fora = (item) => emAcompanhamento.has(chaveAlunoTurma(item)) || resolvidos.has(chaveAlunoTurma(item));
+    const encerrada = (codigoTurma) => !incluirEncerradas && turmasEncerradas.has(codigoTurma);
+    const fora = (item) =>
+        emAcompanhamento.has(chaveAlunoTurma(item)) ||
+        resolvidos.has(chaveAlunoTurma(item)) ||
+        encerrada(item.codigoTurma);
+
+    // As duas Maps também perdem a turma encerrada: são elas que dão o total de
+    // alunos por turma do painel e o recorte por turma do /alunos/resumo — sem
+    // isso a turma some das listas mas continua contando nos números.
+    const semEncerradas = (mapa) => new Map([...mapa].filter(([codigo]) => !encerrada(codigo)));
+
     return {
         ...risco,
+        ultimaAulaPorTurma: semEncerradas(risco.ultimaAulaPorTurma),
+        matriculasPorTurma: semEncerradas(risco.matriculasPorTurma),
         resolvidos,
+        turmasEncerradas,
         // O acompanhamento também não mostra caso encerrado (ver listarRecuperados).
-        recuperados: recuperados.filter((item) => !resolvidos.has(chaveAlunoTurma(item))),
+        recuperados: recuperados.filter((item) =>
+            !resolvidos.has(chaveAlunoTurma(item)) && !encerrada(item.codigoTurma)),
         emRisco: risco.emRisco.filter((item) => !fora(item))
     };
 }
@@ -299,7 +319,9 @@ async function calcularAlunosEmRiscoSemRecuperados() {
 async function listarRecuperados(req, res) {
     try {
         const { turma } = req.query;
-        const { recuperados } = await calcularAlunosEmRiscoSemRecuperados();
+        const { recuperados } = await calcularAlunosEmRiscoSemRecuperados({
+            incluirEncerradas: req.query.incluirEncerradas === '1'
+        });
         const resultado = turma ? recuperados.filter((item) => item.codigoTurma === turma) : recuperados;
 
         const alunos = await prisma.aluno.findMany({
@@ -350,7 +372,9 @@ async function listarTurmasImportadas(codigosTurma) {
 async function listarEmRisco(req, res) {
     try {
         const { turma } = req.query;
-        const { emRisco, ultimaAulaPorTurma } = await calcularAlunosEmRiscoSemRecuperados();
+        const { emRisco, ultimaAulaPorTurma } = await calcularAlunosEmRiscoSemRecuperados({
+            incluirEncerradas: req.query.incluirEncerradas === '1'
+        });
 
         const resultado = turma
             ? emRisco.filter((item) => item.codigoTurma === turma)
@@ -684,7 +708,9 @@ const DIAS_SEM_CHAMADA_ALERTA = 7;
 
 // Turma sem nenhum lançamento há mais que isso sai do ranking do painel: é turma
 // encerrada (semestre passado), não turma parada — senão ficaria pra sempre com
-// alerta de "sem chamada" e empurraria as turmas de verdade pra baixo.
+// alerta de "sem chamada" e empurraria as turmas de verdade pra baixo. Em vez de
+// sumir calada, vira sugestão de encerramento (`sugestoesEncerramento`): quem
+// encerra de fato é a coordenação, porque recesso longo esconderia turma viva.
 const DIAS_TURMA_ENCERRADA = 60;
 
 // Status de contato que indicam que a coordenação conseguiu falar com o aluno
@@ -766,8 +792,17 @@ async function atencaoPainel(req, res) {
 
         // Quem tem mais aluno em risco esperando contato vem primeiro — é onde a
         // coordenação precisa agir. Empate: maior % de risco.
-        const turmasAtivas = turmas.filter((item) => item.diasSemChamada === null || item.diasSemChamada <= DIAS_TURMA_ENCERRADA);
+        const ehAtiva = (item) => item.diasSemChamada === null || item.diasSemChamada <= DIAS_TURMA_ENCERRADA;
+        const turmasAtivas = turmas.filter(ehAtiva);
         turmasAtivas.sort((a, b) => b.semContato - a.semContato || b.percentualRisco - a.percentualRisco || b.emRisco - a.emRisco);
+
+        // Candidatas a encerrar: paradas há tempo demais pra ser turma em recesso.
+        // O painel mostra pra coordenação decidir — o sistema não encerra sozinho.
+        const sugestoesEncerramento = turmas
+            .filter((item) => !ehAtiva(item))
+            .map(({ codigoTurma, nomeTurma, alunos, ultimaAula, diasSemChamada }) =>
+                ({ codigoTurma, nomeTurma, alunos, ultimaAula, diasSemChamada }))
+            .sort((a, b) => b.diasSemChamada - a.diasSemChamada);
 
         res.json({
             status: 'ok',
@@ -778,7 +813,9 @@ async function atencaoPainel(req, res) {
                     faltaramNoAcompanhamento: matriculasFaltaram.size
                 },
                 turmas: turmasAtivas,
-                diasSemChamadaAlerta: DIAS_SEM_CHAMADA_ALERTA
+                sugestoesEncerramento,
+                diasSemChamadaAlerta: DIAS_SEM_CHAMADA_ALERTA,
+                diasTurmaEncerrada: DIAS_TURMA_ENCERRADA
             }
         });
     } catch (erro) {
@@ -876,7 +913,7 @@ async function resumoAlunos(req, res) {
 
         const [todosAlunos, { emRisco, matriculasPorTurma }, matriculasRecuperadas] = await Promise.all([
             prisma.aluno.findMany({ select: { matricula: true, telefone: true, situacao: true, atualizadoEm: true } }),
-            calcularAlunosEmRiscoSemRecuperados(),
+            calcularAlunosEmRiscoSemRecuperados({ incluirEncerradas: req.query.incluirEncerradas === '1' }),
             listarMatriculasRecuperadas()
         ]);
 

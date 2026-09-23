@@ -5,6 +5,7 @@ const cors = require('cors');
 
 const authRoutes = require('./src/routes/authRoutes');
 const lancamentoRoutes = require('./src/routes/lancamentoRoutes');
+const turmaRoutes = require('./src/routes/turmaRoutes');
 const alunoRoutes = require('./src/routes/alunoRoutes');
 const contatoRoutes = require('./src/routes/contatoRoutes');
 const usuarioRoutes = require('./src/routes/usuarioRoutes');
@@ -48,6 +49,7 @@ app.use(userscriptRoutes);
 app.use('/auth', authRoutes);
 app.use('/auth', usuarioRoutes);
 app.use(lancamentoRoutes);
+app.use(turmaRoutes);
 app.use(alunoRoutes);
 app.use(contatoRoutes);
 app.use(whatsappRoutes);

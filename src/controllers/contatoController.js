@@ -141,6 +141,10 @@ async function remover(req, res) {
 // gráfico do painel. É o dado que responde "por que os alunos estão faltando",
 // e não só "quantos faltaram": o motivo só existe porque alguém da coordenação
 // falou com o aluno e anotou.
+//
+// De propósito, este é o único lugar que **não** esconde turma encerrada: o
+// gráfico é o histórico acumulado de por que os alunos faltam, e descartar as
+// turmas que acabaram reescreveria esse histórico a cada semestre.
 async function resumoMotivos(req, res) {
     try {
         const { turma } = req.query;

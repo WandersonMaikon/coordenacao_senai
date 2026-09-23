@@ -2,7 +2,19 @@
   "permissions": {
     "allow": [
       "Bash(npm install *)",
-      "Bash(npx prisma *)"
+      "Bash(npx prisma *)",
+      "PowerShell(node -e \"require\\('./src/routes/turmaRoutes'\\); require\\('./src/routes/alunoRoutes'\\); require\\('./src/routes/lancamentoRoutes'\\); require\\('./src/routes/whatsappRoutes'\\); require\\('./src/routes/contatoRoutes'\\); console.log\\('rotas carregam ok'\\)\")",
+      "PowerShell(npx prisma migrate deploy)",
+      "PowerShell(npx prisma migrate status)",
+      "PowerShell($env:PORT=\"3999\"; node server.js)",
+      "PowerShell(node \"C:\\\\Users\\\\Wande\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Wande-Repositorios-senai-retencao-backend\\\\3d3ce9c8-04aa-4272-afe3-5746ca0bd62c\\\\scratchpad\\\\teste-turmas.js\")",
+      "PowerShell(node -e \"const p=require\\('./src/config/prisma'\\); \\(async\\(\\)=>{ console.log\\('lancamentos:', await p.lancamento.count\\(\\)\\); console.log\\('alunos:', await p.aluno.count\\(\\)\\); console.log\\('contatos:', await p.contato.count\\(\\)\\); const t=await p.lancamento.findMany\\({distinct:['codigoTurma'],select:{codigoTurma:true},take:10}\\); console.log\\('turmas:', t.map\\(x=>x.codigoTurma\\)\\); await p.\\\\$disconnect\\(\\); }\\)\\(\\)\")",
+      "Bash(node -e ' *)",
+      "PowerShell(node \"C:\\\\Users\\\\Wande\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Wande-Repositorios-senai-retencao-backend\\\\3d3ce9c8-04aa-4272-afe3-5746ca0bd62c\\\\scratchpad\\\\ver-dados.js\")",
+      "PowerShell(node \"C:\\\\Users\\\\Wande\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Wande-Repositorios-senai-retencao-backend\\\\3d3ce9c8-04aa-4272-afe3-5746ca0bd62c\\\\scratchpad\\\\teste-risco.js\")",
+      "PowerShell(node \"C:\\\\Users\\\\Wande\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Wande-Repositorios-senai-retencao-backend\\\\3d3ce9c8-04aa-4272-afe3-5746ca0bd62c\\\\scratchpad\\\\conferir-limpo.js\")",
+      "PowerShell(node \"C:\\\\Users\\\\Wande\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Wande-Repositorios-senai-retencao-backend\\\\3d3ce9c8-04aa-4272-afe3-5746ca0bd62c\\\\scratchpad\\\\render-views.js\")",
+      "PowerShell(git check-ignore -v CLAUDE.md)"
     ]
   }
 }

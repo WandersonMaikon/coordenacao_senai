@@ -1,4 +1,5 @@
 const prisma = require('../config/prisma');
+const { carregarTurmasEncerradas } = require('./turmaController');
 
 // Recebe os lançamentos capturados pelo userscript Tampermonkey
 async function receberWebhook(req, res) {
@@ -119,7 +120,14 @@ async function listar(req, res) {
         }
 
         if (turma) {
+            // Turma escolhida no dropdown vale mesmo encerrada: quem selecionou
+            // uma turma específica quer justamente ver o histórico dela.
             where.codigoTurma = turma;
+        } else if (req.query.incluirEncerradas !== '1') {
+            // Sem filtro de turma, a lista é o dia a dia da escola — turma que
+            // acabou só reaparece com o checkbox "incluir turmas encerradas".
+            const encerradas = await carregarTurmasEncerradas();
+            if (encerradas.size > 0) where.codigoTurma = { notIn: [...encerradas] };
         }
 
         const lancamentos = await prisma.lancamento.findMany({
@@ -134,20 +142,4 @@ async function listar(req, res) {
     }
 }
 
-// Lista as turmas distintas já lançadas (código + nome), pra popular o
-// dropdown de filtro na tela de faltas
-async function listarTurmas(req, res) {
-    try {
-        const turmas = await prisma.lancamento.findMany({
-            where: { codigoTurma: { not: null } },
-            distinct: ['codigoTurma'],
-            select: { codigoTurma: true, nomeTurma: true },
-            orderBy: { codigoTurma: 'asc' }
-        });
-        res.json({ status: 'ok', dados: turmas });
-    } catch (erro) {
-        res.status(500).json({ status: 'erro', mensagem: erro.message });
-    }
-}
-
-module.exports = { receberWebhook, listar, listarTurmas };
+module.exports = { receberWebhook, listar };

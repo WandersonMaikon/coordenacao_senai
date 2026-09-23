@@ -39,6 +39,12 @@
                 </select>
               </div>
               <div class="col-auto">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="filtroIncluirEncerradas">
+                  <label class="form-check-label" for="filtroIncluirEncerradas">Incluir turmas encerradas</label>
+                </div>
+              </div>
+              <div class="col-auto">
                 <button type="submit" class="btn btn-primary">
                   <i class="bi bi-filter me-1"></i> Filtrar
                 </button>
@@ -471,6 +477,8 @@
       return posicao === -1 ? ORDEM_STATUS.length : posicao;
     }
 
+    const incluirEncerradas = () => document.getElementById('filtroIncluirEncerradas').checked;
+
     // status: '' = todos, 'sem_contato' = sem contato registrado, ou um valor de STATUS.
     // O filtro é aplicado aqui no client porque /alunos-risco já devolve o último
     // contato de cada aluno — não vale um parâmetro novo na API só pra isso.
@@ -485,6 +493,7 @@
       try {
         const params = new URLSearchParams();
         if (turma) params.set('turma', turma);
+        if (incluirEncerradas()) params.set('incluirEncerradas', '1');
         const query = params.toString();
         const resposta = await chamarApi(query ? `/alunos-risco?${query}` : '/alunos-risco');
 
@@ -710,14 +719,25 @@
     document.getElementById('btnLimparFiltro').addEventListener('click', () => {
       document.getElementById('filtroTurma').value = '';
       document.getElementById('filtroStatus').value = '';
+      document.getElementById('filtroIncluirEncerradas').checked = false;
+      preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi, false);
       carregarRisco('', '');
+    });
+
+    // Marcar/desmarcar repopula o select (as encerradas entram ou saem) e recarrega.
+    document.getElementById('filtroIncluirEncerradas').addEventListener('change', async () => {
+      await preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi, incluirEncerradas());
+      carregarRisco(
+        document.getElementById('filtroTurma').value,
+        document.getElementById('filtroStatus').value
+      );
     });
 
     // O filtro de status sai do mesmo mapa que rotula os badges — uma lista só,
     // pra não divergir quando um status novo for criado.
     document.getElementById('filtroStatus').insertAdjacentHTML('beforeend', opcoesStatus);
 
-    preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi);
+    preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi, false);
     carregarRisco();
   </script>
 </body>

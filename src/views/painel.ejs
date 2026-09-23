@@ -214,6 +214,14 @@
                   <p class="text-body-secondary mb-3" id="subtituloTurmas">
                     Ordenadas por alunos em risco ainda sem contato
                   </p>
+
+                  <!-- Turmas paradas há tempo demais pra ser recesso: candidatas a
+                       encerrar. Quem decide é a coordenação — o sistema só sugere. -->
+                  <div class="alert alert-warning d-none" id="blocoSugestoes">
+                    <div class="fw-semibold mb-2" id="tituloSugestoes"></div>
+                    <div class="d-flex flex-column gap-2" id="listaSugestoes"></div>
+                  </div>
+
                   <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                       <thead>
@@ -224,9 +232,28 @@
                           <th class="text-end" title="Alunos em risco sem nenhum contato registrado">Sem contato</th>
                           <th class="text-end" title="Recuperados em acompanhamento na tela Recuperados">Em acompanhamento</th>
                           <th title="Dia de aula mais recente lançado pelos professores">Última chamada</th>
+                          <th></th>
                         </tr>
                       </thead>
                       <tbody id="tabelaTurmas"></tbody>
+                    </table>
+                  </div>
+
+                  <div class="form-check mt-3">
+                    <input class="form-check-input" type="checkbox" id="mostrarEncerradas">
+                    <label class="form-check-label" for="mostrarEncerradas">Mostrar turmas encerradas</label>
+                  </div>
+                  <div class="table-responsive d-none mt-2" id="blocoEncerradas">
+                    <table class="table table-sm align-middle mb-0">
+                      <thead>
+                        <tr>
+                          <th>Turma encerrada</th>
+                          <th>Motivo</th>
+                          <th>Encerrada por</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody id="tabelaEncerradas"></tbody>
                     </table>
                   </div>
                 </div>
@@ -290,8 +317,11 @@
       carregarMotivos(document.getElementById('filtroTurma').value);
     });
 
-    async function chamarApi(caminho) {
-      const resposta = await fetch(caminho, { headers: { Authorization: 'Bearer ' + token } });
+    async function chamarApi(caminho, opcoes = {}) {
+      const resposta = await fetch(caminho, {
+        ...opcoes,
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', ...(opcoes.headers || {}) }
+      });
       if (resposta.status === 401) {
         localStorage.removeItem('coor360_token');
         window.location.href = '/login';
@@ -498,7 +528,7 @@
     function desenharTurmas(turmas, diasAlerta) {
       const tabela = document.getElementById('tabelaTurmas');
       if (turmas.length === 0) {
-        tabela.innerHTML = '<tr><td colspan="6" class="text-center text-body-secondary py-4">Nenhuma turma com chamada lançada.</td></tr>';
+        tabela.innerHTML = '<tr><td colspan="7" class="text-center text-body-secondary py-4">Nenhuma turma com chamada lançada.</td></tr>';
         return;
       }
 
@@ -535,9 +565,148 @@
               ${atrasada ? `<i class="bi bi-exclamation-triangle-fill text-warning me-1" title="Sem chamada lançada há mais de ${diasAlerta} dias — os números desta turma podem estar desatualizados"></i>` : ''}
               ${ultimaChamada}
             </td>
+            <td class="text-end">
+              <button type="button" class="btn btn-sm btn-outline-light" data-encerrar="${escaparHtml(turma.codigoTurma)}"
+                data-nome-turma="${escaparHtml(turma.nomeTurma || '')}" title="Encerrar esta turma (o histórico continua guardado)">
+                Encerrar
+              </button>
+            </td>
           </tr>
         `;
       }).join('');
+    }
+
+    // Candidatas a encerrar: sem chamada há mais tempo do que qualquer recesso.
+    // Aparecem aqui em vez de sumirem caladas da tabela, como era antes.
+    function desenharSugestoes(sugestoes, diasCorte) {
+      const bloco = document.getElementById('blocoSugestoes');
+      bloco.classList.toggle('d-none', !sugestoes || sugestoes.length === 0);
+      if (!sugestoes || sugestoes.length === 0) return;
+
+      document.getElementById('tituloSugestoes').textContent =
+        `${sugestoes.length} turma(s) sem chamada lançada há mais de ${diasCorte} dias — encerrar?`;
+      document.getElementById('listaSugestoes').innerHTML = sugestoes.map((turma) => `
+        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+          <div class="small">
+            <strong>${escaparHtml(nomeTurmaLimpo(turma.nomeTurma))}</strong>
+            <span class="text-body-secondary">${escaparHtml(turma.codigoTurma)}</span>
+            <span class="text-body-secondary">— última chamada ${turma.ultimaAula ? escaparHtml(turma.ultimaAula) : '—'} (há ${turma.diasSemChamada} dias)</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-warning" data-encerrar="${escaparHtml(turma.codigoTurma)}"
+            data-nome-turma="${escaparHtml(turma.nomeTurma || '')}">Encerrar turma</button>
+        </div>
+      `).join('');
+    }
+
+    const MOTIVOS_ENCERRAMENTO = {
+      semestre_encerrado: 'Semestre/curso encerrado',
+      turma_cancelada: 'Turma cancelada',
+      turma_migrada: 'Alunos migraram para outra turma',
+      outro: 'Outro'
+    };
+
+    async function encerrarTurma(codigoTurma, nomeTurma) {
+      const opcoes = Object.entries(MOTIVOS_ENCERRAMENTO)
+        .map(([valor, rotulo]) => `<option value="${valor}">${rotulo}</option>`).join('');
+
+      const { value: dados } = await Swal.fire({
+        title: 'Encerrar esta turma?',
+        html: `
+          <p class="small text-start mb-3">
+            <strong>${escaparHtml(nomeTurmaLimpo(nomeTurma) || codigoTurma)}</strong> sai do risco, das faltas,
+            deste painel e do WhatsApp. <strong>Nada é apagado</strong> — os lançamentos e os contatos continuam
+            guardados e reaparecem marcando "incluir turmas encerradas".
+            Mensagens de WhatsApp ainda na fila desta turma serão canceladas.
+          </p>
+          <label class="form-label small d-block text-start">Motivo</label>
+          <select id="campoMotivoTurma" class="form-select mb-3">${opcoes}</select>
+          <label class="form-label small d-block text-start">Observação (opcional)</label>
+          <textarea id="campoObsTurma" class="form-control" rows="2" placeholder="Ex: turma concluiu o curso em 12/12"></textarea>`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Encerrar turma',
+        cancelButtonText: 'Cancelar',
+        preConfirm: () => ({
+          motivo: document.getElementById('campoMotivoTurma').value,
+          observacao: document.getElementById('campoObsTurma').value.trim()
+        })
+      });
+      if (!dados) return;
+
+      try {
+        const resposta = await chamarApi('/turmas-encerradas', {
+          method: 'POST',
+          body: JSON.stringify({ codigoTurma, nomeTurma, motivo: dados.motivo, observacao: dados.observacao })
+        });
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        notificar.ok(resposta.mensagem);
+        await recarregarTudo();
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          Swal.fire({ title: 'Não foi possível encerrar', text: erro.message, icon: 'error' });
+        }
+      }
+    }
+
+    async function reabrirTurma(codigoTurma, nomeTurma) {
+      const confirmacao = await Swal.fire({
+        title: 'Reabrir esta turma?',
+        text: `${nomeTurmaLimpo(nomeTurma) || codigoTurma} volta a aparecer no risco, nas faltas e no painel.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Reabrir',
+        cancelButtonText: 'Cancelar'
+      });
+      if (!confirmacao.isConfirmed) return;
+
+      try {
+        const resposta = await chamarApi(`/turmas-encerradas/${encodeURIComponent(codigoTurma)}`, { method: 'DELETE' });
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        notificar.ok(resposta.mensagem);
+        await recarregarTudo();
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          Swal.fire({ title: 'Não foi possível reabrir', text: erro.message, icon: 'error' });
+        }
+      }
+    }
+
+    async function carregarEncerradas() {
+      const bloco = document.getElementById('blocoEncerradas');
+      const mostrar = document.getElementById('mostrarEncerradas').checked;
+      bloco.classList.toggle('d-none', !mostrar);
+      if (!mostrar) return;
+
+      try {
+        const resposta = await chamarApi('/turmas-encerradas');
+        document.getElementById('tabelaEncerradas').innerHTML = resposta.dados.length === 0
+          ? '<tr><td colspan="4" class="text-center text-body-secondary py-3">Nenhuma turma encerrada.</td></tr>'
+          : resposta.dados.map((turma) => `
+            <tr>
+              <td>
+                ${escaparHtml(nomeTurmaLimpo(turma.nomeTurma) || turma.codigoTurma)}
+                <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">Encerrada</span>
+                <div class="small text-body-secondary">${escaparHtml(turma.codigoTurma)}</div>
+              </td>
+              <td class="small">
+                ${escaparHtml(MOTIVOS_ENCERRAMENTO[turma.motivo] || turma.motivo || '—')}
+                ${turma.observacao ? `<div class="text-body-secondary">${escaparHtml(turma.observacao)}</div>` : ''}
+              </td>
+              <td class="small text-nowrap">
+                ${escaparHtml(turma.encerradaPor || '—')}
+                <div class="text-body-secondary">${formatarData(turma.criadoEm)}</div>
+              </td>
+              <td class="text-end">
+                <button type="button" class="btn btn-sm btn-outline-light" data-reabrir="${escaparHtml(turma.codigoTurma)}"
+                  data-nome-turma="${escaparHtml(turma.nomeTurma || '')}">Reabrir</button>
+              </td>
+            </tr>
+          `).join('');
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          console.error('Não foi possível carregar as turmas encerradas:', erro);
+        }
+      }
     }
 
     async function carregarAtencao(turma) {
@@ -545,6 +714,7 @@
         const resposta = await chamarApi(`/alunos/atencao${turma ? `?turma=${encodeURIComponent(turma)}` : ''}`);
         desenharContatos(resposta.dados.contatos);
         desenharTurmas(resposta.dados.turmas, resposta.dados.diasSemChamadaAlerta);
+        desenharSugestoes(resposta.dados.sugestoesEncerramento, resposta.dados.diasTurmaEncerrada);
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           console.error('Não foi possível carregar o andamento dos contatos:', erro);
@@ -623,7 +793,25 @@
       carregarMotivos(filtroTurma.value);
     });
 
-    preencherSelectTurmas(filtroTurma, chamarApi);
+    // Encerrar/reabrir muda todos os números da tela e a lista do filtro.
+    async function recarregarTudo() {
+      await preencherSelectTurmas(filtroTurma, chamarApi, false);
+      const turma = filtroTurma.value;
+      await Promise.all([carregarPainel(turma), carregarAtencao(turma), carregarEncerradas()]);
+      carregarMotivos(turma);
+    }
+
+    // Delegação: os botões nascem no innerHTML da tabela e das sugestões.
+    document.addEventListener('click', (evento) => {
+      const encerrar = evento.target.closest('[data-encerrar]');
+      if (encerrar) return encerrarTurma(encerrar.dataset.encerrar, encerrar.dataset.nomeTurma);
+      const reabrir = evento.target.closest('[data-reabrir]');
+      if (reabrir) return reabrirTurma(reabrir.dataset.reabrir, reabrir.dataset.nomeTurma);
+    });
+
+    document.getElementById('mostrarEncerradas').addEventListener('change', carregarEncerradas);
+
+    preencherSelectTurmas(filtroTurma, chamarApi, false);
     carregarPainel('');
     carregarAtencao('');
     carregarMotivos('');
