@@ -36,6 +36,7 @@
                 <select class="form-select" id="filtroStatus">
                   <option value="">Todos</option>
                   <option value="sem_contato">Sem contato registrado</option>
+                  <option value="a_confirmar">Respondeu — motivo a confirmar</option>
                 </select>
               </div>
               <div class="col-auto">
@@ -155,17 +156,11 @@
       .map(([valor, rotulo]) => `<option value="${valor}">${rotulo}</option>`)
       .join('');
 
-    const MOTIVOS = {
-      transporte: 'Transporte',
-      trabalho: 'Trabalho',
-      saude_atestado: 'Saúde - com atestado',
-      saude_sem_atestado: 'Saúde - sem atestado',
-      saude_mental: 'Saúde mental',
-      financeiro: 'Financeiro',
-      desmotivacao_curso: 'Desmotivação com o curso',
-      problema_familiar: 'Problema familiar',
-      outro: 'Outro / não informado'
-    };
+    // Vem do servidor (src/config/motivos.js, via viewController) — a mesma lista
+    // que numera o menu enviado ao aluno no WhatsApp. Antes era uma cópia à mão
+    // aqui, que saía do ar toda vez que um motivo novo era criado.
+    const LISTA_MOTIVOS = <%- JSON.stringify(motivos) %>;
+    const MOTIVOS = Object.fromEntries(LISTA_MOTIVOS.map((m) => [m.chave, m.rotulo]));
 
     // O backend já devolve quantos dias de aula seguidos o aluno faltou (diasSemVir).
     // Não dá pra derivar isso dividindo as faltas por um nº fixo de aulas: um dia com
@@ -217,7 +212,12 @@
       const tentativas = totalContatos > 1
         ? `<span class="ms-2 small text-body-secondary" title="Total de contatos registrados com este aluno">${totalContatos}ª tentativa</span>`
         : '';
-      return `<span class="badge bg-${cor} bg-opacity-10 text-${cor}" title="${formatarDataHora(ultimoContato.criadoEm)}">${canal} · ${status} · ${formatarData(ultimoContato.criadoEm)}</span>${tentativas}`;
+      // O aluno respondeu no WhatsApp e o motivo ainda espera confirmação — é o
+      // que a coordenação resolve em um clique abrindo a linha.
+      const aConfirmar = ultimoContato.motivoSugerido && !ultimoContato.motivo
+        ? '<span class="badge bg-success bg-opacity-10 text-success ms-2" title="O aluno respondeu no WhatsApp — abra a linha para confirmar o motivo"><i class="bi bi-whatsapp me-1"></i>motivo a confirmar</span>'
+        : '';
+      return `<span class="badge bg-${cor} bg-opacity-10 text-${cor}" title="${formatarDataHora(ultimoContato.criadoEm)}">${canal} · ${status} · ${formatarData(ultimoContato.criadoEm)}</span>${aConfirmar}${tentativas}`;
     }
 
     // Último dia de aula em que o aluno apareceu. Complementa a coluna de faltas:
@@ -251,6 +251,33 @@
       return resposta.json();
     }
 
+    // Bloco de confirmação da sugestão que veio da resposta do aluno no WhatsApp.
+    // O motivo sugerido NÃO conta no gráfico do painel até alguém confirmar aqui:
+    // o classificador acerta bem, mas quem escreve no indicador que vai pra
+    // diretoria é gente.
+    function sugestaoMotivoHtml(contato) {
+      if (!contato || !contato.motivoSugerido || contato.motivo) return '';
+      const rotulo = MOTIVOS[contato.motivoSugerido] || contato.motivoSugerido;
+      // "menu" = o aluno digitou o número da opção; "palavras_chave" = o sistema
+      // deduziu do texto. A diferença muda o quanto confiar antes de confirmar.
+      const origem = contato.sugeridoPor === 'menu'
+        ? 'O aluno escolheu esta opção no menu'
+        : 'Deduzido do que o aluno escreveu — confira antes de confirmar';
+      const opcoes = Object.entries(MOTIVOS)
+        .map(([valor, texto]) => `<option value="${valor}" ${valor === contato.motivoSugerido ? 'selected' : ''}>${texto}</option>`)
+        .join('');
+      return `
+        <div class="alert alert-success py-2 px-3 mb-3" data-sugestao="${contato.id}">
+          <div class="small mb-1">${escaparHtml(origem)}</div>
+          <div class="mb-2">Motivo sugerido: <strong>${escaparHtml(rotulo)}</strong></div>
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <select class="form-select form-select-sm w-auto" data-motivo-sugerido="${contato.id}">${opcoes}</select>
+            <button type="button" class="btn btn-sm btn-success" data-confirmar-motivo="${contato.id}">Confirmar motivo</button>
+          </div>
+        </div>
+      `;
+    }
+
     function linhaDetalheHtml(indice, aluno) {
       const opcoesMotivo = Object.entries(MOTIVOS).map(([valor, rotulo]) => `<option value="${valor}">${rotulo}</option>`).join('');
       return `
@@ -262,6 +289,7 @@
                 <div id="historico-${indice}" class="text-body">Carregando...</div>
               </div>
               <div class="col-lg-6">
+                <div id="sugestao-${indice}"></div>
                 <h6 class="mb-2" id="tituloForm-${indice}">Registrar novo contato</h6>
                 <form class="formContato row g-2" data-matricula="${aluno.matricula}" data-nome="${aluno.nomeAluno || ''}" data-indice="${indice}">
                   <div class="col-sm-6">
@@ -361,6 +389,14 @@
         // o badge da linha mostra — importante depois de editar um contato.
         const badge = document.getElementById(`badge-contato-${indice}`);
         if (badge) badge.innerHTML = badgeUltimoContato(contatos[0] || null, contatos.length);
+
+        // Sugestão de motivo vinda do WhatsApp: a mais recente que ainda espera
+        // confirmação, não necessariamente o último contato (pode ter havido uma
+        // ligação depois da resposta).
+        const sugestao = document.getElementById(`sugestao-${indice}`);
+        if (sugestao) {
+          sugestao.innerHTML = sugestaoMotivoHtml(contatos.find((c) => c.motivoSugerido && !c.motivo));
+        }
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           container.innerHTML = '<p class="text-warning mb-0">Não foi possível carregar o histórico agora.</p>';
@@ -497,9 +533,15 @@
         const query = params.toString();
         const resposta = await chamarApi(query ? `/alunos-risco?${query}` : '/alunos-risco');
 
-        const alunos = status
-          ? resposta.dados.filter((aluno) => (aluno.ultimoContato ? aluno.ultimoContato.status : 'sem_contato') === status)
-          : resposta.dados;
+        // "a_confirmar" é um filtro sobre a sugestão, não sobre o status — por
+        // isso não sai do mapa STATUS como os outros.
+        const casaComFiltro = (aluno) => {
+          if (status === 'a_confirmar') {
+            return Boolean(aluno.ultimoContato?.motivoSugerido && !aluno.ultimoContato.motivo);
+          }
+          return (aluno.ultimoContato ? aluno.ultimoContato.status : 'sem_contato') === status;
+        };
+        const alunos = status ? resposta.dados.filter(casaComFiltro) : resposta.dados;
 
         if (alunos.length === 0) {
           document.getElementById('totalResultado').textContent = '(0)';
@@ -597,6 +639,29 @@
       }
     }
 
+    // Confirma (ou corrige) o motivo sugerido pela resposta do aluno. Só depois
+    // disso o motivo passa a contar no gráfico do painel.
+    async function confirmarMotivo(idContato, motivo, botao) {
+      if (!motivo) return;
+      const indice = botao.closest('[id^="sugestao-"]')?.id.replace('sugestao-', '');
+      botao.disabled = true;
+      try {
+        const resposta = await chamarApi(`/contatos/${idContato}/confirmar-motivo`, {
+          method: 'POST',
+          body: JSON.stringify({ motivo })
+        });
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        notificar.ok(resposta.mensagem);
+        // Recarrega o histórico: o bloco de sugestão some e o motivo aparece na
+        // linha do contato.
+        const linha = document.querySelector(`tr.linha-aluno[data-indice="${indice}"]`);
+        if (linha) await carregarHistorico(indice, linha.dataset.matricula);
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') notificar.erro(erro.message);
+        botao.disabled = false;
+      }
+    }
+
     // O projeto não carrega o bootstrap.bundle.js (só o CSS), então o toggle
     // do accordion precisa ser feito manualmente aqui.
     document.getElementById('accordionRisco').addEventListener('click', (evento) => {
@@ -615,6 +680,14 @@
       const botaoCancelar = evento.target.closest('.btnCancelarEdicao');
       if (botaoCancelar) {
         sairModoEdicao(botaoCancelar.closest('.formContato'));
+        return;
+      }
+
+      const botaoConfirmar = evento.target.closest('[data-confirmar-motivo]');
+      if (botaoConfirmar) {
+        const idContato = Number(botaoConfirmar.dataset.confirmarMotivo);
+        const select = document.querySelector(`[data-motivo-sugerido="${idContato}"]`);
+        confirmarMotivo(idContato, select ? select.value : null, botaoConfirmar);
         return;
       }
 

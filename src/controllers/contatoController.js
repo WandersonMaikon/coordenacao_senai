@@ -1,4 +1,5 @@
 const prisma = require('../config/prisma');
+const { MOTIVOS } = require('../config/motivos');
 
 // Registra um contato feito pela coordenação com um aluno (em risco ou não).
 // Faz upsert do Aluno antes, porque a FK exige que ele exista e nem todo aluno
@@ -104,6 +105,59 @@ async function atualizar(req, res) {
     }
 }
 
+// POST /contatos/:id/confirmar-motivo — confirma (ou corrige) a sugestão de
+// motivo que veio da resposta do aluno no WhatsApp. Grava em `motivo` e limpa
+// `motivoSugerido`: a partir daí o contato passa a contar no gráfico do painel.
+//
+// Endpoint próprio, e não o PUT acima, por uma razão concreta: o PUT só deixa
+// quem registrou editar, e nesses contatos `contatadoPor` é o dono do número de
+// WhatsApp que disparou a mensagem. Sem isto, ninguém além dele conseguiria
+// confirmar. Aqui vale a regra do POST /contatos: qualquer usuário logado — não
+// se está editando a anotação de outra pessoa, se está completando uma sugestão
+// da máquina. Quem confirmou fica na observação, pro histórico não se perder.
+async function confirmarMotivo(req, res) {
+    const id = Number(req.params.id);
+    const { motivo } = req.body;
+
+    if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ status: 'erro', mensagem: 'Id de contato inválido' });
+    }
+    if (!motivo) {
+        return res.status(400).json({ status: 'erro', mensagem: 'Informe o motivo' });
+    }
+    if (!MOTIVOS.some((item) => item.chave === motivo)) {
+        return res.status(400).json({ status: 'erro', mensagem: 'Motivo desconhecido' });
+    }
+
+    try {
+        const existente = await prisma.contato.findUnique({ where: { id } });
+        if (!existente) {
+            return res.status(404).json({ status: 'erro', mensagem: 'Contato não encontrado' });
+        }
+        if (!existente.motivoSugerido) {
+            return res.status(409).json({ status: 'erro', mensagem: 'Este contato não tem motivo sugerido para confirmar' });
+        }
+
+        const confirmou = motivo === existente.motivoSugerido ? 'confirmado' : 'corrigido';
+        const contato = await prisma.contato.update({
+            where: { id },
+            data: {
+                motivo,
+                motivoSugerido: null,
+                sugeridoPor: null,
+                observacao: `${existente.observacao || ''}\n[Motivo ${confirmou} por ${req.usuario.usuario}]`.trim()
+            }
+        });
+
+        res.json({ status: 'ok', mensagem: `Motivo ${confirmou}.`, dados: contato });
+    } catch (erro) {
+        if (erro.code === 'P2025') {
+            return res.status(404).json({ status: 'erro', mensagem: 'Contato não encontrado' });
+        }
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
 // Apaga um contato do histórico. Só quem registrou pode apagar — nem outro
 // usuário, nem o admin: o histórico é o que mostra que a coordenação foi atrás
 // do aluno, e apagar o registro de outra pessoa sumiria com esse rastro. A
@@ -191,4 +245,4 @@ async function resumoMotivos(req, res) {
     }
 }
 
-module.exports = { registrar, listarPorAluno, atualizar, remover, resumoMotivos };
+module.exports = { registrar, listarPorAluno, atualizar, confirmarMotivo, remover, resumoMotivos };

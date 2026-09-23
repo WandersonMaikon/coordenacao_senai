@@ -152,6 +152,42 @@ model MensagemWhatsapp {
 }
 
 // ─────────────────────────────────────────
+// Mensagem que CHEGOU pelo webhook do OpenWA (a resposta do aluno). A
+// MensagemWhatsapp acima é a saída; esta é a volta.
+//
+// Existe como tabela própria por dois motivos. Idempotência: `messageId` é único,
+// e é ele que impede uma reentrega do gateway de virar dois registros (mesmo
+// cuidado do upsert em POST /webhook/frequencia). E afinação: sem o log do que
+// chegou e de como foi interpretado, não há como melhorar o dicionário de
+// palavras-chave depois.
+//
+// Guarda inclusive o que foi ignorado (mensagem nossa, grupo) e o que veio de
+// número desconhecido (matricula null) — é o que permite entender "por que essa
+// resposta não virou contato?".
+// ─────────────────────────────────────────
+model RespostaWhatsapp {
+  id             Int      @id @default(autoincrement())
+  messageId      String   @unique @map("message_id") @db.VarChar(191)
+  chatId         String   @map("chat_id") @db.VarChar(64)
+  // Normalizado, só dígitos sem o 55 — mesmo formato de alunos.telefone.
+  telefone       String?  @db.VarChar(20)
+  // null = número que não casou com nenhuma mensagem enviada.
+  matricula      String?  @db.VarChar(20)
+  mensagemId     Int?     @map("mensagem_id")
+  contatoId      Int?     @map("contato_id")
+  texto          String   @db.Text
+  // menu | palavras_chave | sair | nao_entendido | ignorada | sem_vinculo
+  interpretacao  String   @db.VarChar(20)
+  motivoSugerido String?  @map("motivo_sugerido") @db.VarChar(50)
+  recebidaEm     DateTime @map("recebida_em")
+  criadoEm       DateTime @default(now()) @map("criado_em")
+
+  @@index([matricula])
+  @@index([chatId])
+  @@map("respostas_whatsapp")
+}
+
+// ─────────────────────────────────────────
 // Tabela principal: lançamentos de frequência
 // vindos do Tampermonkey instalado nos professores
 // ─────────────────────────────────────────
@@ -228,6 +264,15 @@ model Contato {
   canal       String?  @db.VarChar(50)   // ex: "whatsapp", "ligacao", "presencial"
   status      String?  @db.VarChar(50)   // ex: "respondido", "sem_resposta", "acompanhar", "nunca_contato", "recuperado"
   motivo      String?  @db.VarChar(50)   // ex: "transporte", "trabalho", "saude", "financeiro", "desmotivacao_curso", "problema_familiar", "outro"
+  // Motivo deduzido da resposta do aluno no WhatsApp, esperando confirmação da
+  // coordenação na /risco. Sugestão pendente = motivoSugerido != null && motivo == null.
+  // Fica separado de `motivo` de propósito: `motivo` alimenta o gráfico do painel,
+  // que é o indicador levado à diretoria — só gente escreve nele.
+  motivoSugerido String? @map("motivo_sugerido") @db.VarChar(50)
+  // Como a sugestão surgiu: "menu" (o aluno digitou o número) ou "palavras_chave"
+  // (o sistema deduziu do texto). A tela mostra os dois diferente — um é o aluno
+  // dizendo, o outro é o sistema achando.
+  sugeridoPor String?   @map("sugerido_por") @db.VarChar(20)
   observacao  String?  @db.Text
   contatadoPor String? @map("contatado_por") @db.VarChar(255)
   criadoEm    DateTime @default(now()) @map("criado_em")

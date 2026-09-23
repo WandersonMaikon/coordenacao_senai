@@ -46,6 +46,39 @@ async function encerrarSessaoOpenWA(sessionId) {
     try { await openwa.apagarSessao(sessionId); } catch (erro) { console.warn('OpenWA delete:', erro.message); }
 }
 
+// Eventos que o backend trata (ver src/services/whatsappResposta.js): a resposta
+// do aluno e a confirmação de entrega/leitura.
+const EVENTOS_WEBHOOK = ['message.received', 'message.ack'];
+
+// Garante que a sessão tem o webhook de entrada registrado no OpenWA. Roda a
+// cada conexão, não só na criação: as sessões que já existem hoje foram criadas
+// antes da etapa 4 e não têm webhook nenhum — sem isso elas nunca receberiam
+// resposta.
+//
+// Falha aqui não quebra o conectar: o envio continua funcionando sem o webhook,
+// só não volta resposta. Melhor conectar com aviso no log do que não conectar.
+async function garantirWebhook(sessionId) {
+    const url = process.env.OPENWA_WEBHOOK_URL;
+    if (!sessionId || !url) return false;
+
+    try {
+        const atuais = await openwa.listarWebhooks(sessionId);
+        const lista = Array.isArray(atuais) ? atuais : (atuais?.data || atuais?.webhooks || []);
+        if (lista.some((item) => item?.url === url)) return true;
+
+        await openwa.registrarWebhook(sessionId, {
+            url,
+            eventos: EVENTOS_WEBHOOK,
+            segredo: process.env.OPENWA_WEBHOOK_SECRET
+        });
+        console.log('[whatsapp] webhook de entrada registrado na sessão', sessionId);
+        return true;
+    } catch (erro) {
+        console.warn('[whatsapp] não foi possível registrar o webhook de entrada:', erro.message);
+        return false;
+    }
+}
+
 // GET /whatsapp/meu-numero
 async function obterMeuNumero(req, res) {
     try {
@@ -133,6 +166,8 @@ async function conectarSessao(req, res) {
             }
             if (erro.status !== 400) throw erro;
         }
+
+        await garantirWebhook(sessao.sessionId);
 
         res.json({ status: 'ok', dados: dadosNumero(sessao) });
     } catch (erro) {

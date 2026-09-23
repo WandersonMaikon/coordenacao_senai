@@ -13,7 +13,10 @@ function paginaFaltas(req, res) {
 }
 
 function paginaRisco(req, res) {
-    res.render('risco');
+    // Mesma lista do menu do WhatsApp e da /recuperado. Antes esta tela mantinha
+    // uma cópia à mão: motivo novo em motivos.js já ia pro menu do aluno (e podia
+    // voltar como sugestão) mas ficava sem rótulo aqui.
+    res.render('risco', { motivos: MOTIVOS });
 }
 
 function paginaRecuperado(req, res) {

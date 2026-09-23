@@ -12,6 +12,7 @@ const usuarioRoutes = require('./src/routes/usuarioRoutes');
 const viewRoutes = require('./src/routes/viewRoutes');
 const userscriptRoutes = require('./src/routes/userscriptRoutes');
 const whatsappRoutes = require('./src/routes/whatsappRoutes');
+const whatsappWebhookRoutes = require('./src/routes/whatsappWebhookRoutes');
 const prisma = require('./src/config/prisma');
 const { iniciarWorker: iniciarWorkerWhatsapp } = require('./src/services/whatsappEnvio');
 
@@ -27,7 +28,15 @@ app.set('views', path.join(__dirname, 'src/views'));
 app.disable('etag');
 
 app.use(cors());
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({
+    limit: '5mb',
+    // O webhook do WhatsApp valida assinatura HMAC sobre os bytes exatos que
+    // chegaram — depois do JSON.parse não dá mais pra reconstruir o corpo byte a
+    // byte (espaços, ordem das chaves). Guardamos o cru só nessa rota.
+    verify: (req, res, buf) => {
+        if (req.url.startsWith('/webhook/whatsapp')) req.corpoCru = buf;
+    }
+}));
 
 // index: false — GET '/' é o redirecionamento pro login abaixo, não uma index.html
 app.use(express.static(PUBLIC_DIR, { index: false }));
@@ -53,6 +62,7 @@ app.use(turmaRoutes);
 app.use(alunoRoutes);
 app.use(contatoRoutes);
 app.use(whatsappRoutes);
+app.use(whatsappWebhookRoutes);
 
 app.listen(PORT, () => {
     console.log(`✅ Servidor rodando em http://localhost:${PORT}`);
