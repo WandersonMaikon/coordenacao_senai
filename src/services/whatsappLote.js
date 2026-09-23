@@ -3,7 +3,6 @@
 // (worker, Iniciar/Parar) vem na etapa 3 — ver roadmap item 7 no CLAUDE.md.
 
 const prisma = require('../config/prisma');
-const { MOTIVOS } = require('../config/motivos');
 const {
     calcularAlunosEmRiscoSemRecuperados,
     ehSituacaoAtiva,
@@ -34,12 +33,19 @@ const MENSAGEM_PADRAO =
 
 const VARIAVEIS = ['{primeiro_nome}', '{turma}', '{dias}', '{responsavel}'];
 
-// Anexado pelo sistema, fora do campo editável: é o que o robô da etapa 4 lê
-// quando o aluno responde. Se ficasse no campo, apagar uma linha sem querer
-// quebraria a leitura das respostas.
+// Anexado pelo sistema, fora do campo editável — o "SAIR" é a saída do aluno e
+// não pode depender de alguém lembrar de escrevê-lo no modelo.
+//
+// Já foi um menu com as 9 opções numeradas. Saiu quando a leitura por contexto
+// entrou (src/services/whatsappResposta.js): a lista ocupava o dobro da
+// mensagem, e muito aluno não responde nada quando recebe um paredão de texto.
+// Agora o convite é pra ele escrever com as palavras dele, que é o que ele já
+// faria de qualquer jeito.
+//
+// O classificador continua aceitando um número solto de propósito: aluno que
+// recebeu a mensagem antiga ainda pode responder "3" dias depois.
 function blocoMenu() {
-    const opcoes = MOTIVOS.map((motivo, i) => `${i + 1} - ${motivo.rotuloAluno}`).join('\n');
-    return `Para nos ajudar, responda com o número do motivo:\n${opcoes}\n\nSe não quiser receber mais mensagens, responda SAIR.`;
+    return 'Pode responder por aqui contando o que aconteceu — em poucas palavras já ajuda.\n\nSe não quiser mais receber mensagens, responda SAIR.';
 }
 
 function primeiroNome(nome) {

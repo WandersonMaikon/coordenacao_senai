@@ -19,7 +19,8 @@
       "PowerShell(node \"C:\\\\Users\\\\Wande\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Wande-Repositorios-senai-retencao-backend\\\\3d3ce9c8-04aa-4272-afe3-5746ca0bd62c\\\\scratchpad\\\\teste-classificador.js\")",
       "PowerShell($env:PORT=\"3999\"; $env:OPENWA_WEBHOOK_SECRET=\"segredo-de-teste-123\"; node server.js)",
       "PowerShell(node \"C:\\\\Users\\\\Wande\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Wande-Repositorios-senai-retencao-backend\\\\3d3ce9c8-04aa-4272-afe3-5746ca0bd62c\\\\scratchpad\\\\teste-webhook.js\")",
-      "PowerShell(node -e \"require\\('./server.js'\\)\" 2>&1)"
+      "PowerShell(node -e \"require\\('./server.js'\\)\" 2>&1)",
+      "PowerShell(node \"C:\\\\Users\\\\Wande\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Wande-Repositorios-senai-retencao-backend\\\\3d3ce9c8-04aa-4272-afe3-5746ca0bd62c\\\\scratchpad\\\\ver-mensagem.js\")"
     ]
   }
 }

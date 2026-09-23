@@ -1,11 +1,17 @@
 // Motivos de falta — as mesmas chaves gravadas em `contatos.motivo` pela tela
-// /risco. A ORDEM importa: é o número que o aluno digita no menu do WhatsApp
-// (1 = transporte, 2 = trabalho...). Acrescentar motivo novo só no FIM da lista,
-// senão uma resposta "3" de uma conversa em andamento passaria a significar outra
-// coisa.
+// /risco, e o alvo da classificação da resposta do aluno
+// (src/services/classificarResposta.js).
+//
+// A ORDEM ainda importa, mas menos do que antes: o menu numerado saiu da
+// mensagem de WhatsApp (ocupava o dobro do texto e afastava mais aluno do que
+// ajudava). O classificador continua aceitando um número solto, porque quem
+// recebeu a mensagem antiga pode responder "3" dias depois — então acrescentar
+// motivo novo só no FIM da lista continua sendo a regra segura enquanto houver
+// conversa em andamento.
 //
 // `rotulo` é o texto da coordenação (igual ao <select> de risco.ejs e painel.ejs);
-// `rotuloAluno` é como aparece no menu enviado ao aluno — linguagem mais simples.
+// `rotuloAluno` é a versão em linguagem simples, usada quando o motivo precisa
+// ser mostrado ao próprio aluno.
 const MOTIVOS = [
     { chave: 'transporte', rotulo: 'Transporte', rotuloAluno: 'Transporte' },
     { chave: 'trabalho', rotulo: 'Trabalho', rotuloAluno: 'Trabalho' },
