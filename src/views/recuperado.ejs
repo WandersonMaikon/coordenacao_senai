@@ -241,15 +241,76 @@
           <td>${colunaAcompanhamento(aluno, meta)}</td>
           <td>${colunaFaltas(aluno)}</td>
           <td class="text-end">
-            <button type="button" class="btn btn-sm btn-outline-success text-nowrap"
-                    data-resolver="${escaparHtml(aluno.matricula)}" data-turma="${escaparHtml(aluno.codigoTurma || '')}"
-                    data-nome="${escaparHtml(aluno.nomeAluno || '')}" data-nome-turma="${escaparHtml(aluno.nomeTurma || '')}"
-                    title="O aluno sai do risco e do acompanhamento, mesmo que receba novas faltas">
-              <i class="bi bi-check2-circle me-1"></i>Situação resolvida
-            </button>
+            <div class="d-inline-flex gap-2">
+              <button type="button" class="btn btn-sm btn-outline-warning text-nowrap"
+                      data-voltar="${escaparHtml(aluno.matricula)}"
+                      data-nome="${escaparHtml(aluno.nomeAluno || '')}"
+                      data-sem-chamada="${aluno.diasAcompanhados === 0 ? '1' : ''}"
+                      title="Desfaz a marcação de recuperado — o aluno volta a ser avaliado pelas faltas">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>Voltar para risco
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-success text-nowrap"
+                      data-resolver="${escaparHtml(aluno.matricula)}" data-turma="${escaparHtml(aluno.codigoTurma || '')}"
+                      data-nome="${escaparHtml(aluno.nomeAluno || '')}" data-nome-turma="${escaparHtml(aluno.nomeTurma || '')}"
+                      title="O aluno sai do risco e do acompanhamento, mesmo que receba novas faltas">
+                <i class="bi bi-check2-circle me-1"></i>Situação resolvida
+              </button>
+            </div>
           </td>
         </tr>
       `;
+    }
+
+    // Desfaz a marcação de "Recuperado" feita na tela de Alunos em risco. Não
+    // existe "apagar a marcação": recuperado é o aluno cujo contato MAIS RECENTE
+    // está com status "recuperado", então basta registrar um contato novo com
+    // outro status — mesma ideia do reabrir caso, e por ser um contato novo
+    // qualquer usuário pode fazer (corrigir o contato do colega daria 403).
+    // Sem esse botão o aluno ficava preso: fora da /risco, ele não aparecia em
+    // nenhuma tela com formulário de contato até completar o acompanhamento.
+    // A marcação é por matrícula, não por turma — se o aluno estiver em
+    // acompanhamento em mais de uma turma, sai de todas de uma vez.
+    async function voltarParaRisco(botao) {
+      const semChamada = botao.dataset.semChamada === '1';
+      const confirmacao = await Swal.fire({
+        title: 'Voltar para risco?',
+        html: `
+          <p class="small text-start mb-2">
+            Desfaz a marcação de <strong>Recuperado</strong> de
+            <strong>${escaparHtml(botao.dataset.nome)}</strong>: ele sai do acompanhamento
+            e volta a ser avaliado pelas faltas.
+          </p>
+          <p class="small text-start mb-0 text-body-secondary">
+            ${semChamada
+              ? 'Como nenhuma chamada nova foi lançada desde a marcação, ele deve reaparecer na lista de Alunos em risco.'
+              : 'Ele só aparece na lista de Alunos em risco se a sequência de faltas ainda estiver em aberto — se já teve presença lançada, some das duas telas.'}
+          </p>`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Voltar para risco',
+        cancelButtonText: 'Cancelar'
+      });
+      if (!confirmacao.isConfirmed) return;
+
+      try {
+        const resposta = await chamarApi('/contatos', {
+          method: 'POST',
+          body: JSON.stringify({
+            matricula: botao.dataset.voltar,
+            nomeAluno: botao.dataset.nome,
+            canal: 'presencial',
+            status: 'acompanhar',
+            observacao: 'Marcação de recuperado desfeita na tela de Recuperados: o aluno volta a ser avaliado pelas faltas.'
+          })
+        });
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        notificar.ok('Marcação desfeita. O aluno volta a ser avaliado pelas faltas.');
+        await carregarRecuperados(document.getElementById('filtroTurma').value);
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          Swal.fire({ title: 'Não foi possível desfazer', text: erro.message, icon: 'error' });
+        }
+      }
     }
 
     // Encerrar o caso é o que tira o aluno do risco "para sempre" — por isso pede
@@ -362,6 +423,8 @@
     }
 
     document.addEventListener('click', (evento) => {
+      const voltar = evento.target.closest('[data-voltar]');
+      if (voltar) return voltarParaRisco(voltar);
       const resolver = evento.target.closest('[data-resolver]');
       if (resolver) return resolverCaso(resolver);
       const reabrir = evento.target.closest('[data-reabrir]');
