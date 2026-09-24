@@ -60,7 +60,6 @@
                     <th>Turma</th>
                     <th title="Quando e por quem o aluno foi marcado como recuperado">Recuperado em</th>
                     <th title="Dias de aula lançados pelos professores desde que o aluno foi marcado como recuperado">Acompanhamento</th>
-                    <th>Faltas desde que voltou</th>
                     <th class="text-end"></th>
                   </tr>
                 </thead>
@@ -204,25 +203,6 @@
       `;
     }
 
-    // A falta durante o acompanhamento é o alerta da tela: o resgate pode não
-    // ter durado. Mostra cada dia com as UCs, pra ver se foi o dia todo ou uma aula.
-    function colunaFaltas(aluno) {
-      if (aluno.diasAcompanhados === 0) {
-        return '<span class="small text-body-secondary">Aguardando a próxima chamada</span>';
-      }
-      if (aluno.diasComFalta.length === 0) {
-        return '<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle"><i class="bi bi-check-circle-fill me-1"></i>Sem faltas</span>';
-      }
-      const dias = aluno.diasComFalta.map((dia) => {
-        const ucs = [...new Set(dia.ucs.filter(Boolean))].join(', ');
-        return `<div class="small text-danger-emphasis">${escaparHtml(dia.dataAula)}${ucs ? ` · ${escaparHtml(ucs)}` : ''} (${dia.faltas} aula(s))</div>`;
-      }).join('');
-      return `
-        <span class="badge text-bg-danger mb-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltou ${aluno.diasComFalta.length} ${aluno.diasComFalta.length === 1 ? 'dia' : 'dias'} depois de recuperado</span>
-        ${dias}
-      `;
-    }
-
     function linhaHtml(aluno, meta) {
       const faltou = aluno.diasComFalta.length > 0;
       return `
@@ -239,7 +219,6 @@
             ${aluno.observacao ? `<div class="text-body-secondary fst-italic text-truncate" style="max-width: 16rem;" title="${escaparHtml(aluno.observacao)}">"${escaparHtml(aluno.observacao)}"</div>` : ''}
           </td>
           <td>${colunaAcompanhamento(aluno, meta)}</td>
-          <td>${colunaFaltas(aluno)}</td>
           <td class="text-end">
             <div class="d-inline-flex gap-2">
               <button type="button" class="btn btn-sm btn-outline-warning text-nowrap"
