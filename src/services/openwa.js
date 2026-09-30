@@ -82,7 +82,7 @@ const enviarTexto = (sessionId, chatId, texto) =>
 
 // Webhook de entrada (etapa 4): é assim que a resposta do aluno chega até aqui.
 // A URL registrada é a do backend na rede interna do compose
-// (http://node_retencao:3000/webhook/whatsapp) — o tráfego não sai da máquina
+// (http://node-retencao:3000/webhook/whatsapp) — o tráfego não sai da máquina
 // nem passa pelo tunnel Cloudflare.
 const listarWebhooks = (sessionId) =>
     chamar('GET', `/sessions/${encodeURIComponent(sessionId)}/webhooks`);

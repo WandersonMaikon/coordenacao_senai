@@ -22,7 +22,15 @@ services:
     depends_on:
       - mysql_retencao
     networks:
-      - retencao_net
+      retencao_net:
+        # Apelido sem underscore para o mesmo container. O OpenWA valida a URL do
+        # webhook com `@IsUrl()`, que por padrão recusa underscore no hostname —
+        # então `http://node_retencao:3000/...` era rejeitado com 400 e o webhook
+        # de entrada nunca era registrado (as respostas dos alunos sumiam). O
+        # OPENWA_WEBHOOK_URL usa este apelido; `node_retencao` continua valendo
+        # para todo o resto.
+        aliases:
+          - node-retencao
 
   # Gateway de WhatsApp (não oficial) usado pela tela /whatsapp. Sem porta
   # publicada e fora do tunnel: só o node_retencao fala com ele, pela rede interna
@@ -48,7 +56,7 @@ services:
       # de propósito: o tráfego não sai da máquina nem passa pelo tunnel. Sem esta
       # liberação o registro falha, o OpenWA nunca entrega nada e as respostas dos
       # alunos somem sem erro nenhum na tela.
-      SSRF_ALLOWED_HOSTS: node_retencao
+      SSRF_ALLOWED_HOSTS: node-retencao,node_retencao
       # Versão do WhatsApp Web usada pelo motor. Vazio = o OpenWA escolhe uma versão
       # "conhecida" num registro de terceiros; "off" = usa a versão atual do próprio
       # WhatsApp. Trocar pra "off" é a primeira coisa a tentar se o número conecta mas

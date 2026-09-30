@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.."
 URL_INTERNA="http://openwa_retencao:2785/api"
 # O OpenWA chama o backend pelo nome do serviço na rede do compose: não sai da
 # máquina nem passa pelo tunnel Cloudflare.
-URL_WEBHOOK="http://node_retencao:3000/webhook/whatsapp"
+URL_WEBHOOK="http://node-retencao:3000/webhook/whatsapp"
 
 if [ ! -f .env ]; then
   echo "ERRO: não achei o .env em $(pwd)."
