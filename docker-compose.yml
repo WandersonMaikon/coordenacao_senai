@@ -42,6 +42,13 @@ services:
       ENGINE_TYPE: whatsapp-web.js
       DATABASE_TYPE: sqlite
       AUTO_START_SESSIONS: "true"
+      # O OpenWA valida a URL do webhook NO MOMENTO DO REGISTRO e, com a proteção
+      # SSRF ligada (o padrão), recusa com 400 qualquer endereço privado/interno.
+      # Nosso webhook é justamente interno (http://node_retencao:3000/webhook/whatsapp),
+      # de propósito: o tráfego não sai da máquina nem passa pelo tunnel. Sem esta
+      # liberação o registro falha, o OpenWA nunca entrega nada e as respostas dos
+      # alunos somem sem erro nenhum na tela.
+      SSRF_ALLOWED_HOSTS: node_retencao
       # Versão do WhatsApp Web usada pelo motor. Vazio = o OpenWA escolhe uma versão
       # "conhecida" num registro de terceiros; "off" = usa a versão atual do próprio
       # WhatsApp. Trocar pra "off" é a primeira coisa a tentar se o número conecta mas

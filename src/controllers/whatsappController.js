@@ -47,8 +47,10 @@ async function encerrarSessaoOpenWA(sessionId) {
 }
 
 // Eventos que o backend trata (ver src/services/whatsappResposta.js): a resposta
-// do aluno e a confirmação de entrega/leitura.
-const EVENTOS_WEBHOOK = ['message.received', 'message.ack'];
+// do aluno, a confirmação de entrega/leitura e a falha reportada pelo WhatsApp
+// (`message.failed` vem ADEMAIS do ack, não em vez dele — sem assinar este
+// evento, número que não recebe mais mensagem fica parado em "enviada").
+const EVENTOS_WEBHOOK = ['message.received', 'message.ack', 'message.failed'];
 
 // Garante que a sessão tem o webhook de entrada registrado no OpenWA. Roda a
 // cada conexão, não só na criação: as sessões que já existem hoje foram criadas
@@ -56,15 +58,27 @@ const EVENTOS_WEBHOOK = ['message.received', 'message.ack'];
 // resposta.
 //
 // Falha aqui não quebra o conectar: o envio continua funcionando sem o webhook,
-// só não volta resposta. Melhor conectar com aviso no log do que não conectar.
+// só não volta resposta. Mas NÃO é silenciosa — devolve `aviso` pra tela mostrar.
+// Já aconteceu de o registro ser recusado (o OpenWA valida a URL contra a
+// proteção SSRF no momento do registro) e ninguém perceber por semanas: as
+// mensagens saíam, as respostas dos alunos eram descartadas e a tela dizia que
+// estava tudo conectado. Aviso na cara de quem conecta é o que evita repetir isso.
 async function garantirWebhook(sessionId) {
     const url = process.env.OPENWA_WEBHOOK_URL;
-    if (!sessionId || !url) return false;
+    if (!sessionId) return { ok: false, aviso: null };
+    if (!url) {
+        return { ok: false, aviso: 'O servidor está sem OPENWA_WEBHOOK_URL: as mensagens saem, mas a resposta dos alunos não volta pro sistema.' };
+    }
+    if (!process.env.OPENWA_WEBHOOK_SECRET) {
+        // Sem o segredo o middleware do /webhook/whatsapp responde 503 em todo
+        // evento — registrar o webhook não adiantaria nada.
+        return { ok: false, aviso: 'O servidor está sem OPENWA_WEBHOOK_SECRET: a resposta dos alunos é recusada ao chegar. Rode "bash scripts/configurar-whatsapp.sh" no servidor.' };
+    }
 
     try {
         const atuais = await openwa.listarWebhooks(sessionId);
         const lista = Array.isArray(atuais) ? atuais : (atuais?.data || atuais?.webhooks || []);
-        if (lista.some((item) => item?.url === url)) return true;
+        if (lista.some((item) => item?.url === url)) return { ok: true, aviso: null };
 
         await openwa.registrarWebhook(sessionId, {
             url,
@@ -72,10 +86,15 @@ async function garantirWebhook(sessionId) {
             segredo: process.env.OPENWA_WEBHOOK_SECRET
         });
         console.log('[whatsapp] webhook de entrada registrado na sessão', sessionId);
-        return true;
+        return { ok: true, aviso: null };
     } catch (erro) {
         console.warn('[whatsapp] não foi possível registrar o webhook de entrada:', erro.message);
-        return false;
+        // 400 no registro é quase sempre a proteção SSRF recusando a URL interna
+        // — o conserto é no servidor, não aqui, então a mensagem diz qual é.
+        const aviso = erro.status === 400
+            ? `O OpenWA recusou o endereço de retorno (${url}). Libere o host interno no container openwa_retencao (SSRF_ALLOWED_HOSTS) — enquanto isso as respostas dos alunos não chegam.`
+            : `Não foi possível registrar o retorno das respostas no OpenWA: ${erro.message}. As mensagens saem, mas a resposta dos alunos não volta pro sistema.`;
+        return { ok: false, aviso };
     }
 }
 
@@ -167,9 +186,9 @@ async function conectarSessao(req, res) {
             if (erro.status !== 400) throw erro;
         }
 
-        await garantirWebhook(sessao.sessionId);
+        const webhook = await garantirWebhook(sessao.sessionId);
 
-        res.json({ status: 'ok', dados: dadosNumero(sessao) });
+        res.json({ status: 'ok', dados: dadosNumero(sessao), avisoWebhook: webhook.aviso });
     } catch (erro) {
         respostaErro(res, erro);
     }
@@ -225,7 +244,17 @@ async function obterSessao(req, res) {
             }
         }
 
-        res.json({ status: 'ok', configurado: true, dados: dadosNumero(sessao), qrCode, erroSessao: remota.lastError || null });
+        // Confere o retorno das respostas só quando o número já está pronto: é o
+        // único estado em que faz sentido, e a tela para de consultar a cada 3s
+        // aqui, então isso não vira uma chamada por segundo no OpenWA. Conferir
+        // (e não só registrar no conectar) é o que faz a tela avisar também nas
+        // sessões que já estavam conectadas de antes.
+        let avisoWebhook = null;
+        if (remota.status === 'ready') {
+            avisoWebhook = (await garantirWebhook(sessao.sessionId)).aviso;
+        }
+
+        res.json({ status: 'ok', configurado: true, dados: dadosNumero(sessao), qrCode, erroSessao: remota.lastError || null, avisoWebhook });
     } catch (erro) {
         respostaErro(res, erro);
     }

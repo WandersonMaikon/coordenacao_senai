@@ -36,7 +36,12 @@ const RESPOSTA_SAIR = 'Tudo bem, você não vai mais receber mensagens automáti
 const RESUMO_POR_TIPO = {
     audio: '[áudio]', voice: '[áudio]', ptt: '[áudio]',
     image: '[imagem]', video: '[vídeo]', document: '[documento]',
-    sticker: '[figurinha]', location: '[localização]', contact: '[contato]'
+    sticker: '[figurinha]', location: '[localização]', contact: '[contato]',
+    // Os tipos restantes da lista do OpenWA. Sem eles, uma chamada perdida ou uma
+    // mensagem apagada chegava com texto vazio e virava um contato "respondido"
+    // sem nada escrito — a coordenação via "o aluno respondeu" e abria o nada.
+    poll: '[enquete]', call: '[chamada]', revoked: '[mensagem apagada]',
+    masked: '[mensagem protegida]', unknown: '[mensagem não reconhecida]'
 };
 
 // ───────────── Normalização do evento ─────────────
@@ -63,10 +68,14 @@ function normalizarEntrada(corpo) {
         messageId: String(mensagem.id?._serialized ?? mensagem.id ?? mensagem.messageId ?? ''),
         chatId: chatId ? String(chatId) : '',
         texto: typeof mensagem.body === 'string' ? mensagem.body : (mensagem.text ?? ''),
-        tipo: mensagem.type ?? mensagem.kind ?? 'text',
+        // `kind` NÃO serve de reserva pro tipo: ele descreve o chat (individual,
+        // group, status), não o conteúdo da mensagem.
+        tipo: mensagem.type ?? 'text',
         fromMe: Boolean(mensagem.fromMe),
-        isGroup: Boolean(mensagem.isGroup) || String(chatId || '').endsWith('@g.us'),
-        isStatus: Boolean(mensagem.isStatusBroadcast) || String(chatId || '').startsWith('status@'),
+        isGroup: mensagem.kind === 'group' || Boolean(mensagem.isGroup) || String(chatId || '').endsWith('@g.us'),
+        // `kind` é o campo atual do OpenWA (individual|group|channel|status|
+        // broadcast); `isStatusBroadcast` continua sendo mandado por compatibilidade.
+        isStatus: mensagem.kind === 'status' || Boolean(mensagem.isStatusBroadcast) || String(chatId || '').startsWith('status@'),
         // timestamp do WhatsApp vem em segundos; Date espera milissegundos.
         recebidaEm: timestamp ? new Date(Number(timestamp) * (String(timestamp).length > 11 ? 1 : 1000)) : new Date()
     };
@@ -75,25 +84,52 @@ function normalizarEntrada(corpo) {
 // ───────────── message.ack ─────────────
 
 const STATUS_POR_ACK = {
-    delivered: 'entregue', read: 'lida', played: 'lida',
-    // O whatsapp-web.js também usa números: 2 = entregue, 3 = lida, 4 = tocada.
-    2: 'entregue', 3: 'lida', 4: 'lida'
+    delivered: 'entregue', read: 'lida', played: 'lida', failed: 'falhou',
+    // `ack` é o inteiro legado que o OpenWA ainda manda junto do `status`
+    // canônico: 2 = entregue, 3 = lida, 4 = tocada, -1 = falhou.
+    2: 'entregue', 3: 'lida', 4: 'lida', '-1': 'falhou'
 };
 
-// Atualiza a MensagemWhatsapp para entregue/lida. Só avança: um ack de "entregue"
-// que chegue atrasado não pode rebaixar uma mensagem já marcada como lida.
+// De onde só se avança. Um ack de "entregue" atrasado não pode rebaixar uma
+// mensagem já marcada como lida, e nada ressuscita uma cancelada.
+const ORIGEM_PERMITIDA = {
+    entregue: ['enviada'],
+    lida: ['enviada', 'entregue'],
+    falhou: ['enviada', 'entregue', 'lida']
+};
+
+// Atualiza a MensagemWhatsapp para entregue/lida/falhou. Trata `message.ack` e
+// `message.failed`, que o OpenWA dispara juntos quando o WhatsApp reporta erro.
 async function processarAck(corpo) {
     const dados = corpoDoEvento(corpo);
     const mensagem = dados.message ?? dados;
-    const messageId = String(mensagem.id?._serialized ?? mensagem.id ?? mensagem.messageId ?? '');
-    const bruto = dados.ack ?? dados.status ?? mensagem.ack ?? mensagem.status;
-    const novo = STATUS_POR_ACK[bruto] ?? STATUS_POR_ACK[String(bruto).toLowerCase()];
-    if (!messageId || !novo) return { tratado: false };
 
-    const alvo = novo === 'lida' ? ['enviada', 'entregue'] : ['enviada'];
+    // O payload traz `id` E `messageId`, e a documentação do OpenWA não diz qual
+    // dos dois é o id do WhatsApp (em outro endpoint dela, `messageId` é o id
+    // interno da linha e `waMessageId` é o do WhatsApp). Guardamos o `messageId`
+    // devolvido pelo send-text, então procuramos pelos dois em vez de apostar num:
+    // errar a escolha deixa toda mensagem parada em "enviada" para sempre.
+    const candidatos = [
+        mensagem.id?._serialized, mensagem.id, mensagem.messageId, mensagem.waMessageId
+    ].filter((valor) => typeof valor === 'string' && valor !== '');
+
+    // `status` é o canônico segundo a documentação; `ack` é o legado depreciado.
+    const bruto = dados.status ?? mensagem.status ?? dados.ack ?? mensagem.ack;
+    const novo = STATUS_POR_ACK[bruto] ?? STATUS_POR_ACK[String(bruto).toLowerCase()];
+    if (candidatos.length === 0 || !novo) return { tratado: false };
+
+    const dadosNovos = { status: novo };
+    if (novo === 'falhou') {
+        // Falha vinda do WhatsApp é definitiva: a mensagem não chegou e o
+        // `Contato` do envio já existe. Mesmo critério do worker — na dúvida não
+        // reenvia, porque mensagem duplicada pro aluno é pior.
+        dadosNovos.falhaDefinitiva = true;
+        dadosNovos.erro = 'O WhatsApp reportou falha na entrega desta mensagem.';
+    }
+
     const { count } = await prisma.mensagemWhatsapp.updateMany({
-        where: { messageId, status: { in: alvo } },
-        data: { status: novo }
+        where: { messageId: { in: candidatos }, status: { in: ORIGEM_PERMITIDA[novo] } },
+        data: dadosNovos
     });
     return { tratado: true, atualizadas: count, status: novo };
 }
@@ -245,10 +281,13 @@ async function processarMensagemRecebida(corpo) {
 // Porta de entrada do webhook: decide se o evento é resposta, ack ou nada.
 async function processarEvento(corpo) {
     const evento = String(nomeDoEvento(corpo) || '');
-    if (evento.includes('ack')) return processarAck(corpo);
+    if (evento === 'message.ack' || evento === 'message.failed') return processarAck(corpo);
     // Sem nome de evento, assumimos mensagem recebida: é o caso que importa, e
     // `processarMensagemRecebida` já descarta sozinho o que não for resposta.
-    if (!evento || evento.includes('message')) return processarMensagemRecebida(corpo);
+    if (!evento || evento === 'message.received') return processarMensagemRecebida(corpo);
+    // Os nomes são conferidos inteiros, não por `includes`: `message.sent` e
+    // `message.revoked` também casariam com "message" e seriam gravados como se
+    // fossem resposta de aluno — inclusive a nossa própria mensagem saindo.
     // session.status, call.received e o que mais vier: registrado no log e só.
     return { ignorada: true, motivo: `evento não tratado: ${evento}` };
 }

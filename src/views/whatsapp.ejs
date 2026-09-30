@@ -485,7 +485,7 @@
       document.getElementById('btnSalvarNumero').textContent = dados.telefone ? 'Salvar / trocar número' : 'Salvar número';
     }
 
-    function desenharConexao(dados, qrCode, erroSessao) {
+    function desenharConexao(dados, qrCode, erroSessao, avisoWebhook) {
       const estado = document.getElementById('estadoConexao');
       const btnConectar = document.getElementById('btnConectar');
       const btnDesconectar = document.getElementById('btnDesconectar');
@@ -514,6 +514,12 @@
       if (erroSessao && dados.status !== 'ready') {
         linhas.push(`<div class="small text-danger mt-2">${escaparHtml(erroSessao)}</div>`);
       }
+      // O número pode estar conectado e mandando mensagem com o caminho de volta
+      // quebrado — foi o que aconteceu. Sem este aviso, a tela dizia "conectado"
+      // e as respostas dos alunos eram descartadas sem ninguém saber.
+      if (avisoWebhook) {
+        linhas.push(`<div class="alert alert-warning py-2 mt-2 mb-0 small"><i class="bi bi-arrow-down-left-circle-fill me-1"></i><strong>As respostas dos alunos não estão chegando.</strong><div class="mt-1">${escaparHtml(avisoWebhook)}</div></div>`);
+      }
       estado.innerHTML = linhas.join('');
 
       blocoQr.classList.toggle('d-none', !qrCode);
@@ -533,7 +539,7 @@
         if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
         document.getElementById('avisoNaoConfigurado').classList.toggle('d-none', resposta.configurado !== false);
         desenharNumero(resposta.dados);
-        desenharConexao(resposta.dados, resposta.qrCode, resposta.erroSessao);
+        desenharConexao(resposta.dados, resposta.qrCode, resposta.erroSessao, resposta.avisoWebhook);
         // Sem OpenWA configurado o botão só levaria a um erro — a faixa amarela já explica.
         const btnConectar = document.getElementById('btnConectar');
         btnConectar.disabled = resposta.configurado === false;
