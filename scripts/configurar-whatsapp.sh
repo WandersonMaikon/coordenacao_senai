@@ -33,13 +33,27 @@ backup_env() {
 # ── Webhook de entrada (a resposta do aluno) ──
 # Sem OPENWA_WEBHOOK_SECRET a rota /webhook/whatsapp responde 503 e nenhuma
 # resposta é recebida. Gerado aqui pra ninguém precisar inventar um segredo.
+#
+# A URL e o segredo são conferidos SEPARADAMENTE. Quando esta checagem era só do
+# segredo, um .env que tinha o segredo mas não a URL passava batido: o script
+# dizia "nada a fazer" e a URL nunca era gravada, então o webhook nunca era
+# registrado e as respostas dos alunos eram descartadas em silêncio.
 ALTEROU_ENV=0
+
+if ! grep -q "^OPENWA_WEBHOOK_URL=$URL_WEBHOOK$" .env; then
+  backup_env
+  sed -i '/^OPENWA_WEBHOOK_URL=/d' .env
+  [ -n "$(tail -c1 .env)" ] && echo >> .env
+  echo "OPENWA_WEBHOOK_URL=$URL_WEBHOOK" >> .env
+  ALTEROU_ENV=1
+  echo "Endereço de retorno do webhook gravado no .env."
+fi
+
 if ! grep -q '^OPENWA_WEBHOOK_SECRET=..*' .env; then
   SEGREDO=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
   backup_env
-  sed -i '/^OPENWA_WEBHOOK_URL=/d;/^OPENWA_WEBHOOK_SECRET=/d' .env
+  sed -i '/^OPENWA_WEBHOOK_SECRET=/d' .env
   [ -n "$(tail -c1 .env)" ] && echo >> .env
-  echo "OPENWA_WEBHOOK_URL=$URL_WEBHOOK" >> .env
   echo "OPENWA_WEBHOOK_SECRET=$SEGREDO" >> .env
   ALTEROU_ENV=1
   echo "Segredo do webhook de entrada gerado e gravado no .env."
@@ -61,8 +75,8 @@ if [ -n "$CHAVE_ATUAL" ]; then
     if [ "$ALTEROU_ENV" = "1" ]; then
       # O segredo do webhook acabou de entrar no .env: o container precisa relê-lo.
       docker compose up -d --force-recreate node_retencao
-      echo "node_retencao recriado pra carregar o segredo do webhook."
-      echo "Reconecte o número em /whatsapp pra registrar o webhook na sessão."
+      echo "node_retencao recriado pra carregar a configuração do webhook."
+      echo "Abra /whatsapp com o número conectado: o webhook é registrado na hora."
     else
       echo "Nada a fazer."
     fi
