@@ -5,6 +5,9 @@ escolar. A frequência é capturada direto da tela do SGE (sistema acadêmico TO
 momento em que o professor lança a chamada, e a coordenação enxerga num painel quem está
 faltando, com quem já foi feito contato e por qual motivo o aluno está se afastando.
 
+Para o porquê do projeto, os princípios e onde ele está hoje, sem detalhe técnico, veja
+[`docs/visao/VISAO.md`](docs/visao/VISAO.md).
+
 > **Dados sensíveis.** O sistema lida com dados pessoais de alunos de 14 a 23 anos
 > (nome, matrícula, telefone). Cuidado redobrado com logs, exportações e qualquer
 > exposição pública desses dados.
