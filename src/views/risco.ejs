@@ -285,6 +285,7 @@
           <td colspan="5">
             <div class="row g-4 py-2">
               <div class="col-lg-6">
+                <div id="linhaTempo-${indice}"></div>
                 <h6 class="mb-2">Histórico de contatos</h6>
                 <div id="historico-${indice}" class="text-body">Carregando...</div>
               </div>
@@ -367,6 +368,60 @@
       `;
     }
 
+    // ───── Linha do tempo (WhatsApp + respostas + contatos + chamadas) ─────
+    // Só aparece pra quem já recebeu mensagem automática: é a sequência que o
+    // robô e a chamada contam juntos, pra quem vai ligar saber o que já aconteceu.
+
+    const ROTULO_ENTREGA = {
+      pendente: 'na fila', enviando: 'enviando', enviada: 'enviada', entregue: 'entregue',
+      lida: 'lida', falhou: 'falhou', cancelada: 'cancelada'
+    };
+
+    function eventoLinhaTempoHtml(evento, variasTurmas) {
+      const quando = evento.tipo === 'chamada' ? evento.dataAula : formatarDataHora(evento.em);
+      const turma = variasTurmas && evento.nomeTurma ? ` <span class="text-body-secondary">· ${escaparHtml(nomeTurmaLimpo(evento.nomeTurma))}</span>` : '';
+      let icone;
+      let texto;
+      if (evento.tipo === 'whatsapp') {
+        const qual = evento.tentativa === 2 ? '2ª mensagem automática' : 'Mensagem automática';
+        const falhou = ['falhou', 'cancelada'].includes(evento.status);
+        icone = falhou ? 'bi-x-circle text-danger' : 'bi-whatsapp text-success';
+        texto = `${qual} <strong>${ROTULO_ENTREGA[evento.status] || evento.status}</strong>${evento.erro ? ` — ${escaparHtml(evento.erro)}` : ''}`;
+      } else if (evento.tipo === 'resposta') {
+        icone = evento.interpretacao === 'promessa' ? 'bi-hand-thumbs-up text-primary' : 'bi-chat-left-text text-primary';
+        texto = `Aluno respondeu: <span class="fst-italic">"${escaparHtml(evento.texto)}"</span>${evento.descricao ? `<div class="small text-body-secondary">${escaparHtml(evento.descricao)}</div>` : ''}`;
+      } else if (evento.tipo === 'contato') {
+        icone = 'bi-person-lines-fill text-warning';
+        texto = `${escaparHtml(CANAIS[evento.canal] || evento.canal || 'Contato')} por ${escaparHtml(evento.por || '—')} · ${escaparHtml(STATUS[evento.status] || evento.status || '')}${evento.motivo ? ` · ${escaparHtml(evento.motivo)}` : ''}`;
+      } else {
+        icone = evento.presente ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger';
+        texto = evento.presente ? 'Chamada: <strong>veio</strong>' : `Chamada: <strong>faltou</strong> (${evento.faltas} aula${evento.faltas === 1 ? '' : 's'})`;
+      }
+      return `
+        <li class="d-flex gap-2 mb-2">
+          <i class="bi ${icone} mt-1"></i>
+          <div><span class="text-body-secondary small me-1">${escaparHtml(quando)}</span>${texto}${turma}</div>
+        </li>`;
+    }
+
+    async function carregarLinhaDoTempo(indice, matricula) {
+      const container = document.getElementById(`linhaTempo-${indice}`);
+      if (!container) return;
+      try {
+        const resposta = await chamarApi(`/contatos/linha-do-tempo?matricula=${encodeURIComponent(matricula)}`);
+        if (resposta.status !== 'ok' || !resposta.eventos.length) {
+          container.innerHTML = '';
+          return;
+        }
+        container.innerHTML = `
+          <h6 class="mb-2">Linha do tempo</h6>
+          <ul class="list-unstyled small mb-4 border-start ps-3">${resposta.eventos.map((e) => eventoLinhaTempoHtml(e, resposta.variasTurmas)).join('')}</ul>`;
+      } catch (erro) {
+        // É contexto extra: se falhar, o histórico de contatos abaixo continua valendo.
+        container.innerHTML = '';
+      }
+    }
+
     // Guarda os contatos já carregados por linha da tabela, pra o botão "editar"
     // preencher o formulário sem precisar bater na API de novo (e sem despejar os
     // campos em atributos data- do HTML).
@@ -374,6 +429,8 @@
 
     async function carregarHistorico(indice, matricula) {
       const container = document.getElementById(`historico-${indice}`);
+      // Junto com o histórico: um contato novo também aparece na linha do tempo.
+      carregarLinhaDoTempo(indice, matricula);
       try {
         const resposta = await chamarApi(`/contatos?matricula=${encodeURIComponent(matricula)}`);
         const contatos = resposta.dados || [];

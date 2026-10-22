@@ -208,7 +208,8 @@ prometeram voltar, estão sem resposta, estão na fila do dia, e quantos não po
 4. ~~Pergunta fechada na mensagem, reconhecimento do "vou voltar", resposta automática e
    conferência da promessa pela chamada seguinte.~~ (feito em 22/10/2026; quem prometeu e
    faltou aparece na tela de envio automático até a tela "Precisam de contato" existir)
-5. Linha do tempo do robô no histórico do aluno, na tela de alunos em risco.
+5. ~~Linha do tempo do robô no histórico do aluno, na tela de alunos em risco.~~ (feito em
+   23/10/2026)
 6. Trava de faltas coletivas.
 
 Cada etapa sobe sozinha e já serve para alguma coisa.

@@ -1,6 +1,7 @@
 const prisma = require('../config/prisma');
 const { MOTIVOS } = require('../config/motivos');
 const { listarPrecisamContato, MOTIVOS_LISTA } = require('../services/precisamContato');
+const { montarLinhaDoTempo } = require('../services/linhaDoTempo');
 
 // Registra um contato feito pela coordenação com um aluno (em risco ou não).
 // Faz upsert do Aluno antes, porque a FK exige que ele exista e nem todo aluno
@@ -258,4 +259,18 @@ async function listarPendentes(req, res) {
     }
 }
 
-module.exports = { registrar, listarPorAluno, atualizar, confirmarMotivo, remover, resumoMotivos, listarPendentes };
+// GET /contatos/linha-do-tempo?matricula= — WhatsApp, respostas, contatos e
+// chamadas do aluno em ordem (detalhe da /risco). Vazio se ele nunca recebeu
+// mensagem automática (ver src/services/linhaDoTempo.js).
+async function linhaDoTempo(req, res) {
+    const { matricula } = req.query;
+    if (!matricula) return res.status(400).json({ status: 'erro', mensagem: 'Informe matricula' });
+    try {
+        const dados = await montarLinhaDoTempo(String(matricula));
+        res.json({ status: 'ok', ...dados });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+module.exports = { registrar, listarPorAluno, atualizar, confirmarMotivo, remover, resumoMotivos, listarPendentes, linhaDoTempo };
