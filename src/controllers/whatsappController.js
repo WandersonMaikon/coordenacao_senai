@@ -401,7 +401,7 @@ async function obterAutomatico(req, res) {
             agora,
             admin: Boolean(req.usuario.admin),
             situacoes: whatsappAutomatico.SITUACOES,
-            diasRecente: whatsappAutomatico.DIAS_RECENTE,
+            diasDesdeContato: whatsappAutomatico.DIAS_DESDE_CONTATO,
             minhaSessao: {
                 conectado: minhaSessao.status === 'ready' && Boolean(minhaSessao.sessionId),
                 institucional: minhaSessao.tipo === 'institucional',
@@ -434,7 +434,7 @@ async function obterAutomatico(req, res) {
         ]);
 
         // Quem não recebe e por quê — é a pergunta "por que a Maria não recebeu?".
-        const SEM_ENVIO = ['contato_humano', 'sair', 'sem_whatsapp', 'sem_telefone', 'situacao', 'antigo'];
+        const SEM_ENVIO = ['contato_humano', 'sair', 'sem_whatsapp', 'sem_telefone', 'situacao'];
         const naoRecebem = itens
             .filter((item) => SEM_ENVIO.includes(item.situacao))
             .map((item) => ({

@@ -152,10 +152,12 @@ próxima aula? Responda SIM, ou conte o que aconteceu."*
 - **Promessa quebrada vai direto para uma pessoa.** Sem segunda mensagem automática:
   repetir o robô justamente quando o aluno sumiu de novo gasta limite e soa frio na hora
   em que mais importa ser gente.
-- **Ao ligar o envio automático, só recebe mensagem quem entrou em risco nos últimos 7
-  dias.** Quem já estava em risco antes vai direto para a coordenação. Sem isso, o
-  primeiro dia teria uma fila de mais de 100 alunos, bem acima do limite de aquecimento
-  do número novo.
+- **Quem conversou com a coordenação nos últimos 7 dias não recebe a mensagem
+  automática.** Passados 7 dias desse contato, se o aluno continua faltando, o WhatsApp
+  volta a valer. Quem já estava em risco quando o envio foi ligado também recebe: a fila
+  respeita o limite diário e se espalha pelos dias seguintes. (Decidido em 22/10/2026,
+  no lugar da regra inicial que deixava com a coordenação quem tinha entrado em risco
+  havia mais de 7 dias.)
 - **O robô preenche o histórico, a pessoa confirma o motivo.** Envio, leitura, resposta
   do aluno, motivo sugerido e promessa viram registros do aluno sozinhos. Só o motivo
   precisa de um clique de confirmação para entrar no gráfico de motivos, porque é o

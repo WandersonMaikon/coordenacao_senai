@@ -11,7 +11,7 @@ const openwa = require('./openwa');
 const { mesmoTelefone } = require('./telefone');
 const { limiteDiaEfetivo, STATUS_JA_RECEBEU } = require('./whatsappLote');
 const whatsappAutomatico = require('./whatsappAutomatico');
-const { calcularAlunosEmRiscoSemRecuperados, converterDataAula } = require('../controllers/alunoController');
+const { calcularAlunosEmRiscoSemRecuperados } = require('../controllers/alunoController');
 
 const TICK_MS = 15 * 1000;
 // Recalcular o risco lê todos os lançamentos — não precisa ser a cada rodada. Uma
@@ -25,8 +25,9 @@ const ESPERA_FALHA_TEMPORARIA_MS = 60 * 1000;
 const STATUS_PRECISA_ACAO = ['disconnected', 'action_required', 'failed'];
 const MOTIVO_NUMERO_DIFERENTE = 'O número conectado é diferente do número cadastrado.';
 
-// Contato registrado neste período de faltas com um destes status tira o aluno da
-// fila: alguém já está conversando com ele.
+// Contato registrado nos últimos DIAS_DESDE_CONTATO dias com um destes status tira
+// o aluno da fila: alguém está conversando com ele (mesma regra de quem entra na
+// fila, em whatsappAutomatico.js).
 const STATUS_CONTATO_CANCELA = ['respondido', 'acompanhar', 'recuperado'];
 
 // ───────────── Horário da escola ─────────────
@@ -132,7 +133,7 @@ async function motivoParaCancelar(mensagem, sessao) {
         prisma.contato.findFirst({
             where: {
                 matricula: mensagem.matricula,
-                criadoEm: { gte: new Date(converterDataAula(mensagem.primeiraFalta)) },
+                criadoEm: { gte: new Date(Date.now() - whatsappAutomatico.DIAS_DESDE_CONTATO * 24 * 60 * 60 * 1000) },
                 status: { in: STATUS_CONTATO_CANCELA }
             },
             select: { id: true }

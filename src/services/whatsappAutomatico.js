@@ -15,27 +15,25 @@
 const prisma = require('../config/prisma');
 const {
     calcularAlunosEmRiscoSemRecuperados,
-    ehSituacaoAtiva,
-    converterDataAula,
-    diaNoFusoDaEscola
+    ehSituacaoAtiva
 } = require('../controllers/alunoController');
 const { renderizarMensagem, nomeResponsavel, STATUS_JA_RECEBEU } = require('./whatsappLote');
 
 const DIA_MS = 24 * 60 * 60 * 1000;
 
-// Só recebe quem entrou em risco há até 7 dias. Quem está em risco há mais tempo
-// (o acúmulo de antes de ligar a chave, ou quem esperou demais na fila por causa
-// do limite diário) fica com a coordenação: mensagem de "sentimos sua falta"
-// semanas depois soa a robô, e o acúmulo inteiro estouraria o limite do número.
-const DIAS_RECENTE = 7;
-
 // No máximo uma mensagem automática por aluno a cada 7 dias, mesmo que ele esteja
 // em risco em duas turmas.
 const DIAS_ENTRE_MENSAGENS = 7;
 
-// Contato da coordenação no episódio com um destes status não impede o WhatsApp:
-// tentaram ligar e não conseguiram, então a mensagem é uma tentativa por outro
-// canal. Respondido/Acompanhar/Recuperado impedem: alguém já está falando com ele.
+// Contato da coordenação (respondido/acompanhar) nos últimos 7 dias impede o
+// WhatsApp: alguém está falando com o aluno. Passados 7 dias e ele continua
+// faltando, o WhatsApp volta a valer — decidido em 22/10/2026. Também não há
+// mais corte por "entrou em risco há muito tempo": quem já estava em risco
+// quando a chave foi ligada recebe, e o limite diário espalha o acúmulo.
+const DIAS_DESDE_CONTATO = 7;
+
+// Contato com um destes status não impede o WhatsApp em momento nenhum: tentaram
+// ligar e não conseguiram, então a mensagem é uma tentativa por outro canal.
 const STATUS_CONTATO_NOVA_TENTATIVA = ['sem_resposta', 'nunca_contato'];
 
 // Situação de cada aluno em risco, do ponto de vista do envio automático. A ordem
@@ -45,12 +43,11 @@ const SITUACOES = {
     enviada: 'Mensagem enviada',
     fila: 'Na fila de envio',
     receber: 'Entra na fila na próxima conferência',
-    contato_humano: 'A coordenação já falou com o aluno neste período de faltas',
+    contato_humano: `A coordenação falou com o aluno nos últimos ${DIAS_DESDE_CONTATO} dias`,
     sair: 'Pediu para não receber mensagens (SAIR)',
     sem_whatsapp: 'O envio falhou (número sem WhatsApp ou envio interrompido)',
     sem_telefone: 'Sem telefone cadastrado',
     situacao: 'Situação na planilha não é ativa',
-    antigo: `Entrou em risco há mais de ${DIAS_RECENTE} dias: fica com a coordenação`,
     semana: 'Já recebeu mensagem por outra turma nesta semana'
 };
 const ORDEM_SITUACAO = Object.keys(SITUACOES);
@@ -114,18 +111,14 @@ async function avaliar(sessao, agora = new Date()) {
         .filter((m) => ['pendente', 'enviando'].includes(m.status) || (STATUS_JA_RECEBEU.includes(m.status) && m.enviadaEm?.getTime() >= desdeMs))
         .map((m) => m.matricula));
 
-    // converterDataAula usa o fuso do servidor; "hoje" também precisa vir dele,
-    // a partir da data da escola, pra comparar dia com dia.
-    const limiteRecente = converterDataAula(diaNoFusoDaEscola(agora)) - DIAS_RECENTE * DIA_MS;
+    const contatoDesdeMs = agora.getTime() - DIAS_DESDE_CONTATO * DIA_MS;
 
     // Quem está há mais dias sem vir é avaliado (e entra na fila) primeiro.
     const ordenados = [...candidatos].sort((a, b) => b.diasSemVir - a.diasSemVir);
     return ordenados.map((item) => {
         const aluno = alunoPorMatricula.get(item.matricula);
         const ultimoContato = ultimoContatoPorMatricula.get(item.matricula);
-        const contatoNoEpisodio = ultimoContato && ultimoContato.criadoEm.getTime() >= converterDataAula(item.primeiraFalta)
-            ? ultimoContato
-            : null;
+        const contatoRecente = ultimoContato && ultimoContato.criadoEm.getTime() >= contatoDesdeMs ? ultimoContato : null;
         const mensagem = mensagemPorEpisodio.get(chaveEpisodio(item));
 
         let situacao;
@@ -135,8 +128,7 @@ async function avaliar(sessao, agora = new Date()) {
         else if (!aluno || !aluno.telefone) situacao = 'sem_telefone';
         else if (!ehSituacaoAtiva(aluno.situacao)) situacao = 'situacao';
         else if (aluno.whatsappOptOut) situacao = 'sair';
-        else if (contatoNoEpisodio && !STATUS_CONTATO_NOVA_TENTATIVA.includes(contatoNoEpisodio.status)) situacao = 'contato_humano';
-        else if (!item.entrouEmRisco || converterDataAula(item.entrouEmRisco) < limiteRecente) situacao = 'antigo';
+        else if (contatoRecente && !STATUS_CONTATO_NOVA_TENTATIVA.includes(contatoRecente.status)) situacao = 'contato_humano';
         else if (recebeuNaSemana.has(item.matricula)) situacao = 'semana';
         else {
             situacao = 'receber';
@@ -226,8 +218,8 @@ async function abastecer(sessao, agora = new Date()) {
 }
 
 module.exports = {
-    DIAS_RECENTE,
     DIAS_ENTRE_MENSAGENS,
+    DIAS_DESDE_CONTATO,
     SITUACOES,
     lerTurmas,
     sessaoDoSistema,

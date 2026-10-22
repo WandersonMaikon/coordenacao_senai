@@ -815,9 +815,9 @@
       const explicacao = `
         <p class="text-body-secondary small mb-3">
           Quando ligado, o sistema confere a lista de risco a cada 5 minutos e manda a mensagem sozinho para
-          quem entrou em risco nos últimos ${r.diasRecente} dias e ainda não recebeu, respeitando o horário e
-          os limites do número. Cada aluno recebe no máximo uma mensagem automática por semana.
-          Quem entrou em risco há mais tempo fica com a coordenação.
+          quem está em risco e ainda não recebeu, respeitando o horário e os limites do número. Cada aluno
+          recebe no máximo uma mensagem automática por semana. Quem conversou com a coordenação nos últimos
+          ${r.diasDesdeContato} dias não recebe; passado esse prazo, se continuar faltando, recebe.
         </p>`;
 
       if (!sis) {
@@ -863,7 +863,7 @@
       const pct = (n) => (emRisco ? Math.round((n / emRisco) * 100) : 0);
       const naFila = p.fila + p.receber;
       const naoPodem = p.sair + p.sem_whatsapp + p.sem_telefone + p.situacao;
-      const coordenacao = p.contato_humano + p.antigo;
+      const coordenacao = p.contato_humano;
 
       const linha = (cor, rotulo, valor, detalhe = '') => `
         <tr>
@@ -911,7 +911,7 @@
             <tbody>
               ${linha('success', 'Mensagem enviada', p.enviada, `${responderam} respondeu(ram)`)}
               ${linha('info', 'Na fila de envio', naFila)}
-              ${linha('secondary', 'Com a coordenação', coordenacao, partes([['já falou com o aluno', p.contato_humano], [`entrou em risco há mais de ${r.diasRecente} dias`, p.antigo]]))}
+              ${linha('secondary', 'Com a coordenação', coordenacao, `falou com o aluno nos últimos ${r.diasDesdeContato} dias`)}
               ${linha('warning', 'Não podem receber WhatsApp', naoPodem, partes([['pediu SAIR', p.sair], ['sem WhatsApp / falha', p.sem_whatsapp], ['sem telefone', p.sem_telefone], ['situação não ativa', p.situacao]]))}
               ${p.semana ? linha('light', 'Já recebeu por outra turma nesta semana', p.semana) : ''}
             </tbody>
