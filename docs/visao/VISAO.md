@@ -199,12 +199,13 @@ prometeram voltar, estão sem resposta, estão na fila do dia, e quantos não po
 
 0. Confirmar que as respostas dos alunos chegam ao sistema. Ainda não foi visto com uma
    mensagem real, e sem isso o funil não funciona.
-1. Número do sistema e envio automático, sem "assumir turma" nem botão "Iniciar
-   envio", com a tela de acompanhamento. Começa pelo piloto.
+1. ~~Número do sistema e envio automático, sem "assumir turma" nem botão "Iniciar
+   envio", com a tela de acompanhamento.~~ (no ar desde 22/10/2026)
 2. Regra da semana (2ª mensagem 7 dias depois) e uma mensagem por aluno.
 3. Tela "Precisam de contato", incluindo quem pediu SAIR.
-4. Pergunta fechada na mensagem, reconhecimento do "vou voltar", resposta automática e
-   conferência da promessa pela chamada seguinte.
+4. ~~Pergunta fechada na mensagem, reconhecimento do "vou voltar", resposta automática e
+   conferência da promessa pela chamada seguinte.~~ (feito em 22/10/2026; quem prometeu e
+   faltou aparece na tela de envio automático até a tela "Precisam de contato" existir)
 5. Linha do tempo do robô no histórico do aluno, na tela de alunos em risco.
 6. Trava de faltas coletivas.
 

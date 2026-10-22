@@ -859,7 +859,7 @@
         area.innerHTML = '<h5 class="mb-1">Acompanhamento</h5><p class="text-body-secondary mb-0">Os números aparecem aqui quando o envio automático estiver ligado.</p>';
         return;
       }
-      const { emRisco, porSituacao: p, responderam } = r.resumo;
+      const { emRisco, porSituacao: p, responderam, prometeram, quebraram } = r.resumo;
       const pct = (n) => (emRisco ? Math.round((n / emRisco) * 100) : 0);
       const naFila = p.fila + p.receber;
       const naoPodem = p.sair + p.sem_whatsapp + p.sem_telefone + p.situacao;
@@ -874,8 +874,17 @@
       const partes = (lista) => lista.filter(([, n]) => n > 0).map(([rotulo, n]) => `${rotulo}: ${n}`).join(' · ');
 
       let detalhes = '';
+      if (r.promessasQuebradas.length) {
+        detalhes += `
+          <div class="alert alert-warning small mt-3 mb-0">
+            <div class="fw-semibold mb-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Prometeram voltar e faltaram de novo — precisam de contato de uma pessoa</div>
+            <ul class="mb-0">${r.promessasQuebradas.map((a) => `
+              <li>${escaparHtml(a.nomeAluno || '—')} <span class="text-body-secondary">· ${escaparHtml(nomeTurmaLimpo(a.nomeTurma) || a.codigoTurma)} · prometeu em ${formatarDataHora(a.prometeuEm)}</span></li>`).join('')}
+            </ul>
+          </div>`;
+      }
       if (r.naoRecebem.length) {
-        detalhes = `
+        detalhes += `
           <details class="mt-3">
             <summary class="small text-body-secondary">Ver os ${r.naoRecebem.length} aluno(s) que não recebem e o motivo</summary>
             <div class="table-responsive mt-2">
@@ -909,7 +918,7 @@
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
             <tbody>
-              ${linha('success', 'Mensagem enviada', p.enviada, `${responderam} respondeu(ram)`)}
+              ${linha('success', 'Mensagem enviada', p.enviada, partes([['responderam', responderam], ['prometeram voltar', prometeram], ['prometeram e faltaram de novo', quebraram]]) || '0 respondeu(ram)')}
               ${linha('info', 'Na fila de envio', naFila)}
               ${linha('secondary', 'Com a coordenação', coordenacao, `falou com o aluno nos últimos ${r.diasDesdeContato} dias`)}
               ${linha('warning', 'Não podem receber WhatsApp', naoPodem, partes([['pediu SAIR', p.sair], ['sem WhatsApp / falha', p.sem_whatsapp], ['sem telefone', p.sem_telefone], ['situação não ativa', p.situacao]]))}

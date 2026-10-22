@@ -37,8 +37,11 @@ const VARIAVEIS = ['{primeiro_nome}', '{turma}', '{dias}', '{responsavel}'];
 //
 // O classificador continua aceitando um número solto de propósito: aluno que
 // recebeu a mensagem antiga ainda pode responder "3" dias depois.
+//
+// A pergunta fechada ("consegue vir? responda SIM") existe pro robô reconhecer a
+// promessa de voltar, o único caso que ele resolve sozinho (classificarResposta.js).
 function blocoMenu() {
-    return 'Pode responder por aqui contando o que aconteceu — em poucas palavras já ajuda.\n\nSe não quiser mais receber mensagens, responda SAIR.';
+    return 'Você consegue vir na próxima aula? Responda *SIM*, ou conte o que aconteceu — em poucas palavras já ajuda.\n\nSe não quiser mais receber mensagens, responda SAIR.';
 }
 
 function primeiroNome(nome) {

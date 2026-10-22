@@ -184,9 +184,40 @@ function contarTermos(frase, termos) {
     }, 0);
 }
 
+// ───────────── Promessa de voltar ─────────────
+//
+// O único tipo de resposta que o robô resolve sozinho (ver "O funil automático"
+// em docs/visao/VISAO.md): o aluno diz que vem na próxima aula, o sistema
+// responde "combinado" e quem confere é a chamada seguinte. Por isso o erro aqui
+// é barato — promessa reconhecida à toa se corrige sozinha quando ele falta de
+// novo e cai pra coordenação. O erro caro é o contrário: dúvida ou recusa lida
+// como promessa. Daí a negação ser conferida antes de tudo.
+
+// "não vou", "nem vou dar", "acho que não", "talvez", "não sei se volto".
+const NEGACAO = /\b(nao|nem|nunca)\b(\s+\S+){0,3}\s+(vou|volto|voltar|irei|consigo|consegui|da|dar|posso|estarei|vai)\b|\bacho que nao\b|\btalvez\b|\bnao sei\b|\bnao tenho como\b|\bnao vai dar\b|\bnao da\b/;
+
+// Resposta curta à pergunta fechada da mensagem ("Você consegue vir na próxima
+// aula? Responda SIM").
+const SIM_CURTO = /^(sim|s|ss|sim sim|claro|com certeza|certeza|pode deixar|consigo|vou|vou sim|sim vou|sim consigo|ok|okay|beleza|certo|esta bem|esta bom|combinado|pode ser|positivo)( senhora?| professora?| prof)?[ !.]*$/;
+
+const VERBO_VOLTAR = /\b(volto|voltarei|vou voltar|irei|estarei|vou estar|vou ir|vou sim|vou la|vou na aula|apareco|vou aparecer|compareco|vou comparecer|estou indo|pretendo voltar|pretendo ir)\b/;
+const QUANDO = /\b(amanha|hoje|segunda|terca|quarta|quinta|sexta|sabado|proxima aula|semana que vem|depois de amanha)\b/;
+
+// Motivos que, mesmo com promessa, vão para uma pessoa: o robô não responde
+// "combinado!" para quem contou que a mãe faleceu ou que está em crise.
+const MOTIVOS_DELICADOS = ['saude_mental', 'problema_familiar'];
+
+function ehPromessa(frase) {
+    if (NEGACAO.test(frase)) return false;
+    if (SIM_CURTO.test(frase)) return true;
+    if (VERBO_VOLTAR.test(frase)) return true;
+    return /\bvou\b/.test(frase) && QUANDO.test(frase);
+}
+
 // Devolve { tipo, motivo? }:
 //   sair           — pediu para não receber mais mensagens
 //   menu           — digitou o número de uma opção (motivo = a chave dela)
+//   promessa       — disse que vem na próxima aula (motivo, se também contou um)
 //   palavras_chave — o texto livre bateu com um motivo (motivo = a chave)
 //   nao_entendido  — respondeu, mas não dá pra dizer o motivo
 function interpretarResposta(texto) {
@@ -221,12 +252,20 @@ function interpretarResposta(texto) {
         placar.splice(placar.indexOf(perdedor), 1);
     }
 
-    if (placar.length === 0) return { tipo: 'nao_entendido' };
     // Empate no topo = a frase fala de dois assuntos ("fiquei doente e perdi o
     // trampo"). Escolher um dos dois seria sorteio; a coordenação decide.
-    if (placar.length > 1 && placar[0].pontos === placar[1].pontos) return { tipo: 'nao_entendido' };
+    const empate = placar.length > 1 && placar[0].pontos === placar[1].pontos;
+    const motivo = placar.length > 0 && !empate ? placar[0].motivo : null;
 
-    return { tipo: 'palavras_chave', motivo: placar[0].motivo };
+    // Promessa com assunto delicado (ou com dois assuntos empatados, um deles
+    // talvez delicado) segue o caminho normal: uma pessoa lê.
+    const delicado = placar.some((item) => MOTIVOS_DELICADOS.includes(item.motivo));
+    if (ehPromessa(frase) && !delicado && !empate) {
+        return motivo ? { tipo: 'promessa', motivo } : { tipo: 'promessa' };
+    }
+
+    if (!motivo) return { tipo: 'nao_entendido' };
+    return { tipo: 'palavras_chave', motivo };
 }
 
 module.exports = { interpretarResposta, normalizar, TERMOS };

@@ -445,6 +445,17 @@ async function obterAutomatico(req, res) {
                 situacao: item.situacao
             }));
 
+        // Prometeu voltar e faltou de novo: o robô não insiste, é caso para uma pessoa.
+        const promessasQuebradas = itens
+            .filter((item) => item.promessa?.quebrou)
+            .map((item) => ({
+                nomeAluno: item.nomeAluno,
+                codigoTurma: item.codigoTurma,
+                nomeTurma: item.nomeTurma,
+                diasSemVir: item.diasSemVir,
+                prometeuEm: item.promessa.em
+            }));
+
         res.json({
             ...base,
             sistema: {
@@ -461,6 +472,7 @@ async function obterAutomatico(req, res) {
             proxima,
             resumo: whatsappAutomatico.resumir(itens),
             naoRecebem,
+            promessasQuebradas,
             mensagens
         });
     } catch (erro) {

@@ -30,6 +30,9 @@ const HORAS_ENTRE_AUTO_RESPOSTAS = 24;
 // falar com ele.
 const RESPOSTA_RECEBIDA = 'Obrigado por responder! Recebemos sua mensagem e a coordenação vai falar com você. Se precisar de algo antes disso, é só escrever aqui.';
 const RESPOSTA_SAIR = 'Tudo bem, você não vai mais receber mensagens automáticas. Se precisar de alguma coisa, pode escrever aqui a qualquer momento.';
+// A promessa é o único caso que o robô resolve sozinho: ninguém da coordenação
+// precisa ligar, quem confere é a próxima chamada (ver whatsappAutomatico.js).
+const RESPOSTA_PROMESSA = 'Combinado! Te esperamos na próxima aula. Se acontecer algum imprevisto, é só escrever aqui.';
 
 // Tipos de mensagem que não são texto. Não são descartados: áudio é justamente o
 // que mais chega, e a coordenação precisa saber que tem algo pra ouvir.
@@ -156,14 +159,30 @@ async function acharMensagemOriginal(chatId, telefone) {
     return candidatas.find((item) => mesmoTelefone(item.telefone, telefone)) || null;
 }
 
-async function podeAutoResponder(matricula) {
+// `idAtual` é a resposta que acabou de ser gravada: sem excluí-la, a consulta a
+// encontrava e concluía "já respondi nas últimas 24h" — a confirmação nunca saía
+// pra ninguém (corrigido em 22/10/2026).
+// A promessa tem a sua própria conta: aluno que escreveu "oi" e depois "amanhã eu
+// vou" precisa ouvir o "combinado", mesmo já tendo recebido o "obrigado".
+async function podeAutoResponder(matricula, idAtual, tipo) {
     if (!matricula) return false;
     const desde = new Date(Date.now() - HORAS_ENTRE_AUTO_RESPOSTAS * 60 * 60 * 1000);
     const recente = await prisma.respostaWhatsapp.findFirst({
-        where: { matricula, criadoEm: { gte: desde }, interpretacao: { not: 'ignorada' } },
+        where: {
+            matricula,
+            id: { not: idAtual },
+            criadoEm: { gte: desde },
+            interpretacao: tipo === 'promessa' ? 'promessa' : { notIn: ['ignorada', 'promessa'] }
+        },
         select: { id: true }
     });
     return !recente;
+}
+
+function textoDaConfirmacao(tipo) {
+    if (tipo === 'sair') return RESPOSTA_SAIR;
+    if (tipo === 'promessa') return RESPOSTA_PROMESSA;
+    return RESPOSTA_RECEBIDA;
 }
 
 // A confirmação sai direto, fora do worker de lote, e NÃO conta contra
@@ -191,9 +210,15 @@ function dadosDoContato(interpretacao, texto) {
     if (interpretacao.tipo === 'sair') {
         return { observacao: `O aluno pediu para não receber mais mensagens (respondeu "SAIR").` };
     }
-    const base = { status: 'respondido', observacao: `Resposta do aluno pelo WhatsApp: "${texto}"` };
+    const observacao = interpretacao.tipo === 'promessa'
+        ? `O aluno disse pelo WhatsApp que vem na próxima aula: "${texto}"`
+        : `Resposta do aluno pelo WhatsApp: "${texto}"`;
+    const base = { status: 'respondido', observacao };
     if (!interpretacao.motivo) return base;
-    return { ...base, motivoSugerido: interpretacao.motivo, sugeridoPor: interpretacao.tipo };
+    // Promessa com motivo ("sem ônibus, mas amanhã vou") sugere o motivo como texto
+    // livre — `sugeridoPor` só conhece menu e palavras_chave.
+    const sugeridoPor = interpretacao.tipo === 'promessa' ? 'palavras_chave' : interpretacao.tipo;
+    return { ...base, motivoSugerido: interpretacao.motivo, sugeridoPor };
 }
 
 // Processa uma mensagem recebida. Devolve um resumo (sem o texto do aluno) pro
@@ -265,12 +290,8 @@ async function processarMensagemRecebida(corpo) {
         });
     });
 
-    if (await podeAutoResponder(original.matricula)) {
-        await responderAluno(
-            original.sessaoId,
-            entrada.chatId,
-            interpretacao.tipo === 'sair' ? RESPOSTA_SAIR : RESPOSTA_RECEBIDA
-        );
+    if (await podeAutoResponder(original.matricula, linha.id, interpretacao.tipo)) {
+        await responderAluno(original.sessaoId, entrada.chatId, textoDaConfirmacao(interpretacao.tipo));
     }
 
     // Log sem o conteúdo da mensagem: o CLAUDE.md proíbe jogar dado pessoal de
@@ -300,5 +321,6 @@ module.exports = {
     DIAS_JANELA_RESPOSTA,
     HORAS_ENTRE_AUTO_RESPOSTAS,
     RESPOSTA_RECEBIDA,
-    RESPOSTA_SAIR
+    RESPOSTA_SAIR,
+    RESPOSTA_PROMESSA
 };

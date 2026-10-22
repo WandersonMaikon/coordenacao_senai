@@ -150,7 +150,10 @@ async function calcularAlunosEmRisco() {
             primeiraFalta,
             // Dia em que a sequência atingiu o limite — quando o aluno ENTROU em
             // risco. O envio automático só manda pra quem entrou há poucos dias.
-            entrouEmRisco: dias[indice + DIAS_AULA_CONSECUTIVOS_RISCO]?.dataAula || null
+            entrouEmRisco: dias[indice + DIAS_AULA_CONSECUTIVOS_RISCO]?.dataAula || null,
+            // Dia de aula mais recente da sequência (a última falta). É o que diz
+            // se o aluno faltou DEPOIS de prometer voltar pelo WhatsApp.
+            ultimaFalta: dias[dias.length - 1]?.dataAula || null
         });
     }
 

@@ -15,7 +15,9 @@
 const prisma = require('../config/prisma');
 const {
     calcularAlunosEmRiscoSemRecuperados,
-    ehSituacaoAtiva
+    ehSituacaoAtiva,
+    converterDataAula,
+    diaNoFusoDaEscola
 } = require('../controllers/alunoController');
 const { renderizarMensagem, nomeResponsavel, STATUS_JA_RECEBEU } = require('./whatsappLote');
 
@@ -93,9 +95,22 @@ async function avaliar(sessao, agora = new Date()) {
         }),
         prisma.mensagemWhatsapp.findMany({
             where: { matricula: { in: matriculas } },
-            select: { matricula: true, codigoTurma: true, primeiraFalta: true, status: true, falhaDefinitiva: true, contatoId: true, enviadaEm: true }
+            select: { id: true, matricula: true, codigoTurma: true, primeiraFalta: true, status: true, falhaDefinitiva: true, contatoId: true, enviadaEm: true }
         })
     ]);
+
+    // A última resposta de cada mensagem: se for promessa de voltar, a chamada
+    // seguinte diz se ele cumpriu. Vale a ÚLTIMA — quem escreveu "amanhã vou" e
+    // depois "não vai dar" não prometeu nada.
+    const respostas = await prisma.respostaWhatsapp.findMany({
+        where: { mensagemId: { in: mensagens.map((m) => m.id) }, interpretacao: { not: 'ignorada' } },
+        select: { mensagemId: true, interpretacao: true, recebidaEm: true },
+        orderBy: { recebidaEm: 'desc' }
+    });
+    const ultimaRespostaPorMensagem = new Map();
+    for (const resposta of respostas) {
+        if (!ultimaRespostaPorMensagem.has(resposta.mensagemId)) ultimaRespostaPorMensagem.set(resposta.mensagemId, resposta);
+    }
 
     const alunoPorMatricula = new Map(alunos.map((a) => [a.matricula, a]));
     const statusContatoPorId = new Map(contatos.map((c) => [c.id, c.status]));
@@ -135,9 +150,20 @@ async function avaliar(sessao, agora = new Date()) {
             recebeuNaSemana.add(item.matricula);
         }
 
+        // Promessa quebrada = ele continua em risco e faltou num dia de aula
+        // DEPOIS do dia em que prometeu. Faltar no próprio dia não conta: a
+        // promessa costuma ser "amanhã eu vou", feita à noite.
+        let promessa = null;
+        const resposta = situacao === 'enviada' ? ultimaRespostaPorMensagem.get(mensagem.id) : null;
+        if (resposta?.interpretacao === 'promessa') {
+            const diaDaPromessa = converterDataAula(diaNoFusoDaEscola(resposta.recebidaEm));
+            promessa = { em: resposta.recebidaEm, quebrou: converterDataAula(item.ultimaFalta) > diaDaPromessa };
+        }
+
         return {
             ...item,
             situacao,
+            promessa,
             telefone: aluno?.telefone || null,
             // Só faz sentido pra quem recebeu: o contato criado no envio vira
             // "respondido" quando a resposta do aluno chega pelo webhook.
@@ -157,11 +183,15 @@ function resumir(itens) {
     }
     const porSituacao = Object.fromEntries(ORDEM_SITUACAO.map((s) => [s, 0]));
     let responderam = 0;
+    let prometeram = 0;
+    let quebraram = 0;
     for (const item of porMatricula.values()) {
         porSituacao[item.situacao]++;
         if (item.respondeu) responderam++;
+        if (item.promessa) prometeram++;
+        if (item.promessa?.quebrou) quebraram++;
     }
-    return { emRisco: porMatricula.size, porSituacao, responderam };
+    return { emRisco: porMatricula.size, porSituacao, responderam, prometeram, quebraram };
 }
 
 // Coloca na fila do lote automático quem está como "receber". Cria o lote se a
