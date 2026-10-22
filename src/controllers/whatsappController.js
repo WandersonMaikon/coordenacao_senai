@@ -17,6 +17,9 @@ async function buscarOuCriarSessao(usuarioId) {
 }
 
 function respostaErro(res, erro) {
+    // Sem esta linha, uma falha ao conectar aparecia na tela e em lugar nenhum do
+    // log — e é no log que se descobre se o problema era o OpenWA travado.
+    console.error('[whatsapp] erro na rota:', erro.message);
     if (erro instanceof openwa.ErroOpenWA) {
         return res.status(erro.status === 503 || erro.status === null ? 503 : 502).json({ status: 'erro', mensagem: erro.message });
     }
@@ -168,6 +171,9 @@ async function conectarSessao(req, res) {
         }
 
         if (!sessao.sessionId) {
+            // Sessão perdida numa tentativa anterior (criação que passou do tempo
+            // limite, desconexão que não terminou) sai antes de criar outra.
+            await whatsappEnvio.limparSessoesOrfas().catch((erro) => console.warn('[whatsapp] limpeza de sessões:', erro.message));
             const criada = await openwa.criarSessao(`coor360-${usuario.usuario}-${usuario.id}`);
             sessao = await prisma.whatsappSessao.update({ where: { id: sessao.id }, data: { sessionId: criada.id, status: criada.status } });
         }

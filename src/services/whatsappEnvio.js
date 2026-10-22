@@ -324,11 +324,53 @@ async function tratarFalhaEnvio(erro, mensagem, sessao, lote, etapa) {
     return atualizarLote(lote, { aguardando: `Falha ${etapa} — nova tentativa em 1 minuto.`, proximoEnvioEm: new Date(Date.now() + ESPERA_FALHA_TEMPORARIA_MS) });
 }
 
+// ───────────── Sessões órfãs no OpenWA ─────────────
+
+// Sessão do OpenWA que nenhum usuário do painel conhece mais. Nasce quando o
+// OpenWA está lento: a criação passa do nosso tempo limite mas acontece lá, ou o
+// "Desconectar" não consegue apagar a sessão e o sistema esquece o id mesmo assim.
+// Ela fica gerando QR a cada 20s com um navegador inteiro aberto — visto em
+// produção em 22/10/2026 com três delas, o que deixava o OpenWA lento e criava
+// mais falhas (e mais órfãs).
+//
+// Nunca apaga sessão conectada ("ready": tem um celular vinculado, melhor alguém
+// olhar) nem criada há menos de MINUTOS_SESSAO_NOVA (pode ser a que um "Conectar"
+// acabou de criar e ainda não gravou no banco).
+const MINUTOS_SESSAO_NOVA = 10;
+const LIMPAR_ORFAS_MS = 30 * 60 * 1000;
+
+async function limparSessoesOrfas(agora = new Date()) {
+    const [remotas, locais] = await Promise.all([
+        openwa.listarSessoes(),
+        prisma.whatsappSessao.findMany({ where: { sessionId: { not: null } }, select: { sessionId: true } })
+    ]);
+    const conhecidas = new Set(locais.map((s) => s.sessionId));
+    let apagadas = 0;
+    for (const remota of Array.isArray(remotas) ? remotas : []) {
+        if (!remota?.id || conhecidas.has(remota.id)) continue;
+        if (remota.status === 'ready') {
+            console.warn(`[whatsapp] sessão ${remota.id} está conectada no OpenWA mas não pertence a nenhum usuário — não apagada.`);
+            continue;
+        }
+        const criadaEm = new Date(remota.createdAt || 0).getTime();
+        if (agora.getTime() - criadaEm < MINUTOS_SESSAO_NOVA * 60 * 1000) continue;
+        try {
+            await openwa.apagarSessao(remota.id);
+            apagadas++;
+        } catch (erro) {
+            console.warn(`[whatsapp] não foi possível apagar a sessão órfã ${remota.id}:`, erro.message);
+        }
+    }
+    if (apagadas) console.log(`[whatsapp] ${apagadas} sessão(ões) órfã(s) apagada(s) no OpenWA.`);
+    return apagadas;
+}
+
 // ───────────── Loop ─────────────
 
 let rodando = false;
 let timer = null;
 let ultimoAbastecimento = 0;
+let ultimaLimpeza = 0;
 
 async function abastecerSeHora(agora = Date.now()) {
     if (agora - ultimoAbastecimento < ABASTECER_MS) return;
@@ -345,6 +387,10 @@ async function rodada() {
             await abastecerSeHora();
         } catch (erro) {
             console.error('[whatsapp] erro ao abastecer a fila automática:', erro.message);
+        }
+        if (Date.now() - ultimaLimpeza >= LIMPAR_ORFAS_MS) {
+            ultimaLimpeza = Date.now();
+            await limparSessoesOrfas().catch((erro) => console.warn('[whatsapp] limpeza de sessões:', erro.message));
         }
         const lotes = await prisma.loteWhatsapp.findMany({ where: { status: 'em_andamento' } });
         for (const lote of lotes) {
@@ -412,6 +458,7 @@ module.exports = {
     loteEmAndamento,
     pararLote,
     contarEnvios,
+    limparSessoesOrfas,
     // exportados pros testes e pra tela
     partesLocais,
     janelaAberta,

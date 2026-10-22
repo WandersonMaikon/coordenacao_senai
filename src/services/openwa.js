@@ -66,6 +66,7 @@ async function chamar(metodo, caminho, corpo) {
     return dados;
 }
 
+const listarSessoes = () => chamar('GET', '/sessions');
 const criarSessao = (nome) => chamar('POST', '/sessions', { name: nome, config: { autoReconnect: true } });
 const obterSessao = (sessionId) => chamar('GET', `/sessions/${encodeURIComponent(sessionId)}`);
 const iniciarSessao = (sessionId) => chamar('POST', `/sessions/${encodeURIComponent(sessionId)}/start`);
@@ -97,6 +98,7 @@ const registrarWebhook = (sessionId, { url, eventos, segredo }) =>
 module.exports = {
     ErroOpenWA,
     configurado,
+    listarSessoes,
     criarSessao,
     obterSessao,
     iniciarSessao,
