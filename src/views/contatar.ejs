@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <%- include('partials/head', { titulo: 'Precisam de contato' }) %>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+</head>
+<body>
+  <div class="page-layout">
+
+    <%- include('partials/header') %>
+
+    <%- include('partials/sidebar', { paginaAtual: 'contatar' }) %>
+
+    <main class="app-wrapper">
+      <div class="container-fluid">
+
+        <div class="app-page-head d-flex flex-wrap gap-3 align-items-center justify-content-between">
+          <div class="clearfix">
+            <h1 class="app-page-title">Precisam de contato</h1>
+            <span>Alunos em risco que o WhatsApp automático não resolve: precisam de uma pessoa — ligação, WhatsApp pessoal ou conversa presencial</span>
+          </div>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-body">
+            <form id="formFiltro" class="row g-3 align-items-end">
+              <div class="col-auto">
+                <label class="form-label" for="filtroTurma">Turma</label>
+                <select class="form-select" id="filtroTurma">
+                  <option value="">Todas</option>
+                </select>
+              </div>
+              <div class="col-auto">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-filter me-1"></i> Filtrar</button>
+              </div>
+            </form>
+            <div class="small text-body-secondary mt-3">
+              <i class="bi bi-info-circle me-1"></i>
+              O aluno sai desta lista sozinho quando volta a ter presença na chamada, ou quando alguém registra um
+              contato como <em>Respondido</em>, <em>Acompanhar</em> ou <em>Recuperado</em>. Tentativa sem sucesso
+              (<em>Sem resposta</em>, <em>Não foi possível contatar</em>) mantém o aluno aqui, com a tentativa anotada.
+            </div>
+          </div>
+        </div>
+
+        <div id="statusCarregamento" class="alert alert-info">Carregando...</div>
+        <div id="resumoMotivos" class="d-flex flex-wrap gap-2 mb-3"></div>
+        <div id="listaAlunos"></div>
+
+      </div>
+    </main>
+
+    <%- include('partials/footer') %>
+
+  </div>
+
+  <script src="/js/turmas.js"></script>
+  <script>
+    // Mesma lista de src/config/motivos.js (vem do viewController).
+    const LISTA_MOTIVOS = <%- JSON.stringify(motivos) %>;
+    const MOTIVOS = Object.fromEntries(LISTA_MOTIVOS.map((m) => [m.chave, m.rotulo]));
+
+    // Mesmos valores do formulário da /risco.
+    const CANAIS = { ligacao: 'Ligação', whatsapp: 'WhatsApp', presencial: 'Presencial' };
+    const STATUS = {
+      respondido: 'Respondido',
+      acompanhar: 'Acompanhar',
+      recuperado: 'Recuperado',
+      sem_resposta: 'Sem resposta',
+      nunca_contato: 'Não foi possível contatar'
+    };
+    const COR_PRIORIDADE = { 1: 'danger', 2: 'danger', 3: 'warning', 4: 'primary', 5: 'secondary' };
+
+    const token = localStorage.getItem('coor360_token');
+    if (!token) {
+      window.location.href = '/login';
+    }
+
+    function sair() {
+      localStorage.removeItem('coor360_token');
+      window.location.href = '/login';
+    }
+    document.getElementById('btnSair').addEventListener('click', sair);
+    document.getElementById('btnSairMenu').addEventListener('click', sair);
+
+    const html = document.documentElement;
+
+    document.getElementById('btnToggleMenu').addEventListener('click', function () {
+      this.classList.toggle('active');
+      if (window.matchMedia('(max-width: 1199.98px)').matches) {
+        document.getElementById('menubar').classList.toggle('open');
+      } else if (html.getAttribute('data-app-sidebar') === 'mini') {
+        html.removeAttribute('data-app-sidebar');
+      } else {
+        html.setAttribute('data-app-sidebar', 'mini');
+      }
+    });
+
+    const btnTema = document.getElementById('btnTema');
+    function aplicarTema(tema) {
+      html.setAttribute('data-bs-theme', tema);
+      btnTema.classList.toggle('active', tema === 'dark');
+    }
+    aplicarTema(localStorage.getItem('coor360_tema') || 'light');
+    btnTema.addEventListener('click', () => {
+      const atual = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+      aplicarTema(atual);
+      localStorage.setItem('coor360_tema', atual);
+    });
+
+    // Nome, turma e a resposta do aluno entram via innerHTML.
+    function escaparHtml(texto) {
+      return String(texto ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+    }
+
+    function formatarTelefone(telefone) {
+      if (!telefone) return '';
+      if (telefone.length === 11) return `(${telefone.slice(0, 2)}) ${telefone.slice(2, 7)}-${telefone.slice(7)}`;
+      if (telefone.length === 10) return `(${telefone.slice(0, 2)}) ${telefone.slice(2, 6)}-${telefone.slice(6)}`;
+      return telefone;
+    }
+
+    function formatarDataHora(dataIso) {
+      return new Date(dataIso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    }
+
+    // "há 3 dias" — o quanto o aluno espera, que é o que ordena a lista.
+    function haQuanto(dataIso) {
+      const dias = Math.floor((Date.now() - new Date(dataIso).getTime()) / 86400000);
+      if (dias <= 0) return 'hoje';
+      if (dias === 1) return 'há 1 dia';
+      return `há ${dias} dias`;
+    }
+
+    async function chamarApi(caminho, opcoes = {}) {
+      const resposta = await fetch(caminho, {
+        ...opcoes,
+        headers: {
+          Authorization: 'Bearer ' + token,
+          ...(opcoes.body ? { 'Content-Type': 'application/json' } : {})
+        }
+      });
+      if (resposta.status === 401) {
+        localStorage.removeItem('coor360_token');
+        window.location.href = '/login';
+        throw new Error('Sessão expirada');
+      }
+      if (!(resposta.headers.get('content-type') || '').includes('application/json')) {
+        throw new Error(`O servidor não respondeu como esperado (HTTP ${resposta.status}). Aguarde alguns segundos e tente de novo.`);
+      }
+      return resposta.json();
+    }
+
+    let alunos = [];
+
+    function formularioContato(indice) {
+      const opcoes = (mapa, selecionado) => Object.entries(mapa)
+        .map(([valor, rotulo]) => `<option value="${valor}" ${valor === selecionado ? 'selected' : ''}>${escaparHtml(rotulo)}</option>`).join('');
+      const aluno = alunos[indice];
+      return `
+        <form class="border-top pt-3 mt-3" data-form-contato="${indice}" hidden>
+          <div class="row g-2">
+            <div class="col-sm-4 col-lg-2">
+              <label class="form-label small">Canal</label>
+              <select class="form-select form-select-sm" name="canal">${opcoes(CANAIS, 'ligacao')}</select>
+            </div>
+            <div class="col-sm-4 col-lg-3">
+              <label class="form-label small">Resultado</label>
+              <select class="form-select form-select-sm" name="status">${opcoes(STATUS, 'respondido')}</select>
+            </div>
+            <div class="col-sm-4 col-lg-3">
+              <label class="form-label small">Motivo da falta</label>
+              <select class="form-select form-select-sm" name="motivo">
+                <option value="">Não informado</option>
+                ${opcoes(MOTIVOS, aluno.motivoSugerido || '')}
+              </select>
+            </div>
+            <div class="col-lg-4">
+              <label class="form-label small">Observação</label>
+              <input type="text" class="form-control form-control-sm" name="observacao" maxlength="1000" placeholder="O que foi conversado">
+            </div>
+          </div>
+          <div class="mt-2 d-flex gap-2">
+            <button type="submit" class="btn btn-sm btn-primary">Salvar contato</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-cancelar="${indice}">Cancelar</button>
+          </div>
+        </form>`;
+    }
+
+    function cartaoAluno(aluno, indice) {
+      const cor = COR_PRIORIDADE[aluno.prioridade] || 'secondary';
+      const turmas = aluno.turmas.map((t) =>
+        `${escaparHtml(nomeTurmaLimpo(t.nomeTurma) || t.codigoTurma)} <span class="text-body-secondary">· ${t.diasSemVir} dia(s) de aula sem vir</span>`).join('<br>');
+      const telefone = aluno.telefone
+        ? `<a href="tel:+55${aluno.telefone}" class="me-2"><i class="bi bi-telephone-fill me-1"></i>${formatarTelefone(aluno.telefone)}</a>
+           <a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success" title="Abrir conversa no WhatsApp"><i class="bi bi-whatsapp"></i></a>`
+        : '<span class="text-body-secondary">Sem telefone — procurar presencialmente ou atualizar em <a href="/telefones">Telefones</a></span>';
+      const sugestao = aluno.motivoSugerido
+        ? `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" title="Sugerido pelo sistema a partir da resposta">${escaparHtml(MOTIVOS[aluno.motivoSugerido] || aluno.motivoSugerido)}?</span>`
+        : '';
+      const tentativa = aluno.ultimaTentativa
+        ? `<div class="small text-body-secondary mt-2"><i class="bi bi-arrow-repeat me-1"></i>Última tentativa: ${formatarDataHora(aluno.ultimaTentativa.em)} por ${escaparHtml(aluno.ultimaTentativa.por || '—')} (${escaparHtml(CANAIS[aluno.ultimaTentativa.canal] || aluno.ultimaTentativa.canal || '')}) — ${escaparHtml(STATUS[aluno.ultimaTentativa.status] || aluno.ultimaTentativa.status)}</div>`
+        : '';
+
+      return `
+        <div class="card mb-3 border-start border-4 border-${cor}">
+          <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between gap-2">
+              <div>
+                <div class="fw-semibold">${escaparHtml(aluno.nomeAluno || '—')} <span class="small text-body-secondary fw-normal">${escaparHtml(aluno.matricula)}</span></div>
+                <div class="small mt-1">${turmas}</div>
+              </div>
+              <div class="text-end">
+                <span class="badge bg-${cor}-subtle text-${cor}-emphasis border border-${cor}-subtle">${escaparHtml(aluno.rotulo)}</span>${sugestao}
+                <div class="small text-body-secondary mt-1">${haQuanto(aluno.desde)} (${formatarDataHora(aluno.desde)})</div>
+              </div>
+            </div>
+            ${aluno.detalhe ? `<div class="p-2 rounded-3 small mt-2" style="background: #dcf8c6; color: #111; max-width: 40rem;"><i class="bi bi-chat-left-text me-1"></i>"${escaparHtml(aluno.detalhe)}"</div>` : ''}
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+              <div class="small">${telefone}</div>
+              <button type="button" class="btn btn-sm btn-outline-primary" data-abrir="${indice}"><i class="bi bi-journal-plus me-1"></i>Registrar contato</button>
+            </div>
+            ${tentativa}
+            ${formularioContato(indice)}
+          </div>
+        </div>`;
+    }
+
+    function desenharResumo(motivosLista) {
+      const contagem = {};
+      alunos.forEach((a) => { contagem[a.motivo] = (contagem[a.motivo] || 0) + 1; });
+      document.getElementById('resumoMotivos').innerHTML = Object.entries(motivosLista)
+        .filter(([chave]) => contagem[chave])
+        .map(([chave, m]) => {
+          const cor = COR_PRIORIDADE[m.prioridade] || 'secondary';
+          return `<span class="badge rounded-pill bg-${cor}-subtle text-${cor}-emphasis border border-${cor}-subtle px-3 py-2">${escaparHtml(m.rotulo)}: <strong>${contagem[chave]}</strong></span>`;
+        }).join('');
+    }
+
+    async function carregar() {
+      const statusEl = document.getElementById('statusCarregamento');
+      const turma = document.getElementById('filtroTurma').value;
+      statusEl.className = 'alert alert-info';
+      statusEl.textContent = 'Carregando...';
+      try {
+        const r = await chamarApi(`/contatos/pendentes${turma ? `?turma=${encodeURIComponent(turma)}` : ''}`);
+        if (r.status !== 'ok') throw new Error(r.mensagem);
+        alunos = r.dados;
+        desenharResumo(r.motivosLista);
+        if (alunos.length === 0) {
+          statusEl.className = 'alert alert-success';
+          statusEl.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Ninguém precisando de contato agora.';
+        } else {
+          statusEl.className = 'small text-body-secondary mb-2';
+          statusEl.textContent = `${alunos.length} aluno(s), do mais urgente para o menos urgente; dentro de cada motivo, quem espera há mais tempo vem primeiro.`;
+        }
+        document.getElementById('listaAlunos').innerHTML = alunos.map(cartaoAluno).join('');
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          statusEl.className = 'alert alert-warning';
+          statusEl.textContent = `Não foi possível carregar a lista: ${erro.message}`;
+        }
+      }
+    }
+
+    document.getElementById('listaAlunos').addEventListener('click', (evento) => {
+      const abrir = evento.target.closest('[data-abrir]');
+      const cancelar = evento.target.closest('[data-cancelar]');
+      if (abrir) {
+        const form = document.querySelector(`[data-form-contato="${abrir.dataset.abrir}"]`);
+        form.hidden = false;
+        abrir.hidden = true;
+        form.querySelector('[name="observacao"]').focus();
+      } else if (cancelar) {
+        document.querySelector(`[data-form-contato="${cancelar.dataset.cancelar}"]`).hidden = true;
+        document.querySelector(`[data-abrir="${cancelar.dataset.cancelar}"]`).hidden = false;
+      }
+    });
+
+    document.getElementById('listaAlunos').addEventListener('submit', async (evento) => {
+      const form = evento.target.closest('[data-form-contato]');
+      if (!form) return;
+      evento.preventDefault();
+      const aluno = alunos[Number(form.dataset.formContato)];
+      const botao = form.querySelector('button[type="submit"]');
+      botao.disabled = true;
+      try {
+        const r = await chamarApi('/contatos', {
+          method: 'POST',
+          body: JSON.stringify({
+            matricula: aluno.matricula,
+            nomeAluno: aluno.nomeAluno,
+            canal: form.canal.value,
+            status: form.status.value,
+            motivo: form.motivo.value || null,
+            observacao: form.observacao.value.trim() || null
+          })
+        });
+        if (r.status !== 'ok') throw new Error(r.mensagem);
+        const resolveu = ['respondido', 'acompanhar', 'recuperado'].includes(form.status.value);
+        notificar.ok(resolveu ? `Contato registrado. ${aluno.nomeAluno || 'O aluno'} saiu da lista.` : 'Tentativa registrada. O aluno continua na lista.');
+        await carregar();
+      } catch (erro) {
+        botao.disabled = false;
+        if (erro.message !== 'Sessão expirada') notificar.erro(erro.message || 'Não foi possível registrar o contato.');
+      }
+    });
+
+    document.getElementById('formFiltro').addEventListener('submit', (evento) => {
+      evento.preventDefault();
+      carregar();
+    });
+
+    preencherSelectTurmas(document.getElementById('filtroTurma'), chamarApi);
+    carregar();
+  </script>
+</body>
+
+</html>

@@ -25,6 +25,10 @@ function paginaRecuperado(req, res) {
     res.render('recuperado', { motivos: MOTIVOS });
 }
 
+function paginaContatar(req, res) {
+    res.render('contatar', { motivos: MOTIVOS });
+}
+
 function paginaWhatsapp(req, res) {
     res.render('whatsapp');
 }
@@ -41,4 +45,4 @@ function paginaUsuarios(req, res) {
     res.render('usuarios');
 }
 
-module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaRecuperado, paginaWhatsapp, paginaImportarTelefones, paginaTelefones, paginaUsuarios };
+module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaRecuperado, paginaContatar, paginaWhatsapp, paginaImportarTelefones, paginaTelefones, paginaUsuarios };

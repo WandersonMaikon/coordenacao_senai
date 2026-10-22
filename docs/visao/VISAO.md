@@ -202,7 +202,8 @@ prometeram voltar, estão sem resposta, estão na fila do dia, e quantos não po
 1. ~~Número do sistema e envio automático, sem "assumir turma" nem botão "Iniciar
    envio", com a tela de acompanhamento.~~ (no ar desde 22/10/2026)
 2. Regra da semana (2ª mensagem 7 dias depois) e uma mensagem por aluno.
-3. Tela "Precisam de contato", incluindo quem pediu SAIR.
+3. ~~Tela "Precisam de contato", incluindo quem pediu SAIR.~~ (feito em 22/10/2026, rota
+   `/contatar`)
 4. ~~Pergunta fechada na mensagem, reconhecimento do "vou voltar", resposta automática e
    conferência da promessa pela chamada seguinte.~~ (feito em 22/10/2026; quem prometeu e
    faltou aparece na tela de envio automático até a tela "Precisam de contato" existir)

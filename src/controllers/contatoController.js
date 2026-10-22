@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { MOTIVOS } = require('../config/motivos');
+const { listarPrecisamContato, MOTIVOS_LISTA } = require('../services/precisamContato');
 
 // Registra um contato feito pela coordenação com um aluno (em risco ou não).
 // Faz upsert do Aluno antes, porque a FK exige que ele exista e nem todo aluno
@@ -245,4 +246,16 @@ async function resumoMotivos(req, res) {
     }
 }
 
-module.exports = { registrar, listarPorAluno, atualizar, confirmarMotivo, remover, resumoMotivos };
+// GET /contatos/pendentes?turma= — a lista "Precisam de contato" (tela /contatar):
+// quem está em risco e o robô do WhatsApp não resolve. Calculada na hora (ver
+// src/services/precisamContato.js).
+async function listarPendentes(req, res) {
+    try {
+        const dados = await listarPrecisamContato({ turma: req.query.turma || null });
+        res.json({ status: 'ok', total: dados.length, dados, motivosLista: MOTIVOS_LISTA });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+module.exports = { registrar, listarPorAluno, atualizar, confirmarMotivo, remover, resumoMotivos, listarPendentes };
