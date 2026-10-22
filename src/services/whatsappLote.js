@@ -24,6 +24,14 @@ const MENSAGEM_PADRAO =
     'Sentimos sua falta nas últimas {dias} aulas da turma {turma}. Está tudo bem? ' +
     'Queremos entender o que aconteceu para ajudar você a continuar o curso.';
 
+// Texto da 2ª mensagem (7 dias depois da 1ª, sem resposta). Fixo por enquanto —
+// só a 1ª é editável na aba "Mensagem e limites". Deixa claro que é a última
+// automática: depois dela, quem procura o aluno é uma pessoa.
+const MENSAGEM_SEGUNDA =
+    'Oi, {primeiro_nome}! É {responsavel} de novo, da coordenação do SENAI Ji-Paraná. ' +
+    'Ainda não te vimos nas aulas da turma {turma} e queremos muito que você continue no curso. ' +
+    'Esta é a última mensagem automática: se preferir, responda aqui e alguém da coordenação fala com você.';
+
 const VARIAVEIS = ['{primeiro_nome}', '{turma}', '{dias}', '{responsavel}'];
 
 // Anexado pelo sistema, fora do campo editável — o "SAIR" é a saída do aluno e
@@ -130,6 +138,7 @@ module.exports = {
     TETOS,
     AQUECIMENTO,
     MENSAGEM_PADRAO,
+    MENSAGEM_SEGUNDA,
     VARIAVEIS,
     blocoMenu,
     renderizarMensagem,

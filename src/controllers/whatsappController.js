@@ -421,7 +421,7 @@ async function obterAutomatico(req, res) {
                     where: { loteId: lote.id },
                     orderBy: { atualizadoEm: 'desc' },
                     take: 30,
-                    select: { id: true, nomeAluno: true, codigoTurma: true, nomeTurma: true, status: true, erro: true, enviadaEm: true, atualizadoEm: true }
+                    select: { id: true, nomeAluno: true, codigoTurma: true, nomeTurma: true, tentativa: true, status: true, erro: true, enviadaEm: true, atualizadoEm: true }
                 })
                 : [],
             lote

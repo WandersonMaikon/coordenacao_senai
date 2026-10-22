@@ -201,7 +201,8 @@ prometeram voltar, estão sem resposta, estão na fila do dia, e quantos não po
    mensagem real, e sem isso o funil não funciona.
 1. ~~Número do sistema e envio automático, sem "assumir turma" nem botão "Iniciar
    envio", com a tela de acompanhamento.~~ (no ar desde 22/10/2026)
-2. Regra da semana (2ª mensagem 7 dias depois) e uma mensagem por aluno.
+2. ~~Regra da semana (2ª mensagem 7 dias depois) e uma mensagem por aluno.~~ (feito em
+   23/10/2026; sem resposta 3 dias depois da 2ª, o aluno vai para "Precisam de contato")
 3. ~~Tela "Precisam de contato", incluindo quem pediu SAIR.~~ (feito em 22/10/2026, rota
    `/contatar`)
 4. ~~Pergunta fechada na mensagem, reconhecimento do "vou voltar", resposta automática e

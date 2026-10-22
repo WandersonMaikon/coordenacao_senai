@@ -816,7 +816,9 @@
         <p class="text-body-secondary small mb-3">
           Quando ligado, o sistema confere a lista de risco a cada 5 minutos e manda a mensagem sozinho para
           quem está em risco e ainda não recebeu, respeitando o horário e os limites do número. Cada aluno
-          recebe no máximo uma mensagem automática por semana. Quem conversou com a coordenação nos últimos
+          recebe no máximo uma mensagem automática por semana e duas por sumiço: se não responder e continuar
+          faltando, a 2ª (e última) sai 7 dias depois da 1ª; daí em diante o caso vai para
+          <a href="/contatar">Precisam de contato</a>. Quem conversou com a coordenação nos últimos
           ${r.diasDesdeContato} dias não recebe; passado esse prazo, se continuar faltando, recebe.
         </p>`;
 
@@ -859,7 +861,7 @@
         area.innerHTML = '<h5 class="mb-1">Acompanhamento</h5><p class="text-body-secondary mb-0">Os números aparecem aqui quando o envio automático estiver ligado.</p>';
         return;
       }
-      const { emRisco, porSituacao: p, responderam, prometeram, quebraram } = r.resumo;
+      const { emRisco, porSituacao: p, responderam, prometeram, quebraram, segundas } = r.resumo;
       const pct = (n) => (emRisco ? Math.round((n / emRisco) * 100) : 0);
       const naFila = p.fila + p.receber;
       const naoPodem = p.sair + p.sem_whatsapp + p.sem_telefone + p.situacao;
@@ -918,7 +920,7 @@
         <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
             <tbody>
-              ${linha('success', 'Mensagem enviada', p.enviada, partes([['responderam', responderam], ['prometeram voltar', prometeram], ['prometeram e faltaram de novo', quebraram]]) || '0 respondeu(ram)')}
+              ${linha('success', 'Mensagem enviada', p.enviada, partes([['responderam', responderam], ['prometeram voltar', prometeram], ['prometeram e faltaram de novo', quebraram], ['receberam a 2ª mensagem', segundas]]) || '0 respondeu(ram)')}
               ${linha('info', 'Na fila de envio', naFila)}
               ${linha('secondary', 'Com a coordenação', coordenacao, `falou com o aluno nos últimos ${r.diasDesdeContato} dias`)}
               ${linha('warning', 'Não podem receber WhatsApp', naoPodem, partes([['pediu SAIR', p.sair], ['sem WhatsApp / falha', p.sem_whatsapp], ['sem telefone', p.sem_telefone], ['situação não ativa', p.situacao]]))}
@@ -966,7 +968,7 @@
                 <tbody>
                   ${r.mensagens.map((m) => `
                     <tr>
-                      <td>${escaparHtml(m.nomeAluno || '—')}</td>
+                      <td>${escaparHtml(m.nomeAluno || '—')}${m.tentativa === 2 ? ' <span class="badge bg-secondary-subtle text-secondary-emphasis border" title="Segunda e última mensagem automática deste sumiço">2ª</span>' : ''}</td>
                       <td class="small">${escaparHtml(nomeTurmaLimpo(m.nomeTurma) || m.codigoTurma)}</td>
                       <td>${badgeMensagem(m.status, m.erro)}</td>
                       <td class="text-end small text-nowrap">${m.enviadaEm ? formatarDataHora(m.enviadaEm) : '—'}</td>

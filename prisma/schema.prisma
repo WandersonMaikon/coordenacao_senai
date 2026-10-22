@@ -126,8 +126,8 @@ model LoteWhatsapp {
 }
 
 // ─────────────────────────────────────────
-// Uma mensagem automática pra um aluno. Único por (matrícula, turma, primeiraFalta):
-// uma mensagem por episódio de risco. Cancelada ou falha temporária pode voltar pra
+// Uma mensagem automática pra um aluno. Único por (matrícula, turma, primeiraFalta,
+// tentativa): até duas mensagens por episódio de risco. Cancelada ou falha temporária pode voltar pra
 // fila num lote novo (a mesma linha é reaproveitada); enviada nunca.
 // ─────────────────────────────────────────
 model MensagemWhatsapp {
@@ -141,6 +141,9 @@ model MensagemWhatsapp {
   nomeTurma       String?   @map("nome_turma") @db.VarChar(255)
   // dd/mm/aaaa, igual a lancamentos.data_aula — identifica o episódio de risco.
   primeiraFalta   String    @map("primeira_falta") @db.VarChar(20)
+  // 1 = primeira mensagem do episódio; 2 = a segunda, 7 dias depois, se o aluno
+  // não respondeu e continua faltando (whatsappAutomatico.js). Não há 3ª.
+  tentativa       Int       @default(1)
   telefone        String    @db.VarChar(20)
   texto           String    @db.Text
   // pendente | enviando | enviada | entregue | lida | falhou | cancelada
@@ -156,7 +159,7 @@ model MensagemWhatsapp {
   criadoEm        DateTime  @default(now()) @map("criado_em")
   atualizadoEm    DateTime  @updatedAt @map("atualizado_em")
 
-  @@unique([matricula, codigoTurma, primeiraFalta])
+  @@unique([matricula, codigoTurma, primeiraFalta, tentativa])
   @@index([loteId, status])
   @@index([sessaoId, enviadaEm])
   @@index([usuarioId])

@@ -19,13 +19,18 @@ const {
     converterDataAula,
     diaNoFusoDaEscola
 } = require('../controllers/alunoController');
-const { renderizarMensagem, nomeResponsavel, STATUS_JA_RECEBEU } = require('./whatsappLote');
+const { renderizarMensagem, nomeResponsavel, STATUS_JA_RECEBEU, MENSAGEM_SEGUNDA } = require('./whatsappLote');
 
 const DIA_MS = 24 * 60 * 60 * 1000;
 
 // No máximo uma mensagem automática por aluno a cada 7 dias, mesmo que ele esteja
 // em risco em duas turmas.
 const DIAS_ENTRE_MENSAGENS = 7;
+
+// A 2ª (e última) mensagem automática sai este tempo depois da 1ª, se o aluno não
+// respondeu nada e continua faltando. Depois dela o robô para: o caso vai para
+// "Precisam de contato" (precisamContato.js).
+const DIAS_PARA_SEGUNDA = 7;
 
 // Contato da coordenação (respondido/acompanhar) nos últimos 7 dias impede o
 // WhatsApp: alguém está falando com o aluno. Passados 7 dias e ele continua
@@ -95,7 +100,7 @@ async function avaliar(sessao, agora = new Date()) {
         }),
         prisma.mensagemWhatsapp.findMany({
             where: { matricula: { in: matriculas } },
-            select: { id: true, matricula: true, codigoTurma: true, primeiraFalta: true, status: true, falhaDefinitiva: true, contatoId: true, enviadaEm: true }
+            select: { id: true, matricula: true, codigoTurma: true, primeiraFalta: true, tentativa: true, status: true, falhaDefinitiva: true, contatoId: true, enviadaEm: true }
         })
     ]);
 
@@ -118,7 +123,7 @@ async function avaliar(sessao, agora = new Date()) {
     for (const contato of contatos) {
         if (!ultimoContatoPorMatricula.has(contato.matricula)) ultimoContatoPorMatricula.set(contato.matricula, contato);
     }
-    const mensagemPorEpisodio = new Map(mensagens.map((m) => [chaveEpisodio(m), m]));
+    const mensagemPorEpisodio = new Map(mensagens.map((m) => [`${chaveEpisodio(m)}|${m.tentativa}`, m]));
 
     // Quem já recebeu (ou está na fila) nos últimos 7 dias, por qualquer turma.
     const desdeMs = agora.getTime() - DIAS_ENTRE_MENSAGENS * DIA_MS;
@@ -134,27 +139,43 @@ async function avaliar(sessao, agora = new Date()) {
         const aluno = alunoPorMatricula.get(item.matricula);
         const ultimoContato = ultimoContatoPorMatricula.get(item.matricula);
         const contatoRecente = ultimoContato && ultimoContato.criadoEm.getTime() >= contatoDesdeMs ? ultimoContato : null;
-        const mensagem = mensagemPorEpisodio.get(chaveEpisodio(item));
+        const primeira = mensagemPorEpisodio.get(`${chaveEpisodio(item)}|1`);
+        const segunda = mensagemPorEpisodio.get(`${chaveEpisodio(item)}|2`);
+        const recebeu = (m) => Boolean(m) && STATUS_JA_RECEBEU.includes(m.status);
+        const naFila = (m) => Boolean(m) && ['pendente', 'enviando'].includes(m.status);
+        // A resposta mais recente a qualquer uma das duas mensagens.
+        const resposta = [segunda, primeira]
+            .map((m) => m && ultimaRespostaPorMensagem.get(m.id))
+            .filter(Boolean)
+            .sort((a, b) => b.recebidaEm - a.recebidaEm)[0] || null;
+        // O que impede uma mensagem (1ª ou 2ª) de sair, na ordem em que a tela explica.
+        const impedimento = () => {
+            if (!aluno || !aluno.telefone) return 'sem_telefone';
+            if (!ehSituacaoAtiva(aluno.situacao)) return 'situacao';
+            if (aluno.whatsappOptOut) return 'sair';
+            if (contatoRecente && !STATUS_CONTATO_NOVA_TENTATIVA.includes(contatoRecente.status)) return 'contato_humano';
+            if (recebeuNaSemana.has(item.matricula)) return 'semana';
+            return null;
+        };
 
         let situacao;
-        if (mensagem && STATUS_JA_RECEBEU.includes(mensagem.status)) situacao = 'enviada';
-        else if (mensagem && ['pendente', 'enviando'].includes(mensagem.status)) situacao = 'fila';
-        else if (mensagem && mensagem.status === 'falhou' && mensagem.falhaDefinitiva) situacao = 'sem_whatsapp';
-        else if (!aluno || !aluno.telefone) situacao = 'sem_telefone';
-        else if (!ehSituacaoAtiva(aluno.situacao)) situacao = 'situacao';
-        else if (aluno.whatsappOptOut) situacao = 'sair';
-        else if (contatoRecente && !STATUS_CONTATO_NOVA_TENTATIVA.includes(contatoRecente.status)) situacao = 'contato_humano';
-        else if (recebeuNaSemana.has(item.matricula)) situacao = 'semana';
-        else {
-            situacao = 'receber';
-            recebeuNaSemana.add(item.matricula);
-        }
+        let tentativa = 1;
+        if (naFila(primeira) || naFila(segunda)) situacao = 'fila';
+        else if (recebeu(segunda) || (segunda?.status === 'falhou' && segunda.falhaDefinitiva)) situacao = 'enviada';
+        else if (recebeu(primeira)) {
+            // Só a 1ª saiu. A 2ª entra se ele não respondeu nada, já passou o prazo
+            // e nada mais impede (inclusive alguém da coordenação ter falado com ele).
+            const prazo = agora.getTime() - primeira.enviadaEm.getTime() >= DIAS_PARA_SEGUNDA * DIA_MS;
+            situacao = !resposta && prazo && !impedimento() ? 'receber' : 'enviada';
+            if (situacao === 'receber') tentativa = 2;
+        } else if (primeira?.status === 'falhou' && primeira.falhaDefinitiva) situacao = 'sem_whatsapp';
+        else situacao = impedimento() || 'receber';
+        if (situacao === 'receber') recebeuNaSemana.add(item.matricula);
 
         // Promessa quebrada = ele continua em risco e faltou num dia de aula
         // DEPOIS do dia em que prometeu. Faltar no próprio dia não conta: a
         // promessa costuma ser "amanhã eu vou", feita à noite.
         let promessa = null;
-        const resposta = situacao === 'enviada' ? ultimaRespostaPorMensagem.get(mensagem.id) : null;
         if (resposta?.interpretacao === 'promessa') {
             const diaDaPromessa = converterDataAula(diaNoFusoDaEscola(resposta.recebidaEm));
             promessa = { em: resposta.recebidaEm, quebrou: converterDataAula(item.ultimaFalta) > diaDaPromessa };
@@ -163,11 +184,13 @@ async function avaliar(sessao, agora = new Date()) {
         return {
             ...item,
             situacao,
+            tentativa,
             promessa,
+            recebeuSegunda: recebeu(segunda),
             telefone: aluno?.telefone || null,
-            // Só faz sentido pra quem recebeu: o contato criado no envio vira
-            // "respondido" quando a resposta do aluno chega pelo webhook.
-            respondeu: situacao === 'enviada' && statusContatoPorId.get(mensagem.contatoId) === 'respondido'
+            // O contato criado no envio vira "respondido" quando a resposta do
+            // aluno chega pelo webhook (SAIR não marca: não é resposta à pergunta).
+            respondeu: [primeira, segunda].some((m) => recebeu(m) && statusContatoPorId.get(m.contatoId) === 'respondido')
         };
     });
 }
@@ -185,13 +208,15 @@ function resumir(itens) {
     let responderam = 0;
     let prometeram = 0;
     let quebraram = 0;
+    let segundas = 0;
     for (const item of porMatricula.values()) {
         porSituacao[item.situacao]++;
         if (item.respondeu) responderam++;
+        if (item.recebeuSegunda) segundas++;
         if (item.promessa) prometeram++;
         if (item.promessa?.quebrou) quebraram++;
     }
-    return { emRisco: porMatricula.size, porSituacao, responderam, prometeram, quebraram };
+    return { emRisco: porMatricula.size, porSituacao, responderam, prometeram, quebraram, segundas };
 }
 
 // Coloca na fila do lote automático quem está como "receber". Cria o lote se a
@@ -224,7 +249,9 @@ async function abastecer(sessao, agora = new Date()) {
                 nomeAluno: aluno.nomeAluno,
                 nomeTurma: aluno.nomeTurma,
                 telefone: aluno.telefone,
-                texto: renderizarMensagem(sessao.mensagemModelo, { ...aluno, responsavel }),
+                // A 2ª tem texto próprio: repetir a 1ª palavra por palavra soa a
+                // robô e é exatamente o padrão que o WhatsApp vigia.
+                texto: renderizarMensagem(aluno.tentativa === 2 ? MENSAGEM_SEGUNDA : sessao.mensagemModelo, { ...aluno, responsavel }),
                 status: 'pendente',
                 erro: null,
                 falhaDefinitiva: false,
@@ -233,12 +260,13 @@ async function abastecer(sessao, agora = new Date()) {
                 contatoId: null,
                 enviadaEm: null
             };
-            // Linha cancelada (ou com falha temporária) do mesmo episódio é
-            // reaproveitada — a chave única não deixa criar outra.
+            // Linha cancelada (ou com falha temporária) do mesmo episódio e mesma
+            // tentativa é reaproveitada — a chave única não deixa criar outra.
+            const chave = { matricula: aluno.matricula, codigoTurma: aluno.codigoTurma, primeiraFalta: aluno.primeiraFalta, tentativa: aluno.tentativa };
             await tx.mensagemWhatsapp.upsert({
-                where: { matricula_codigoTurma_primeiraFalta: { matricula: aluno.matricula, codigoTurma: aluno.codigoTurma, primeiraFalta: aluno.primeiraFalta } },
+                where: { matricula_codigoTurma_primeiraFalta_tentativa: chave },
                 update: dados,
-                create: { ...dados, matricula: aluno.matricula, codigoTurma: aluno.codigoTurma, primeiraFalta: aluno.primeiraFalta }
+                create: { ...dados, ...chave }
             });
         }
         await tx.loteWhatsapp.update({ where: { id: lote.id }, data: { total: { increment: lista.length } } });
@@ -249,6 +277,7 @@ async function abastecer(sessao, agora = new Date()) {
 
 module.exports = {
     DIAS_ENTRE_MENSAGENS,
+    DIAS_PARA_SEGUNDA,
     DIAS_DESDE_CONTATO,
     SITUACOES,
     lerTurmas,

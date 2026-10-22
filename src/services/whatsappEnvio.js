@@ -11,7 +11,7 @@ const openwa = require('./openwa');
 const { mesmoTelefone } = require('./telefone');
 const { limiteDiaEfetivo, STATUS_JA_RECEBEU } = require('./whatsappLote');
 const whatsappAutomatico = require('./whatsappAutomatico');
-const { calcularAlunosEmRiscoSemRecuperados } = require('../controllers/alunoController');
+const { calcularAlunosEmRiscoSemRecuperados, converterDataAula } = require('../controllers/alunoController');
 
 const TICK_MS = 15 * 1000;
 // Recalcular o risco lê todos os lançamentos — não precisa ser a cada rodada. Uma
@@ -146,6 +146,14 @@ async function motivoParaCancelar(mensagem, sessao) {
     const turmas = whatsappAutomatico.lerTurmas(sessao);
     if (turmas && !turmas.includes(mensagem.codigoTurma)) return 'A turma saiu do envio automático';
     if (contatoRecente) return 'A coordenação já falou com o aluno';
+    // Respondeu à 1ª enquanto a 2ª esperava na fila: a 2ª não faz mais sentido.
+    if (mensagem.tentativa === 2) {
+        const respondeu = await prisma.respostaWhatsapp.findFirst({
+            where: { matricula: mensagem.matricula, interpretacao: { notIn: ['ignorada', 'sem_vinculo'] }, recebidaEm: { gte: new Date(converterDataAula(mensagem.primeiraFalta)) } },
+            select: { id: true }
+        });
+        if (respondeu) return 'O aluno respondeu à primeira mensagem';
+    }
 
     const risco = emRisco.find((item) => item.matricula === mensagem.matricula && item.codigoTurma === mensagem.codigoTurma);
     if (!risco) return 'O aluno voltou a ter presença (ou está em acompanhamento de recuperado)';
@@ -261,7 +269,9 @@ async function processarLote(lote, agora = new Date()) {
                 matricula: mensagem.matricula,
                 canal: 'whatsapp',
                 status: 'sem_resposta',
-                observacao: 'Mensagem automática enviada pelo WhatsApp.',
+                observacao: mensagem.tentativa === 2
+                    ? '2ª (e última) mensagem automática enviada pelo WhatsApp.'
+                    : 'Mensagem automática enviada pelo WhatsApp.',
                 contatadoPor: sessao.usuario.usuario
             }
         });

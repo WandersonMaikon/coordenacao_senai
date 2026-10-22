@@ -17,9 +17,13 @@ const { STATUS_JA_RECEBEU } = require('./whatsappLote');
 
 const DIA_MS = 24 * 60 * 60 * 1000;
 
-// Mensagem automática sem resposta há este tempo vira caso de pessoa. Quando a
-// 2ª mensagem existir (etapa 2), é a partir dela que se conta.
-const DIAS_SEM_RESPOSTA = 7;
+// Sem resposta depois da 2ª (e última) mensagem automática há este tempo: o robô
+// já parou, é caso de pessoa.
+const DIAS_SEM_RESPOSTA = 3;
+// Rede de segurança: se a 2ª não chegou a sair (envio desligado, turma fora do
+// piloto, limite), a 1ª sem resposta há este tempo também vira caso de pessoa —
+// senão o aluno ficaria esperando um robô que não vai mandar nada.
+const DIAS_SEM_SEGUNDA = 10;
 
 // Contato registrado depois do motivo com um destes status tira o aluno da lista.
 // "Sem resposta" e "Não foi possível contatar" não tiram: tentaram e não deu, o
@@ -33,7 +37,7 @@ const MOTIVOS_LISTA = {
     delicado: { prioridade: 1, rotulo: 'Assunto delicado na resposta' },
     promessa_quebrada: { prioridade: 2, rotulo: 'Prometeu voltar e faltou de novo' },
     respondeu: { prioridade: 3, rotulo: 'Respondeu e precisa de retorno' },
-    sem_resposta: { prioridade: 4, rotulo: `Não respondeu a mensagem há ${DIAS_SEM_RESPOSTA} dias ou mais` },
+    sem_resposta: { prioridade: 4, rotulo: 'Não respondeu às mensagens automáticas' },
     sair: { prioridade: 5, rotulo: 'Pediu para não receber WhatsApp (SAIR)' },
     sem_whatsapp: { prioridade: 5, rotulo: 'O número não tem WhatsApp' },
     sem_telefone: { prioridade: 5, rotulo: 'Sem telefone cadastrado' }
@@ -62,7 +66,8 @@ function classificar(item, { aluno, mensagem, resposta, falhou }, agora) {
     }
 
     if (mensagem) {
-        if (agora - mensagem.enviadaEm.getTime() < DIAS_SEM_RESPOSTA * DIA_MS) return null; // esperando resposta
+        const espera = mensagem.tentativa === 2 ? DIAS_SEM_RESPOSTA : DIAS_SEM_SEGUNDA;
+        if (agora - mensagem.enviadaEm.getTime() < espera * DIA_MS) return null; // o robô ainda está cuidando
         return { motivo: 'sem_resposta', desde: mensagem.enviadaEm };
     }
 
@@ -85,7 +90,7 @@ async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
         }),
         prisma.mensagemWhatsapp.findMany({
             where: { matricula: { in: matriculas } },
-            select: { matricula: true, codigoTurma: true, primeiraFalta: true, status: true, falhaDefinitiva: true, contatoId: true, enviadaEm: true },
+            select: { matricula: true, codigoTurma: true, primeiraFalta: true, tentativa: true, status: true, falhaDefinitiva: true, contatoId: true, enviadaEm: true },
             orderBy: { enviadaEm: 'desc' }
         }),
         prisma.respostaWhatsapp.findMany({
@@ -112,10 +117,13 @@ async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
         const doAluno = mensagens.filter((m) => m.matricula === item.matricula);
         // A mensagem automática mais recente deste sumiço (qualquer turma: o aluno
         // recebe uma por semana, não uma por turma).
-        const mensagem = doAluno.find((m) => STATUS_JA_RECEBEU.includes(m.status) && m.enviadaEm && m.enviadaEm.getTime() >= inicioEpisodio) || null;
+        const doEpisodio = doAluno.filter((m) => STATUS_JA_RECEBEU.includes(m.status) && m.enviadaEm && m.enviadaEm.getTime() >= inicioEpisodio);
+        const mensagem = doEpisodio[0] || null;
         const falhou = doAluno.some((m) => m.codigoTurma === item.codigoTurma && m.primeiraFalta === item.primeiraFalta && m.status === 'falhou' && m.falhaDefinitiva);
-        const resposta = mensagem
-            ? respostas.find((r) => r.matricula === item.matricula && r.recebidaEm.getTime() >= mensagem.enviadaEm.getTime()) || null
+        // Resposta a qualquer uma das mensagens deste sumiço: conta a partir da 1ª.
+        const primeiraEnviada = doEpisodio[doEpisodio.length - 1];
+        const resposta = primeiraEnviada
+            ? respostas.find((r) => r.matricula === item.matricula && r.recebidaEm.getTime() >= primeiraEnviada.enviadaEm.getTime()) || null
             : null;
 
         const caso = classificar(item, { aluno: alunoPorMatricula.get(item.matricula), mensagem, resposta, falhou }, agoraMs);
@@ -157,4 +165,4 @@ async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
         a.prioridade - b.prioridade || new Date(a.desde) - new Date(b.desde));
 }
 
-module.exports = { listarPrecisamContato, MOTIVOS_LISTA, DIAS_SEM_RESPOSTA, RESOLVE_CASO };
+module.exports = { listarPrecisamContato, MOTIVOS_LISTA, DIAS_SEM_RESPOSTA, DIAS_SEM_SEGUNDA, RESOLVE_CASO };
