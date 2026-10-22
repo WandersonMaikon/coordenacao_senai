@@ -63,6 +63,13 @@ model WhatsappSessao {
   // Primeira vez que este número ficou pronto — base do "aquecimento" (limite
   // menor nos primeiros dias de um número novo).
   conectadoEm       DateTime? @map("conectado_em")
+  // Número do sistema: manda sozinho para os alunos em risco da escola inteira
+  // (src/services/whatsappAutomatico.js). Só um número pode estar ligado — quem
+  // garante é o PUT /whatsapp/automatico, não o banco.
+  envioAutomatico   Boolean   @default(false) @map("envio_automatico")
+  // Turmas do envio automático, em JSON (["APT-TST-I-0010", ...]). null = todas.
+  // Existe pro piloto: começar por poucas turmas e abrir depois.
+  turmasAutomatico  String?   @map("turmas_automatico") @db.Text
   criadoEm          DateTime  @default(now()) @map("criado_em")
   atualizadoEm      DateTime  @updatedAt @map("atualizado_em")
 
@@ -72,10 +79,11 @@ model WhatsappSessao {
 }
 
 // ─────────────────────────────────────────
-// Turmas que cada usuário assumiu na tela /whatsapp — os alunos em risco delas
-// recebem mensagem do número desse usuário. codigoTurma é ÚNICO: uma turma tem um
-// responsável só, e é a constraint (não uma checagem no código) que impede dois
-// usuários de assumirem a mesma turma no mesmo instante.
+// NÃO É MAIS USADA (desde 22/10/2026): era o "assumir turma" da tela /whatsapp,
+// substituído pelo envio automático do número do sistema
+// (WhatsappSessao.envioAutomatico). Fica no schema porque a tabela existe em
+// produção — tirar daqui sem uma migration que a apague criaria drift.
+// Era: turmas que cada usuário assumiu; codigoTurma único = um responsável só.
 // ─────────────────────────────────────────
 model UsuarioTurma {
   id          Int      @id @default(autoincrement())
@@ -90,15 +98,19 @@ model UsuarioTurma {
 }
 
 // ─────────────────────────────────────────
-// Um "Iniciar envio" na tela /whatsapp. As mensagens do lote saem uma a uma pelo
-// worker (src/services/whatsappEnvio.js), respeitando intervalo, janela e limites
-// do número. Um lote em andamento por número.
+// A fila de um número. As mensagens saem uma a uma pelo worker
+// (src/services/whatsappEnvio.js), respeitando intervalo, janela e limites do
+// número. Hoje só existe o lote automático do número do sistema; os lotes
+// manuais antigos ("Iniciar envio") ficam no banco como histórico.
 // ─────────────────────────────────────────
 model LoteWhatsapp {
   id             Int       @id @default(autoincrement())
   sessaoId       Int       @map("sessao_id")
   usuarioId      Int       @map("usuario_id")
   status         String    @default("em_andamento") @db.VarChar(20) // em_andamento | parado | concluido
+  // Lote do envio automático: fica em andamento enquanto a chave estiver ligada e
+  // recebe alunos novos sozinho; não "conclui" quando a fila esvazia.
+  automatico     Boolean   @default(false)
   total          Int
   // Por que o lote está esperando agora ("Limite do dia atingido — retoma..."),
   // escrito pelo worker pra tela mostrar. null = enviando normalmente.

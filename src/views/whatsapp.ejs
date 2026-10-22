@@ -18,7 +18,7 @@
         <div class="app-page-head d-flex flex-wrap gap-3 align-items-center justify-content-between">
           <div class="clearfix">
             <h1 class="app-page-title">WhatsApp</h1>
-            <span>Conecte o seu número para enviar mensagens aos alunos em risco das suas turmas</span>
+            <span>O número do sistema manda mensagem sozinho para os alunos que entram em risco</span>
           </div>
         </div>
 
@@ -26,9 +26,8 @@
             a troca de aba é feita no script lá embaixo (data-aba). %>
         <ul class="nav nav-tabs mb-4" id="abas">
           <li class="nav-item"><a class="nav-link" href="#numero" data-aba="numero"><i class="bi bi-phone me-1"></i>Meu número</a></li>
-          <li class="nav-item"><a class="nav-link" href="#turmas" data-aba="turmas"><i class="bi bi-people me-1"></i>Minhas turmas</a></li>
           <li class="nav-item"><a class="nav-link" href="#mensagem" data-aba="mensagem"><i class="bi bi-chat-text me-1"></i>Mensagem e limites</a></li>
-          <li class="nav-item"><a class="nav-link" href="#envio" data-aba="envio"><i class="bi bi-send me-1"></i>Envio</a></li>
+          <li class="nav-item"><a class="nav-link" href="#envio" data-aba="envio"><i class="bi bi-robot me-1"></i>Envio automático</a></li>
           <li class="nav-item"><span class="nav-link disabled" title="Disponível na próxima etapa">Atendimento individual</span></li>
           <li class="nav-item"><a class="nav-link" href="#historico" data-aba="historico"><i class="bi bi-clock-history me-1"></i>Histórico</a></li>
         </ul>
@@ -99,81 +98,6 @@
             </div>
           </div>
         </div>
-        </div>
-
-        <!-- ───────────── Minhas turmas ───────────── -->
-        <div data-painel="turmas" hidden>
-          <div class="card mb-4">
-            <div class="card-body">
-              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-                <div>
-                  <h5 class="mb-1">Turmas</h5>
-                  <p class="text-body-secondary small mb-0">
-                    Assuma as turmas que você vai atender. Os alunos em risco delas recebem mensagem do
-                    <strong>seu</strong> número. Cada turma fica com uma pessoa só.
-                  </p>
-                </div>
-                <select class="form-select form-select-sm w-auto" id="filtroTurmas">
-                  <option value="todas">Todas as turmas</option>
-                  <option value="minhas">Só as minhas</option>
-                  <option value="disponiveis">Só as disponíveis</option>
-                </select>
-              </div>
-              <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                  <thead>
-                    <tr>
-                      <th>Turma</th>
-                      <th class="text-end" title="Alunos em risco agora (sem contar os recuperados em acompanhamento)">Em risco</th>
-                      <th>Responsável</th>
-                      <th class="text-end"></th>
-                    </tr>
-                  </thead>
-                  <tbody id="tabelaTurmas">
-                    <tr><td colspan="4" class="text-center text-body-secondary py-4">Carregando...</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-body">
-              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-                <div>
-                  <h5 class="mb-1">Quem receberia agora</h5>
-                  <p class="text-body-secondary small mb-0" id="resumoPrevia">
-                    Alunos em risco das suas turmas que receberiam a mensagem se o envio fosse iniciado agora.
-                  </p>
-                </div>
-                <button type="button" class="btn btn-outline-primary btn-sm" id="btnAtualizarPrevia">
-                  <i class="bi bi-arrow-clockwise me-1"></i>Atualizar
-                </button>
-              </div>
-              <div class="alert alert-info small py-2">
-                <i class="bi bi-info-circle me-1"></i>
-                Esta é só uma conferência — nenhuma mensagem é enviada daqui. Para enviar, use a aba <a href="#envio" data-ir-aba="envio">Envio</a>.
-              </div>
-              <div class="border rounded-3 p-3 mb-3">
-                <div class="small mb-2">
-                  Quem ainda não teve contato registrado neste período de faltas sempre entra.
-                  Incluir também quem já foi contatado, mas:
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="opcaoSemResposta">
-                  <label class="form-check-label" for="opcaoSemResposta">ficou <strong>sem resposta</strong></label>
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="opcaoNaoContatado">
-                  <label class="form-check-label" for="opcaoNaoContatado"><strong>não foi possível contatar</strong></label>
-                </div>
-                <div class="small text-body-secondary mt-2">
-                  Quem está como <em>Respondido</em> ou <em>Acompanhar</em> nunca recebe: alguém já está conversando com o aluno.
-                </div>
-              </div>
-              <div id="conteudoPrevia"></div>
-            </div>
-          </div>
         </div>
 
         <!-- ───────────── Mensagem e limites ───────────── -->
@@ -275,13 +199,13 @@
           </form>
         </div>
 
-        <!-- ───────────── Envio ───────────── -->
+        <!-- ───────────── Envio automático ───────────── -->
         <div data-painel="envio" hidden>
           <div class="row g-3 mb-4">
             <div class="col-md-6 col-xl-4">
               <div class="card h-100">
                 <div class="card-body">
-                  <div class="small text-body-secondary mb-1">Meu WhatsApp</div>
+                  <div class="small text-body-secondary mb-1">Número do sistema</div>
                   <div id="envioConexao">—</div>
                 </div>
               </div>
@@ -306,10 +230,18 @@
             </div>
           </div>
 
-          <div class="card">
-            <div class="card-body" id="areaEnvio">
+          <div class="card mb-4">
+            <div class="card-body" id="areaControle">
               <p class="text-body-secondary mb-0">Carregando...</p>
             </div>
+          </div>
+
+          <div class="card mb-4">
+            <div class="card-body" id="areaCobertura"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-body" id="areaEnvio"></div>
           </div>
         </div>
 
@@ -634,211 +566,6 @@
       }
     });
 
-    // ───────────── Minhas turmas ─────────────
-
-    let turmasCarregadas = [];
-    let usuarioEhAdmin = false;
-
-    function desenharTurmas() {
-      const filtro = document.getElementById('filtroTurmas').value;
-      const tabela = document.getElementById('tabelaTurmas');
-
-      // Minhas primeiro, depois as disponíveis, depois as de outras pessoas;
-      // dentro de cada grupo, mais alunos em risco antes.
-      const grupo = (t) => (t.minha ? 0 : t.responsavel ? 2 : 1);
-      const lista = turmasCarregadas
-        .filter((t) => filtro === 'todas' || (filtro === 'minhas' && t.minha) || (filtro === 'disponiveis' && !t.responsavel))
-        .sort((a, b) => grupo(a) - grupo(b) || b.emRisco - a.emRisco || (a.nomeTurma || '').localeCompare(b.nomeTurma || '', 'pt-BR'));
-
-      if (lista.length === 0) {
-        tabela.innerHTML = `<tr><td colspan="4" class="text-center text-body-secondary py-4">${filtro === 'minhas' ? 'Você ainda não assumiu nenhuma turma.' : 'Nenhuma turma encontrada.'}</td></tr>`;
-        return;
-      }
-
-      tabela.innerHTML = lista.map((t) => {
-        const codigo = escaparHtml(t.codigoTurma);
-        let responsavel;
-        let acao;
-        if (t.minha) {
-          responsavel = '<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle"><i class="bi bi-check-circle-fill me-1"></i>Minha</span>';
-          acao = `<button type="button" class="btn btn-sm btn-outline-danger" data-liberar="${codigo}">Liberar</button>`;
-        } else if (t.responsavel) {
-          responsavel = `<span class="text-body-secondary"><i class="bi bi-person-fill me-1"></i>Com ${escaparHtml(t.responsavel.nome || t.responsavel.usuario)}</span>`;
-          acao = usuarioEhAdmin
-            ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-liberar="${codigo}" data-outra-pessoa="${escaparHtml(t.responsavel.nome || t.responsavel.usuario)}" title="Como administrador, você pode liberar a turma de outra pessoa">Liberar</button>`
-            : '';
-        } else {
-          responsavel = '<span class="text-body-secondary">Disponível</span>';
-          acao = `<button type="button" class="btn btn-sm btn-primary" data-assumir="${codigo}">Assumir</button>`;
-        }
-        return `
-          <tr>
-            <td>${escaparHtml(nomeTurmaLimpo(t.nomeTurma) || t.codigoTurma)}<div class="small text-body-secondary">${codigo}</div></td>
-            <td class="text-end">${t.emRisco ? `<span class="badge bg-danger-subtle text-danger-emphasis">${t.emRisco}</span>` : '<span class="text-body-secondary">0</span>'}</td>
-            <td>${responsavel}</td>
-            <td class="text-end">${acao}</td>
-          </tr>
-        `;
-      }).join('');
-    }
-
-    async function carregarTurmas() {
-      try {
-        const resposta = await chamarApi('/whatsapp/turmas');
-        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
-        turmasCarregadas = resposta.dados;
-        usuarioEhAdmin = resposta.admin;
-        desenharTurmas();
-      } catch (erro) {
-        if (erro.message !== 'Sessão expirada') {
-          document.getElementById('tabelaTurmas').innerHTML =
-            `<tr><td colspan="4" class="text-center text-danger py-4">Não foi possível carregar as turmas: ${escaparHtml(erro.message)}</td></tr>`;
-        }
-      }
-    }
-
-    function linhaPrevia(aluno, indice) {
-      return `
-        <tr>
-          <td>
-            ${escaparHtml(aluno.nomeAluno || '—')}
-            ${aluno.contatoNoEpisodio ? `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1" title="Contato em ${new Date(aluno.contatoNoEpisodio.em).toLocaleDateString('pt-BR')}${aluno.contatoNoEpisodio.por ? ` por ${escaparHtml(aluno.contatoNoEpisodio.por)}` : ''}">Nova tentativa · ${escaparHtml(aluno.contatoNoEpisodio.rotuloStatus)}</span>` : ''}
-            <div class="small text-body-secondary">${escaparHtml(aluno.matricula)}</div>
-          </td>
-          <td class="small">${escaparHtml(nomeTurmaLimpo(aluno.nomeTurma) || aluno.codigoTurma)}</td>
-          <td class="text-end">${aluno.diasSemVir} ${aluno.diasSemVir === 1 ? 'dia' : 'dias'}</td>
-          <td class="small text-nowrap">${formatarTelefone(aluno.telefone)}</td>
-          <td class="text-end"><button type="button" class="btn btn-link btn-sm p-0" data-ver-mensagem="${indice}">ver mensagem</button></td>
-        </tr>
-        <tr id="mensagemPrevia${indice}" hidden>
-          <td colspan="5" class="bg-body-tertiary">
-            <div class="p-3 rounded-3 small" style="background: #dcf8c6; color: #111; white-space: pre-wrap; max-width: 34rem;">${escaparHtml(aluno.mensagem)}</div>
-          </td>
-        </tr>
-      `;
-    }
-
-    async function carregarPrevia() {
-      const conteudo = document.getElementById('conteudoPrevia');
-      const resumo = document.getElementById('resumoPrevia');
-      conteudo.innerHTML = '<p class="text-body-secondary small mb-0">Calculando...</p>';
-      try {
-        const params = new URLSearchParams();
-        if (document.getElementById('opcaoSemResposta').checked) params.set('incluirSemResposta', '1');
-        if (document.getElementById('opcaoNaoContatado').checked) params.set('incluirNaoContatado', '1');
-        const resposta = await chamarApi(`/whatsapp/lote/previa${params.size ? `?${params}` : ''}`);
-        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
-
-        if (resposta.turmas === 0) {
-          resumo.textContent = 'Alunos em risco das suas turmas que receberiam a mensagem se o envio fosse iniciado agora.';
-          conteudo.innerHTML = '<p class="text-body-secondary mb-0">Assuma pelo menos uma turma acima para ver quem receberia.</p>';
-          return;
-        }
-
-        const total = resposta.receberiam.length;
-        // Com o limite diário, um lote grande leva dias — melhor saber antes de iniciar.
-        const dias = total > 0 ? Math.ceil(total / resposta.limiteDiaEfetivo) : 0;
-        resumo.innerHTML = total === 0
-          ? `Ninguém receberia agora nas suas ${resposta.turmas} turma(s).`
-          : `<strong>${total} aluno(s)</strong> receberiam, nas suas ${resposta.turmas} turma(s). Com o limite atual de ${resposta.limiteDiaEfetivo} por dia, o envio levaria ${dias === 1 ? 'cerca de 1 dia' : `cerca de ${dias} dias`}.`;
-
-        let htmlConteudo = total === 0
-          ? '<p class="text-body-secondary">Nenhum aluno em risco das suas turmas está apto a receber agora.</p>'
-          : `
-            <div class="table-responsive mb-3">
-              <table class="table table-sm align-middle mb-0">
-                <thead><tr><th>Aluno</th><th>Turma</th><th class="text-end">Sem vir</th><th>Telefone</th><th></th></tr></thead>
-                <tbody>${resposta.receberiam.map(linhaPrevia).join('')}</tbody>
-              </table>
-            </div>`;
-
-        if (resposta.naoReceberiam.length > 0) {
-          htmlConteudo += `
-            <details>
-              <summary class="small text-body-secondary">${resposta.naoReceberiam.length} aluno(s) em risco não receberiam — ver motivo</summary>
-              <div class="table-responsive mt-2">
-                <table class="table table-sm align-middle mb-0">
-                  <thead><tr><th>Aluno</th><th>Turma</th><th>Por que não</th></tr></thead>
-                  <tbody>
-                    ${resposta.naoReceberiam.map((a) => `
-                      <tr>
-                        <td>${escaparHtml(a.nomeAluno || '—')}<div class="small text-body-secondary">${escaparHtml(a.matricula)}</div></td>
-                        <td class="small">${escaparHtml(nomeTurmaLimpo(a.nomeTurma) || a.codigoTurma)}</td>
-                        <td class="small">${escaparHtml(a.motivo)}</td>
-                      </tr>`).join('')}
-                  </tbody>
-                </table>
-              </div>
-            </details>`;
-        }
-        conteudo.innerHTML = htmlConteudo;
-      } catch (erro) {
-        if (erro.message !== 'Sessão expirada') {
-          conteudo.innerHTML = `<p class="text-danger small mb-0">Não foi possível calcular a prévia: ${escaparHtml(erro.message)}</p>`;
-        }
-      }
-    }
-
-    document.getElementById('filtroTurmas').addEventListener('change', desenharTurmas);
-    document.getElementById('btnAtualizarPrevia').addEventListener('click', carregarPrevia);
-
-    // A escolha fica lembrada neste navegador — é a mesma pessoa conferindo a lista
-    // toda vez, e desmarcar sem querer mudaria quem recebe.
-    ['opcaoSemResposta', 'opcaoNaoContatado'].forEach((id) => {
-      const caixa = document.getElementById(id);
-      try { caixa.checked = localStorage.getItem(`coor360_whatsapp_${id}`) === '1'; } catch (erro) { /* sem storage */ }
-      caixa.addEventListener('change', () => {
-        try { localStorage.setItem(`coor360_whatsapp_${id}`, caixa.checked ? '1' : '0'); } catch (erro) { /* sem storage */ }
-        carregarPrevia();
-      });
-    });
-
-    document.getElementById('conteudoPrevia').addEventListener('click', (evento) => {
-      const botao = evento.target.closest('[data-ver-mensagem]');
-      if (!botao) return;
-      const linha = document.getElementById(`mensagemPrevia${botao.dataset.verMensagem}`);
-      linha.hidden = !linha.hidden;
-      botao.textContent = linha.hidden ? 'ver mensagem' : 'ocultar';
-    });
-
-    document.getElementById('tabelaTurmas').addEventListener('click', async (evento) => {
-      const assumir = evento.target.closest('[data-assumir]');
-      const liberar = evento.target.closest('[data-liberar]');
-      if (!assumir && !liberar) return;
-
-      const botao = assumir || liberar;
-      const codigo = assumir ? assumir.dataset.assumir : liberar.dataset.liberar;
-
-      if (liberar) {
-        const outraPessoa = liberar.dataset.outraPessoa;
-        const confirmacao = await Swal.fire({
-          title: 'Liberar a turma?',
-          text: outraPessoa
-            ? `A turma está com ${outraPessoa}. Ela deixa de receber mensagens pelo número dessa pessoa e fica disponível para outro usuário assumir.`
-            : 'Os alunos desta turma deixam de receber mensagens pelo seu número, e a turma fica disponível para outro usuário assumir.',
-          icon: 'warning',
-          showCancelButton: true,
-          confirmButtonText: 'Liberar',
-          cancelButtonText: 'Cancelar'
-        });
-        if (!confirmacao.isConfirmed) return;
-      }
-
-      botao.disabled = true;
-      try {
-        const resposta = await chamarApi(`/whatsapp/turmas/${encodeURIComponent(codigo)}`, { method: assumir ? 'POST' : 'DELETE' });
-        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
-        notificar.ok(assumir ? 'Turma assumida.' : 'Turma liberada.');
-      } catch (erro) {
-        if (erro.message !== 'Sessão expirada') {
-          Swal.fire({ title: assumir ? 'Não foi possível assumir' : 'Não foi possível liberar', text: erro.message, icon: 'error' });
-        }
-      }
-      // Recarrega sempre: num 409 outra pessoa acabou de assumir, e a tela precisa mostrar isso.
-      await carregarTurmas();
-      carregarPrevia();
-    });
-
     // ───────────── Mensagem e limites ─────────────
 
     let mensagemPadrao = '';
@@ -973,7 +700,7 @@
       }
     });
 
-    // ───────────── Envio ─────────────
+    // ───────────── Envio automático ─────────────
 
     const STATUS_MENSAGEM = {
       pendente: { rotulo: 'Na fila', cor: 'secondary', icone: 'hourglass-split' },
@@ -995,11 +722,12 @@
       return new Date(dataIso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     }
 
-    let estadoEnvio = null;       // última resposta de /whatsapp/lote/atual
-    let confirmandoEnvio = null;  // prévia aberta na tela de confirmação
+    let estadoEnvio = null;       // última resposta de /whatsapp/automatico
     let diferencaRelogio = 0;     // relógio do servidor − relógio do navegador
     let timerEnvio = null;
     let timerContagem = null;
+    let controleDesenhado = false; // o formulário de turmas não é redesenhado a cada consulta
+    let turmasDisponiveis = null;
 
     function pararAtualizacaoEnvio() {
       clearInterval(timerEnvio);
@@ -1009,22 +737,187 @@
 
     function desenharResumoEnvio(r) {
       const conexao = document.getElementById('envioConexao');
-      if (r.sessao.pausadoMotivo) {
-        conexao.innerHTML = `
-          <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"><i class="bi bi-pause-circle-fill me-1"></i>Envio pausado</span>
-          <div class="small mt-2">${escaparHtml(r.sessao.pausadoMotivo)}</div>
-          <button type="button" class="btn btn-sm btn-warning mt-2" id="btnRetomar"><i class="bi bi-play-fill me-1"></i>Já resolvi — retomar</button>`;
-      } else if (r.sessao.conectado) {
-        conexao.innerHTML = '<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle"><i class="bi bi-check-circle-fill me-1"></i>Conectado</span>';
-      } else {
-        conexao.innerHTML = '<span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle">Não conectado</span> <a href="#numero" data-ir-aba="numero" class="small ms-1">conectar</a>';
-      }
-
       const pct = (valor, limite) => `${Math.min(100, Math.round((valor / Math.max(1, limite)) * 100))}%`;
+      if (!r.sistema) {
+        conexao.innerHTML = '<span class="badge bg-secondary-subtle text-secondary-emphasis border">Nenhum</span>';
+        ['envioUsoHoje', 'envioUsoMes'].forEach((id) => { document.getElementById(id).textContent = '—'; });
+        ['envioBarraHoje', 'envioBarraMes'].forEach((id) => { document.getElementById(id).style.width = '0%'; });
+        return;
+      }
+      const sis = r.sistema;
+      let estado;
+      if (sis.pausadoMotivo) {
+        estado = `
+          <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"><i class="bi bi-pause-circle-fill me-1"></i>Envio pausado</span>
+          <div class="small mt-2">${escaparHtml(sis.pausadoMotivo)}</div>
+          ${sis.souDono ? '<button type="button" class="btn btn-sm btn-warning mt-2" id="btnRetomar"><i class="bi bi-play-fill me-1"></i>Já resolvi — retomar</button>' : `<div class="small text-body-secondary mt-1">Quem resolve é ${escaparHtml(sis.dono)}, na aba Meu número.</div>`}`;
+      } else if (sis.conectado) {
+        estado = '<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle"><i class="bi bi-check-circle-fill me-1"></i>Conectado</span>';
+      } else {
+        estado = '<span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle">Não conectado</span>';
+      }
+      conexao.innerHTML = `<div class="fw-semibold">${escaparHtml(sis.dono)}${sis.telefone ? ` · ${formatarTelefone(sis.telefone)}` : ''}</div><div class="mt-1">${estado}</div>`;
+
       document.getElementById('envioUsoHoje').textContent = `${r.uso.hoje} / ${r.uso.limiteDia}`;
       document.getElementById('envioBarraHoje').style.width = pct(r.uso.hoje, r.uso.limiteDia);
       document.getElementById('envioUsoMes').textContent = `${r.uso.mes} / ${r.uso.limiteMes}`;
       document.getElementById('envioBarraMes').style.width = pct(r.uso.mes, r.uso.limiteMes);
+    }
+
+    async function carregarTurmasDisponiveis() {
+      if (turmasDisponiveis) return turmasDisponiveis;
+      const resposta = await chamarApi('/turmas');
+      turmasDisponiveis = (resposta.dados || [])
+        .sort((a, b) => (nomeTurmaLimpo(a.nomeTurma) || a.codigoTurma).localeCompare(nomeTurmaLimpo(b.nomeTurma) || b.codigoTurma, 'pt-BR'));
+      return turmasDisponiveis;
+    }
+
+    // Escolha das turmas: "todas" ou só as marcadas (piloto).
+    function blocoTurmas(turmasEscolhidas, editavel) {
+      const todas = !turmasEscolhidas;
+      const escolhidas = new Set(turmasEscolhidas || []);
+      const lista = turmasDisponiveis || [];
+      if (!editavel) {
+        return todas
+          ? '<div>Envia para <strong>todas as turmas</strong>.</div>'
+          : `<div>Envia só para estas turmas:</div><ul class="small mb-0">${(turmasEscolhidas || []).map((codigo) => {
+              const turma = lista.find((t) => t.codigoTurma === codigo);
+              return `<li>${escaparHtml(turma ? nomeTurmaLimpo(turma.nomeTurma) || codigo : codigo)} <span class="text-body-secondary">(${escaparHtml(codigo)})</span></li>`;
+            }).join('')}</ul>`;
+      }
+      return `
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="escopoTurmas" id="escopoTodas" value="todas" ${todas ? 'checked' : ''}>
+          <label class="form-check-label" for="escopoTodas">Todas as turmas</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="escopoTurmas" id="escopoAlgumas" value="algumas" ${todas ? '' : 'checked'}>
+          <label class="form-check-label" for="escopoAlgumas">Só estas turmas <span class="text-body-secondary small">(bom para começar com um piloto)</span></label>
+        </div>
+        <div id="listaTurmasEscolha" class="border rounded-3 p-2 mt-2 small" style="max-height: 260px; overflow-y: auto;" ${todas ? 'hidden' : ''}>
+          ${lista.length === 0 ? '<span class="text-body-secondary">Nenhuma turma encontrada.</span>' : lista.map((t) => `
+            <div class="form-check">
+              <input class="form-check-input caixa-turma" type="checkbox" id="turma_${escaparHtml(t.codigoTurma)}" value="${escaparHtml(t.codigoTurma)}" ${escolhidas.has(t.codigoTurma) ? 'checked' : ''}>
+              <label class="form-check-label" for="turma_${escaparHtml(t.codigoTurma)}">${escaparHtml(nomeTurmaLimpo(t.nomeTurma) || t.codigoTurma)} <span class="text-body-secondary">(${escaparHtml(t.codigoTurma)})</span></label>
+            </div>`).join('')}
+        </div>`;
+    }
+
+    function turmasDoFormulario() {
+      if (document.getElementById('escopoTodas')?.checked) return null;
+      return [...document.querySelectorAll('.caixa-turma:checked')].map((caixa) => caixa.value);
+    }
+
+    function desenharControle() {
+      const area = document.getElementById('areaControle');
+      const r = estadoEnvio;
+      const sis = r.sistema;
+      const explicacao = `
+        <p class="text-body-secondary small mb-3">
+          Quando ligado, o sistema confere a lista de risco a cada 5 minutos e manda a mensagem sozinho para
+          quem entrou em risco nos últimos ${r.diasRecente} dias e ainda não recebeu, respeitando o horário e
+          os limites do número. Cada aluno recebe no máximo uma mensagem automática por semana.
+          Quem entrou em risco há mais tempo fica com a coordenação.
+        </p>`;
+
+      if (!sis) {
+        let acao;
+        if (!r.minhaSessao.institucional) {
+          acao = '<div class="alert alert-light border small mb-0"><i class="bi bi-info-circle me-1"></i>O envio automático usa um <strong>chip da escola</strong>, nunca um número pessoal. Para ligar, entre com o usuário do chip (por exemplo "whatsapp-1"), cadastre o número como <em>Chip da escola</em> na aba <a href="#numero" data-ir-aba="numero">Meu número</a> e conecte.</div>';
+        } else if (!r.minhaSessao.conectado) {
+          acao = '<div class="alert alert-light border small mb-0">Conecte o chip na aba <a href="#numero" data-ir-aba="numero">Meu número</a> para poder ligar o envio automático.</div>';
+        } else {
+          acao = `
+            <h6 class="mb-2">Para quais turmas?</h6>
+            ${blocoTurmas(null, true)}
+            <button type="button" class="btn btn-success mt-3" id="btnLigarAutomatico"><i class="bi bi-power me-1"></i>Ligar envio automático com este número</button>`;
+        }
+        area.innerHTML = `
+          <h5 class="mb-1">Envio automático desligado</h5>
+          ${explicacao}
+          ${acao}`;
+        controleDesenhado = true;
+        return;
+      }
+
+      area.innerHTML = `
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-1">
+          <h5 class="mb-0"><span class="badge bg-success me-2"><i class="bi bi-power"></i></span>Envio automático ligado</h5>
+          ${sis.podeAlterar ? '<button type="button" class="btn btn-outline-danger btn-sm" id="btnDesligarAutomatico"><i class="bi bi-stop-circle me-1"></i>Desligar</button>' : ''}
+        </div>
+        ${explicacao}
+        <h6 class="mb-2">Turmas</h6>
+        ${blocoTurmas(sis.turmas, sis.podeAlterar)}
+        ${sis.podeAlterar ? '<button type="button" class="btn btn-primary btn-sm mt-3" id="btnSalvarTurmas">Salvar turmas</button>' : `<div class="small text-body-secondary mt-2">Só ${escaparHtml(sis.dono)} ou o administrador alteram o envio automático.</div>`}`;
+      controleDesenhado = true;
+    }
+
+    function desenharCobertura() {
+      const area = document.getElementById('areaCobertura');
+      const r = estadoEnvio;
+      if (!r.sistema) {
+        area.innerHTML = '<h5 class="mb-1">Acompanhamento</h5><p class="text-body-secondary mb-0">Os números aparecem aqui quando o envio automático estiver ligado.</p>';
+        return;
+      }
+      const { emRisco, porSituacao: p, responderam } = r.resumo;
+      const pct = (n) => (emRisco ? Math.round((n / emRisco) * 100) : 0);
+      const naFila = p.fila + p.receber;
+      const naoPodem = p.sair + p.sem_whatsapp + p.sem_telefone + p.situacao;
+      const coordenacao = p.contato_humano + p.antigo;
+
+      const linha = (cor, rotulo, valor, detalhe = '') => `
+        <tr>
+          <td><span class="d-inline-block rounded-circle me-2 bg-${cor}" style="width: 10px; height: 10px;"></span>${rotulo}${detalhe ? `<div class="small text-body-secondary ms-4">${detalhe}</div>` : ''}</td>
+          <td class="text-end fw-semibold">${valor}</td>
+          <td class="text-end text-body-secondary small" style="width: 4rem;">${pct(valor)}%</td>
+        </tr>`;
+      const partes = (lista) => lista.filter(([, n]) => n > 0).map(([rotulo, n]) => `${rotulo}: ${n}`).join(' · ');
+
+      let detalhes = '';
+      if (r.naoRecebem.length) {
+        detalhes = `
+          <details class="mt-3">
+            <summary class="small text-body-secondary">Ver os ${r.naoRecebem.length} aluno(s) que não recebem e o motivo</summary>
+            <div class="table-responsive mt-2">
+              <table class="table table-sm align-middle mb-0">
+                <thead><tr><th>Aluno</th><th>Turma</th><th class="text-end">Sem vir</th><th>Motivo</th></tr></thead>
+                <tbody>${r.naoRecebem.map((a) => `
+                  <tr>
+                    <td>${escaparHtml(a.nomeAluno || '—')}</td>
+                    <td class="small">${escaparHtml(nomeTurmaLimpo(a.nomeTurma) || a.codigoTurma)}</td>
+                    <td class="text-end">${a.diasSemVir}</td>
+                    <td class="small">${escaparHtml(r.situacoes[a.situacao] || a.situacao)}</td>
+                  </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+          </details>`;
+      }
+
+      area.innerHTML = `
+        <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2 mb-3">
+          <h5 class="mb-0">Acompanhamento</h5>
+          <span class="text-body-secondary small">${emRisco} aluno(s) em risco ${r.sistema.turmas ? 'nas turmas escolhidas' : 'na escola'}</span>
+        </div>
+        <div class="fs-2 fw-semibold">${pct(p.enviada)}% <span class="fs-6 fw-normal text-body-secondary">já receberam a mensagem</span></div>
+        <div class="progress my-3" style="height: 12px;">
+          <div class="progress-bar bg-success" style="width: ${pct(p.enviada)}%" title="Mensagem enviada"></div>
+          <div class="progress-bar bg-info" style="width: ${pct(naFila)}%" title="Na fila"></div>
+          <div class="progress-bar bg-secondary" style="width: ${pct(coordenacao)}%" title="Com a coordenação"></div>
+          <div class="progress-bar bg-warning" style="width: ${pct(naoPodem)}%" title="Não podem receber"></div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <tbody>
+              ${linha('success', 'Mensagem enviada', p.enviada, `${responderam} respondeu(ram)`)}
+              ${linha('info', 'Na fila de envio', naFila)}
+              ${linha('secondary', 'Com a coordenação', coordenacao, partes([['já falou com o aluno', p.contato_humano], [`entrou em risco há mais de ${r.diasRecente} dias`, p.antigo]]))}
+              ${linha('warning', 'Não podem receber WhatsApp', naoPodem, partes([['pediu SAIR', p.sair], ['sem WhatsApp / falha', p.sem_whatsapp], ['sem telefone', p.sem_telefone], ['situação não ativa', p.situacao]]))}
+              ${p.semana ? linha('light', 'Já recebeu por outra turma nesta semana', p.semana) : ''}
+            </tbody>
+          </table>
+        </div>
+        ${detalhes}`;
     }
 
     // Linha de "o que está acontecendo agora", com contagem regressiva que anda
@@ -1034,7 +927,7 @@
       if (!r?.lote || r.lote.status !== 'em_andamento') return '';
       if (r.lote.aguardando) return `<i class="bi bi-hourglass-split me-1"></i>${escaparHtml(r.lote.aguardando)}`;
       if (r.proxima?.status === 'enviando') return `<i class="bi bi-arrow-repeat me-1"></i>Enviando para <strong>${escaparHtml(r.proxima.nomeAluno)}</strong>…`;
-      if (!r.proxima) return '<i class="bi bi-check2-circle me-1"></i>Finalizando…';
+      if (!r.proxima) return '<i class="bi bi-check2-circle me-1"></i>Ninguém na fila agora.';
       const faltaMs = new Date(r.lote.proximoEnvioEm || 0).getTime() - (Date.now() + diferencaRelogio);
       if (faltaMs <= 0) return `<i class="bi bi-send me-1"></i>Preparando a mensagem para <strong>${escaparHtml(r.proxima.nomeAluno)}</strong>…`;
       const seg = Math.ceil(faltaMs / 1000);
@@ -1042,235 +935,120 @@
       return `<i class="bi bi-clock me-1"></i>Próxima mensagem em <strong>${texto}</strong>, para ${escaparHtml(r.proxima.nomeAluno)}`;
     }
 
-    function desenharLote() {
+    function desenharMensagens() {
       const area = document.getElementById('areaEnvio');
       const r = estadoEnvio;
-      const lote = r.lote;
-      const ativo = lote?.status === 'em_andamento';
-
-      const botaoIniciar = `<button type="button" class="btn btn-primary" id="btnIniciarEnvio" ${r.sessao.conectado && !r.sessao.pausadoMotivo ? '' : 'disabled'}><i class="bi bi-send-fill me-1"></i>${lote ? 'Iniciar novo envio' : 'Iniciar envio'}</button>`;
-
-      if (!lote) {
-        area.innerHTML = `
-          <h5 class="mb-1">Nenhum envio ainda</h5>
-          <p class="text-body-secondary">Ao iniciar, você confere a lista de alunos antes de qualquer mensagem sair.</p>
-          ${botaoIniciar}
-          ${r.sessao.conectado ? '' : '<div class="small text-body-secondary mt-2">Conecte o seu WhatsApp na aba Meu número para poder enviar.</div>'}`;
+      if (!r.sistema) {
+        area.innerHTML = '<h5 class="mb-1">Mensagens</h5><p class="text-body-secondary mb-0">Nenhum envio automático em andamento.</p>';
         return;
       }
-
-      const c = r.contagem;
-      const processadas = (c.enviada || 0) + (c.falhou || 0) + (c.cancelada || 0);
-      const pct = Math.round((processadas / Math.max(1, lote.total)) * 100);
-      const titulo = ativo ? 'Envio em andamento'
-        : lote.status === 'parado' ? `Envio parado${lote.paradoPor ? ` por ${escaparHtml(lote.paradoPor)}` : ''}`
-        : 'Envio concluído';
-
       area.innerHTML = `
-        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-          <div>
-            <h5 class="mb-1">${titulo}</h5>
-            <div class="small text-body-secondary">Iniciado em ${formatarDataHora(lote.iniciadoEm)}${lote.finalizadoEm ? ` · terminou em ${formatarDataHora(lote.finalizadoEm)}` : ''}</div>
-          </div>
-          ${ativo
-            ? '<button type="button" class="btn btn-outline-danger" id="btnPararEnvio"><i class="bi bi-stop-circle me-1"></i>Parar envio</button>'
-            : botaoIniciar}
+        <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2 mb-2">
+          <h5 class="mb-0">Últimas mensagens</h5>
+          <a href="#historico" data-ir-aba="historico" class="small">ver o histórico completo</a>
         </div>
-
-        <div class="d-flex justify-content-between small mb-1">
-          <span><strong>${c.enviada || 0}</strong> enviada(s) de ${lote.total}</span>
-          <span class="text-body-secondary">${c.pendente || 0} na fila · ${c.falhou || 0} falha(s) · ${c.cancelada || 0} cancelada(s)</span>
-        </div>
-        <div class="progress mb-3" style="height: 10px;">
-          <div class="progress-bar bg-success" style="width: ${Math.round(((c.enviada || 0) / Math.max(1, lote.total)) * 100)}%"></div>
-          <div class="progress-bar bg-danger" style="width: ${Math.round(((c.falhou || 0) / Math.max(1, lote.total)) * 100)}%"></div>
-          <div class="progress-bar bg-warning" style="width: ${Math.round(((c.cancelada || 0) / Math.max(1, lote.total)) * 100)}%"></div>
-        </div>
-        ${ativo ? `<div class="alert alert-light border py-2 small" id="textoAgora">${textoAgora()}</div>` : ''}
-        <div class="small text-body-secondary mb-2">${pct}% processado</div>
-
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead><tr><th>Aluno</th><th>Turma</th><th>Situação</th><th class="text-end">Enviada em</th></tr></thead>
-            <tbody>
-              ${r.mensagens.map((m) => `
-                <tr>
-                  <td>${escaparHtml(m.nomeAluno || '—')}<div class="small text-body-secondary">${formatarTelefone(m.telefone)}</div></td>
-                  <td class="small">${escaparHtml(nomeTurmaLimpo(m.nomeTurma) || m.codigoTurma)}</td>
-                  <td>${badgeMensagem(m.status, m.erro)}</td>
-                  <td class="text-end small text-nowrap">${m.enviadaEm ? formatarDataHora(m.enviadaEm) : '—'}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>`;
+        ${r.lote?.status === 'em_andamento' ? `<div class="alert alert-light border py-2 small" id="textoAgora">${textoAgora()}</div>` : ''}
+        ${r.mensagens.length === 0
+          ? '<p class="text-body-secondary mb-0">Nenhuma mensagem ainda.</p>'
+          : `
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead><tr><th>Aluno</th><th>Turma</th><th>Situação</th><th class="text-end">Enviada em</th></tr></thead>
+                <tbody>
+                  ${r.mensagens.map((m) => `
+                    <tr>
+                      <td>${escaparHtml(m.nomeAluno || '—')}</td>
+                      <td class="small">${escaparHtml(nomeTurmaLimpo(m.nomeTurma) || m.codigoTurma)}</td>
+                      <td>${badgeMensagem(m.status, m.erro)}</td>
+                      <td class="text-end small text-nowrap">${m.enviadaEm ? formatarDataHora(m.enviadaEm) : '—'}</td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>`}`;
     }
 
-    async function carregarEnvio() {
-      if (confirmandoEnvio) return; // não atropela a tela de confirmação
+    async function carregarEnvio(redesenharControle = false) {
       try {
-        const r = await chamarApi('/whatsapp/lote/atual');
+        const [r] = await Promise.all([chamarApi('/whatsapp/automatico'), carregarTurmasDisponiveis()]);
         if (r.status !== 'ok') throw new Error(r.mensagem);
+        // Ligou ou desligou em outra máquina: o formulário de turmas precisa mudar.
+        const mudouEstado = Boolean(estadoEnvio?.sistema) !== Boolean(r.sistema);
         diferencaRelogio = new Date(r.agora).getTime() - Date.now();
         estadoEnvio = r;
         desenharResumoEnvio(r);
-        if (!confirmandoEnvio) desenharLote();
+        if (redesenharControle || mudouEstado || !controleDesenhado) desenharControle();
+        desenharCobertura();
+        desenharMensagens();
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
-          document.getElementById('areaEnvio').innerHTML = `<p class="text-danger mb-0">Não foi possível carregar o envio: ${escaparHtml(erro.message)}</p>`;
+          document.getElementById('areaControle').innerHTML = `<p class="text-danger mb-0">Não foi possível carregar o envio automático: ${escaparHtml(erro.message)}</p>`;
         }
       }
     }
 
+    // Consulta a cada 15s: a conta de cobertura recalcula o risco da escola inteira.
     function iniciarAtualizacaoEnvio() {
       pararAtualizacaoEnvio();
-      carregarEnvio();
-      timerEnvio = setInterval(carregarEnvio, 5000);
+      carregarEnvio(true);
+      timerEnvio = setInterval(() => carregarEnvio(false), 15000);
       timerContagem = setInterval(() => {
         const el = document.getElementById('textoAgora');
         if (el) el.innerHTML = textoAgora();
       }, 1000);
     }
 
-    // Tela de confirmação: a mesma prévia da aba Minhas turmas, com uma caixa por
-    // aluno. Só vai pro servidor quem foi DESMARCADO — a lista em si é recalculada lá.
-    async function abrirConfirmacao() {
-      const area = document.getElementById('areaEnvio');
-      confirmandoEnvio = { receberiam: [] };
-      area.innerHTML = '<p class="text-body-secondary mb-0">Montando a lista...</p>';
-
-      const incluirSemResposta = localStorage.getItem('coor360_whatsapp_opcaoSemResposta') === '1';
-      const incluirNaoContatado = localStorage.getItem('coor360_whatsapp_opcaoNaoContatado') === '1';
-      const params = new URLSearchParams();
-      if (incluirSemResposta) params.set('incluirSemResposta', '1');
-      if (incluirNaoContatado) params.set('incluirNaoContatado', '1');
-
+    async function salvarAutomatico(ligado, botao) {
+      const turmas = ligado ? turmasDoFormulario() : null;
+      if (ligado && Array.isArray(turmas) && turmas.length === 0) {
+        Swal.fire({ title: 'Escolha as turmas', text: 'Marque pelo menos uma turma, ou escolha "Todas as turmas".', icon: 'warning' });
+        return;
+      }
+      botao.disabled = true;
       try {
-        const previa = await chamarApi(`/whatsapp/lote/previa${params.size ? `?${params}` : ''}`);
-        if (previa.status !== 'ok') throw new Error(previa.mensagem);
-        confirmandoEnvio = { ...previa, incluirSemResposta, incluirNaoContatado };
-
-        const opcoesTexto = [incluirSemResposta && 'sem resposta', incluirNaoContatado && 'não foi possível contatar'].filter(Boolean);
-        const lista = previa.receberiam;
-
-        area.innerHTML = `
-          <h5 class="mb-1">Confira quem vai receber</h5>
-          <p class="small text-body-secondary mb-3">
-            Desmarque quem não deve receber agora. ${opcoesTexto.length
-              ? `Incluindo quem já foi contatado e ficou: <strong>${opcoesTexto.join(', ')}</strong>.`
-              : 'Só quem ainda não teve contato neste período de faltas.'}
-            (Essas opções ficam na aba <a href="#turmas" data-ir-aba="turmas">Minhas turmas</a>.)
-          </p>
-          ${lista.length === 0
-            ? '<div class="alert alert-info">Nenhum aluno das suas turmas está apto a receber agora.</div>'
-            : `
-              <div class="table-responsive mb-3" style="max-height: 420px;">
-                <table class="table table-sm align-middle mb-0">
-                  <thead><tr>
-                    <th style="width: 2rem;"><input class="form-check-input" type="checkbox" id="marcarTodos" checked title="Marcar/desmarcar todos"></th>
-                    <th>Aluno</th><th>Turma</th><th class="text-end">Sem vir</th><th>Telefone</th>
-                  </tr></thead>
-                  <tbody>
-                    ${lista.map((a) => `
-                      <tr>
-                        <td><input class="form-check-input caixa-aluno" type="checkbox" checked value="${escaparHtml(`${a.matricula}|${a.codigoTurma}`)}"></td>
-                        <td>${escaparHtml(a.nomeAluno || '—')}${a.contatoNoEpisodio ? ` <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Nova tentativa · ${escaparHtml(a.contatoNoEpisodio.rotuloStatus)}</span>` : ''}</td>
-                        <td class="small">${escaparHtml(nomeTurmaLimpo(a.nomeTurma) || a.codigoTurma)}</td>
-                        <td class="text-end">${a.diasSemVir}</td>
-                        <td class="small text-nowrap">${formatarTelefone(a.telefone)}</td>
-                      </tr>`).join('')}
-                  </tbody>
-                </table>
-              </div>
-              <div class="small text-body-secondary mb-3" id="resumoConfirmacao"></div>`}
-          <div class="d-flex gap-2">
-            ${lista.length ? '<button type="button" class="btn btn-primary" id="btnConfirmarEnvio"><i class="bi bi-send-fill me-1"></i>Confirmar e iniciar</button>' : ''}
-            <button type="button" class="btn btn-outline-secondary" id="btnCancelarConfirmacao">Voltar</button>
-          </div>`;
-        atualizarResumoConfirmacao();
+        const r = await chamarApi('/whatsapp/automatico', { method: 'PUT', body: JSON.stringify({ ligado, turmas }) });
+        if (r.status !== 'ok') throw new Error(r.mensagem);
+        notificar.ok(r.mensagem);
+        await carregarEnvio(true);
       } catch (erro) {
-        confirmandoEnvio = null;
-        if (erro.message !== 'Sessão expirada') {
-          area.innerHTML = `<p class="text-danger mb-2">Não foi possível montar a lista: ${escaparHtml(erro.message)}</p><button type="button" class="btn btn-outline-secondary" id="btnCancelarConfirmacao">Voltar</button>`;
-        }
+        botao.disabled = false;
+        if (erro.message !== 'Sessão expirada') Swal.fire({ title: 'Não foi possível salvar', text: erro.message, icon: 'error' });
       }
     }
 
-    function atualizarResumoConfirmacao() {
-      const resumo = document.getElementById('resumoConfirmacao');
-      const botao = document.getElementById('btnConfirmarEnvio');
-      if (!resumo || !botao) return;
-      const marcados = document.querySelectorAll('.caixa-aluno:checked').length;
-      const limite = confirmandoEnvio.limiteDiaEfetivo || 1;
-      const dias = Math.ceil(marcados / limite);
-      botao.disabled = marcados === 0;
-      botao.innerHTML = `<i class="bi bi-send-fill me-1"></i>Confirmar e iniciar (${marcados})`;
-      resumo.textContent = marcados === 0
-        ? 'Nenhum aluno marcado.'
-        : `${marcados} aluno(s) marcado(s). Com o limite de ${limite} por dia, o envio leva ${dias === 1 ? 'cerca de 1 dia' : `cerca de ${dias} dias`} — ele continua sozinho nos dias seguintes, dentro do horário configurado.`;
-    }
-
-    document.getElementById('areaEnvio').addEventListener('change', (evento) => {
-      if (evento.target.id === 'marcarTodos') {
-        document.querySelectorAll('.caixa-aluno').forEach((caixa) => { caixa.checked = evento.target.checked; });
+    document.getElementById('areaControle').addEventListener('change', (evento) => {
+      if (evento.target.name === 'escopoTurmas') {
+        document.getElementById('listaTurmasEscolha').hidden = evento.target.value === 'todas';
       }
-      if (evento.target.id === 'marcarTodos' || evento.target.classList.contains('caixa-aluno')) atualizarResumoConfirmacao();
     });
 
-    document.getElementById('areaEnvio').addEventListener('click', async (evento) => {
+    document.getElementById('areaControle').addEventListener('click', async (evento) => {
       const alvo = evento.target.closest('button');
       if (!alvo) return;
 
-      if (alvo.id === 'btnIniciarEnvio') {
-        abrirConfirmacao();
-      } else if (alvo.id === 'btnCancelarConfirmacao') {
-        confirmandoEnvio = null;
-        carregarEnvio();
-      } else if (alvo.id === 'btnConfirmarEnvio') {
-        const excluidos = [...document.querySelectorAll('.caixa-aluno:not(:checked)')].map((caixa) => caixa.value);
-        const marcados = document.querySelectorAll('.caixa-aluno:checked').length;
+      if (alvo.id === 'btnLigarAutomatico') {
+        const turmas = turmasDoFormulario();
         const confirmacao = await Swal.fire({
-          title: `Enviar para ${marcados} aluno(s)?`,
-          text: 'As mensagens saem uma por vez, pelo seu WhatsApp, respeitando o intervalo e os limites. Você pode parar a qualquer momento.',
+          title: 'Ligar o envio automático?',
+          text: `A partir de agora este número manda mensagem sozinho para os alunos que entrarem em risco ${turmas ? `em ${turmas.length} turma(s)` : 'em todas as turmas'}, sem ninguém conferir a lista antes.`,
           icon: 'question',
           showCancelButton: true,
-          confirmButtonText: 'Iniciar envio',
+          confirmButtonText: 'Ligar',
           cancelButtonText: 'Cancelar'
         });
-        if (!confirmacao.isConfirmed) return;
-
-        alvo.disabled = true;
-        try {
-          const r = await chamarApi('/whatsapp/lote', {
-            method: 'POST',
-            body: JSON.stringify({ incluirSemResposta: confirmandoEnvio.incluirSemResposta, incluirNaoContatado: confirmandoEnvio.incluirNaoContatado, excluidos })
-          });
-          if (r.status !== 'ok') throw new Error(r.mensagem);
-          notificar.ok(`Envio iniciado para ${marcados} aluno(s).`);
-          confirmandoEnvio = null;
-          carregarEnvio();
-        } catch (erro) {
-          alvo.disabled = false;
-          if (erro.message !== 'Sessão expirada') Swal.fire({ title: 'Não foi possível iniciar', text: erro.message, icon: 'error' });
-        }
-      } else if (alvo.id === 'btnPararEnvio') {
+        if (confirmacao.isConfirmed) salvarAutomatico(true, alvo);
+      } else if (alvo.id === 'btnSalvarTurmas') {
+        salvarAutomatico(true, alvo);
+      } else if (alvo.id === 'btnDesligarAutomatico') {
         const confirmacao = await Swal.fire({
-          title: 'Parar o envio?',
-          text: 'Quem ainda está na fila não recebe. Esses alunos voltam a aparecer da próxima vez que você iniciar um envio.',
+          title: 'Desligar o envio automático?',
+          text: 'Nenhuma mensagem nova sai. Quem estava na fila não recebe; se ainda estiver em risco quando ligar de novo, volta para a fila.',
           icon: 'warning',
           showCancelButton: true,
-          confirmButtonText: 'Parar envio',
+          confirmButtonText: 'Desligar',
           confirmButtonColor: '#dc3545',
-          cancelButtonText: 'Continuar enviando'
+          cancelButtonText: 'Continuar ligado'
         });
-        if (!confirmacao.isConfirmed) return;
-        try {
-          const r = await chamarApi(`/whatsapp/lote/${estadoEnvio.lote.id}/parar`, { method: 'POST' });
-          if (r.status !== 'ok') throw new Error(r.mensagem);
-          notificar.ok('Envio parado. Quem estava na fila não recebeu.');
-          carregarEnvio();
-        } catch (erro) {
-          if (erro.message !== 'Sessão expirada') Swal.fire({ title: 'Não foi possível parar', text: erro.message, icon: 'error' });
-        }
+        if (confirmacao.isConfirmed) salvarAutomatico(false, alvo);
       }
     });
 
@@ -1347,25 +1125,22 @@
 
     // ───────────── Abas ─────────────
 
-    // Cada aba carrega na primeira vez que é aberta; turmas, envio e histórico
-    // recarregam sempre, porque outras pessoas mexem nesses dados ao mesmo tempo.
+    // Cada aba carrega na primeira vez que é aberta; envio e histórico recarregam
+    // sempre, porque outras pessoas mexem nesses dados ao mesmo tempo.
     const abasCarregadas = new Set();
 
     function abrirAba(nome) {
-      const abas = ['numero', 'turmas', 'mensagem', 'envio', 'historico'];
+      const abas = ['numero', 'mensagem', 'envio', 'historico'];
       if (!abas.includes(nome)) nome = 'numero';
 
       document.querySelectorAll('#abas [data-aba]').forEach((link) => link.classList.toggle('active', link.dataset.aba === nome));
       document.querySelectorAll('[data-painel]').forEach((painel) => { painel.hidden = painel.dataset.painel !== nome; });
 
-      // A consulta a cada 5s só roda com a aba Envio aberta.
+      // A consulta a cada 15s só roda com a aba Envio automático aberta.
       if (nome === 'envio') iniciarAtualizacaoEnvio();
       else pararAtualizacaoEnvio();
 
-      if (nome === 'turmas') {
-        carregarTurmas();
-        carregarPrevia();
-      } else if (nome === 'historico') {
+      if (nome === 'historico') {
         carregarHistorico(1);
       } else if (!abasCarregadas.has(nome)) {
         if (nome === 'numero') acompanharSessao();
@@ -1386,12 +1161,11 @@
       irParaAba(link.dataset.aba);
     });
 
-    // Links dentro do conteúdo que levam pra outra aba ("use a aba Envio").
+    // Links dentro do conteúdo que levam pra outra aba ("conecte na aba Meu número").
     document.addEventListener('click', (evento) => {
       const link = evento.target.closest('[data-ir-aba]');
       if (!link) return;
       evento.preventDefault();
-      confirmandoEnvio = null;
       irParaAba(link.dataset.irAba);
     });
 

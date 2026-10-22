@@ -3,8 +3,7 @@ const openwa = require('../services/openwa');
 const whatsappLote = require('../services/whatsappLote');
 const whatsappEnvio = require('../services/whatsappEnvio');
 const { normalizarTelefone, mesmoTelefone } = require('../services/telefone');
-const { calcularAlunosEmRiscoSemRecuperados } = require('./alunoController');
-const { carregarTurmasEncerradas } = require('./turmaController');
+const whatsappAutomatico = require('../services/whatsappAutomatico');
 
 const TIPOS_NUMERO = ['pessoal', 'institucional'];
 const { STATUS_PRECISA_ACAO, MOTIVO_NUMERO_DIFERENTE } = whatsappEnvio;
@@ -131,8 +130,8 @@ async function salvarMeuNumero(req, res) {
 
         // Trocar no meio de um envio mandaria o resto do lote de outro celular,
         // assinado com um contato que o aluno não conhece.
-        if (trocouNumero && await whatsappEnvio.loteEmAndamento(sessao.id)) {
-            return res.status(409).json({ status: 'erro', mensagem: 'Há um envio em andamento. Pare o envio antes de trocar o número.' });
+        if (trocouNumero && sessao.envioAutomatico) {
+            return res.status(409).json({ status: 'erro', mensagem: 'Este é o número do envio automático. Desligue o envio automático antes de trocar o número.' });
         }
 
         if (trocouNumero) await encerrarSessaoOpenWA(sessao.sessionId);
@@ -284,110 +283,6 @@ async function desconectarSessao(req, res) {
     }
 }
 
-// ───────────── Turmas ─────────────
-
-// GET /whatsapp/turmas — todas as turmas com chamada lançada, quem é o responsável
-// (null = disponível) e quantos alunos estão em risco agora, pra ajudar a escolher.
-async function listarTurmas(req, res) {
-    try {
-        const usuario = await buscarUsuario(req);
-        if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
-
-        const [turmas, assumidas, { emRisco, turmasEncerradas }] = await Promise.all([
-            prisma.lancamento.findMany({
-                where: { codigoTurma: { not: null } },
-                distinct: ['codigoTurma'],
-                select: { codigoTurma: true, nomeTurma: true },
-                orderBy: { codigoTurma: 'asc' }
-            }),
-            prisma.usuarioTurma.findMany({ include: { usuario: { select: { id: true, usuario: true, nome: true } } } }),
-            calcularAlunosEmRiscoSemRecuperados()
-        ]);
-
-        const responsavelPorTurma = new Map(assumidas.map((a) => [a.codigoTurma, a]));
-        const riscoPorTurma = new Map();
-        for (const item of emRisco) riscoPorTurma.set(item.codigoTurma, (riscoPorTurma.get(item.codigoTurma) || 0) + 1);
-
-        // Turma encerrada não é oferecida: não se cobra falta de curso que acabou.
-        const dados = turmas.filter((turma) => !turmasEncerradas.has(turma.codigoTurma)).map((turma) => {
-            const assumida = responsavelPorTurma.get(turma.codigoTurma);
-            return {
-                codigoTurma: turma.codigoTurma,
-                nomeTurma: turma.nomeTurma,
-                emRisco: riscoPorTurma.get(turma.codigoTurma) || 0,
-                responsavel: assumida ? { usuario: assumida.usuario.usuario, nome: assumida.usuario.nome } : null,
-                minha: assumida ? assumida.usuarioId === usuario.id : false,
-                assumidaEm: assumida ? assumida.criadoEm : null
-            };
-        });
-
-        res.json({ status: 'ok', admin: Boolean(req.usuario.admin), dados });
-    } catch (erro) {
-        respostaErro(res, erro);
-    }
-}
-
-// POST /whatsapp/turmas/:codigoTurma — assumir. Quem garante "um responsável por
-// turma" é o índice único: se duas pessoas clicarem juntas, a segunda cai no P2002.
-async function assumirTurma(req, res) {
-    try {
-        const usuario = await buscarUsuario(req);
-        if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
-
-        const { codigoTurma } = req.params;
-        const existe = await prisma.lancamento.findFirst({ where: { codigoTurma }, select: { id: true } });
-        if (!existe) return res.status(404).json({ status: 'erro', mensagem: 'Turma não encontrada' });
-
-        // A lista já não oferece turma encerrada, mas a checagem é aqui: o filtro
-        // da tela é só exibição.
-        const encerradas = await carregarTurmasEncerradas();
-        if (encerradas.has(codigoTurma)) {
-            return res.status(409).json({ status: 'erro', mensagem: 'Esta turma está encerrada. Reabra no painel antes de assumi-la.' });
-        }
-
-        try {
-            await prisma.usuarioTurma.create({ data: { usuarioId: usuario.id, codigoTurma } });
-        } catch (erro) {
-            if (erro.code !== 'P2002') throw erro;
-            const atual = await prisma.usuarioTurma.findUnique({ where: { codigoTurma }, include: { usuario: { select: { usuario: true, nome: true } } } });
-            const quem = atual?.usuarioId === usuario.id ? 'você' : (atual?.usuario.nome || atual?.usuario.usuario || 'outro usuário');
-            return res.status(409).json({ status: 'erro', mensagem: `Esta turma já está com ${quem}.` });
-        }
-        res.json({ status: 'ok', mensagem: 'Turma assumida.' });
-    } catch (erro) {
-        respostaErro(res, erro);
-    }
-}
-
-// DELETE /whatsapp/turmas/:codigoTurma — liberar. Só o responsável ou o admin
-// (pro caso de alguém sair da coordenação com turmas presas no nome dele).
-// Na etapa 3 isto também cancela as mensagens pendentes da turma.
-async function liberarTurma(req, res) {
-    try {
-        const usuario = await buscarUsuario(req);
-        if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
-
-        const atual = await prisma.usuarioTurma.findUnique({ where: { codigoTurma: req.params.codigoTurma } });
-        if (!atual) return res.status(404).json({ status: 'erro', mensagem: 'Esta turma não está com ninguém.' });
-        if (atual.usuarioId !== usuario.id && !req.usuario.admin) {
-            return res.status(403).json({ status: 'erro', mensagem: 'Só quem assumiu a turma (ou o administrador) pode liberá-la.' });
-        }
-
-        await prisma.usuarioTurma.delete({ where: { id: atual.id } });
-        // Quem ainda estava na fila por causa desta turma não recebe mais por este número.
-        const canceladas = await prisma.mensagemWhatsapp.updateMany({
-            where: { codigoTurma: atual.codigoTurma, usuarioId: atual.usuarioId, status: 'pendente' },
-            data: { status: 'cancelada', erro: `Turma liberada por ${usuario.usuario}` }
-        });
-        res.json({
-            status: 'ok',
-            mensagem: canceladas.count ? `Turma liberada. ${canceladas.count} mensagem(ns) na fila foram canceladas.` : 'Turma liberada.'
-        });
-    } catch (erro) {
-        respostaErro(res, erro);
-    }
-}
-
 // ───────────── Mensagem e limites ─────────────
 
 function dadosConfig(sessao) {
@@ -464,104 +359,167 @@ async function previaMensagem(req, res) {
     }
 }
 
-// GET /whatsapp/lote/previa?incluirSemResposta=1&incluirNaoContatado=1 — quem
-// receberia mensagem se o envio fosse iniciado agora. Não envia nada (etapa 3).
-async function previaLote(req, res) {
-    try {
-        const usuario = await buscarUsuario(req);
-        if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
-        const sessao = await buscarOuCriarSessao(usuario.id);
-        const previa = await whatsappLote.montarPrevia(usuario, sessao, opcoesDoPedido(req.query));
-        res.json({ status: 'ok', ...previa, limiteDiaEfetivo: whatsappLote.limiteDiaEfetivo(sessao) });
-    } catch (erro) {
-        respostaErro(res, erro);
+// ───────────── Envio automático ─────────────
+
+// Quem pode mexer na chave e nas turmas do número do sistema: o dono do número
+// (normalmente o usuário do chip, ex: "whatsapp-1") ou o administrador.
+function podeAlterarSistema(req, usuario, sistema) {
+    return Boolean(req.usuario.admin) || sistema.usuarioId === usuario.id;
+}
+
+function validarTurmas(turmas) {
+    if (turmas === null || turmas === undefined) return { turmas: null };
+    if (!Array.isArray(turmas) || turmas.some((t) => typeof t !== 'string' || !t.trim())) {
+        return { erro: 'Lista de turmas inválida.' };
     }
+    const lista = [...new Set(turmas.map((t) => t.trim()))];
+    if (lista.length === 0) return { erro: 'Escolha pelo menos uma turma, ou "Todas as turmas".' };
+    return { turmas: lista };
 }
 
-// ───────────── Envio ─────────────
-
-function opcoesDoPedido(fonte) {
-    return {
-        incluirSemResposta: fonte.incluirSemResposta === '1' || fonte.incluirSemResposta === true,
-        incluirNaoContatado: fonte.incluirNaoContatado === '1' || fonte.incluirNaoContatado === true
-    };
-}
-
-// POST /whatsapp/lote { incluirSemResposta, incluirNaoContatado, excluidos: ["matricula|codigoTurma"] }
-async function iniciarEnvio(req, res) {
+// GET /whatsapp/automatico — estado do número do sistema e a cobertura: quantos
+// alunos em risco já receberam, estão na fila, ou não podem receber (e por quê).
+// Visível a todos os usuários logados; só o dono e o admin alteram.
+async function obterAutomatico(req, res) {
     try {
         const usuario = await buscarUsuario(req);
         if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
-        const sessao = await buscarOuCriarSessao(usuario.id);
-
-        if (!sessao.sessionId || sessao.status !== 'ready') {
-            return res.status(400).json({ status: 'erro', mensagem: 'Conecte o seu WhatsApp (aba Meu número) antes de iniciar o envio.' });
-        }
-        if (sessao.pausadoMotivo) {
-            return res.status(400).json({ status: 'erro', mensagem: `O envio por este número está pausado: ${sessao.pausadoMotivo} Resolva e clique em Retomar.` });
-        }
-
-        const excluidos = Array.isArray(req.body.excluidos) ? req.body.excluidos.map(String) : [];
-        const lote = await whatsappLote.iniciarLote(usuario, sessao, opcoesDoPedido(req.body), excluidos);
-        res.json({ status: 'ok', mensagem: `Envio iniciado para ${lote.total} aluno(s).`, loteId: lote.id });
-    } catch (erro) {
-        if (erro instanceof whatsappLote.ErroLote) return res.status(erro.status).json({ status: 'erro', mensagem: erro.message });
-        respostaErro(res, erro);
-    }
-}
-
-// GET /whatsapp/lote/atual — o lote em andamento (ou o último) com o status de cada
-// mensagem, uso do dia/mês e quando sai a próxima. A tela consulta a cada 5s.
-async function loteAtual(req, res) {
-    try {
-        const usuario = await buscarUsuario(req);
-        if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
-        const sessao = await buscarOuCriarSessao(usuario.id);
         const agora = new Date();
+        const [minhaSessao, sistema] = await Promise.all([
+            buscarOuCriarSessao(usuario.id),
+            whatsappAutomatico.sessaoDoSistema()
+        ]);
 
-        const lote = await whatsappEnvio.loteEmAndamento(sessao.id)
-            || await prisma.loteWhatsapp.findFirst({ where: { sessaoId: sessao.id }, orderBy: { id: 'desc' } });
-
-        const uso = await whatsappEnvio.contarEnvios(sessao.id, agora);
         const base = {
             status: 'ok',
             agora,
-            sessao: { conectado: sessao.status === 'ready' && Boolean(sessao.sessionId), status: sessao.status, pausadoMotivo: sessao.pausadoMotivo },
-            uso: { hoje: uso.hoje, limiteDia: whatsappLote.limiteDiaEfetivo(sessao, agora), mes: uso.mes, limiteMes: sessao.limiteMes }
+            admin: Boolean(req.usuario.admin),
+            situacoes: whatsappAutomatico.SITUACOES,
+            diasRecente: whatsappAutomatico.DIAS_RECENTE,
+            minhaSessao: {
+                conectado: minhaSessao.status === 'ready' && Boolean(minhaSessao.sessionId),
+                institucional: minhaSessao.tipo === 'institucional',
+                pausadoMotivo: minhaSessao.pausadoMotivo
+            }
         };
-        if (!lote) return res.json({ ...base, lote: null, mensagens: [], contagem: {} });
+        if (!sistema) return res.json({ ...base, sistema: null });
 
-        const mensagens = await prisma.mensagemWhatsapp.findMany({
-            where: { loteId: lote.id },
-            orderBy: { id: 'asc' },
-            select: { id: true, matricula: true, nomeAluno: true, codigoTurma: true, nomeTurma: true, status: true, erro: true, enviadaEm: true, telefone: true }
+        const lote = await whatsappAutomatico.loteAutomatico(sistema.id)
+            || await prisma.loteWhatsapp.findFirst({ where: { sessaoId: sistema.id, automatico: true }, orderBy: { id: 'desc' } });
+
+        const [uso, itens, mensagens, proxima] = await Promise.all([
+            whatsappEnvio.contarEnvios(sistema.id, agora),
+            whatsappAutomatico.avaliar(sistema, agora),
+            lote
+                ? prisma.mensagemWhatsapp.findMany({
+                    where: { loteId: lote.id },
+                    orderBy: { atualizadoEm: 'desc' },
+                    take: 30,
+                    select: { id: true, nomeAluno: true, codigoTurma: true, nomeTurma: true, status: true, erro: true, enviadaEm: true, atualizadoEm: true }
+                })
+                : [],
+            lote
+                ? prisma.mensagemWhatsapp.findFirst({
+                    where: { loteId: lote.id, status: { in: ['enviando', 'pendente'] } },
+                    orderBy: [{ status: 'asc' }, { id: 'asc' }], // "enviando" antes de "pendente"
+                    select: { nomeAluno: true, status: true }
+                })
+                : null
+        ]);
+
+        // Quem não recebe e por quê — é a pergunta "por que a Maria não recebeu?".
+        const SEM_ENVIO = ['contato_humano', 'sair', 'sem_whatsapp', 'sem_telefone', 'situacao', 'antigo'];
+        const naoRecebem = itens
+            .filter((item) => SEM_ENVIO.includes(item.situacao))
+            .map((item) => ({
+                nomeAluno: item.nomeAluno,
+                codigoTurma: item.codigoTurma,
+                nomeTurma: item.nomeTurma,
+                diasSemVir: item.diasSemVir,
+                situacao: item.situacao
+            }));
+
+        res.json({
+            ...base,
+            sistema: {
+                dono: sistema.usuario.nome || sistema.usuario.usuario,
+                souDono: sistema.usuarioId === usuario.id,
+                podeAlterar: podeAlterarSistema(req, usuario, sistema),
+                telefone: sistema.telefone,
+                conectado: sistema.status === 'ready' && Boolean(sistema.sessionId),
+                pausadoMotivo: sistema.pausadoMotivo,
+                turmas: whatsappAutomatico.lerTurmas(sistema)
+            },
+            uso: { hoje: uso.hoje, limiteDia: whatsappLote.limiteDiaEfetivo(sistema, agora), mes: uso.mes, limiteMes: sistema.limiteMes },
+            lote: lote ? { status: lote.status, aguardando: lote.aguardando, proximoEnvioEm: lote.proximoEnvioEm } : null,
+            proxima,
+            resumo: whatsappAutomatico.resumir(itens),
+            naoRecebem,
+            mensagens
         });
-        const contagem = { pendente: 0, enviando: 0, enviada: 0, falhou: 0, cancelada: 0 };
-        for (const m of mensagens) {
-            const chave = whatsappEnvio.STATUS_JA_RECEBEU.includes(m.status) ? 'enviada' : m.status;
-            contagem[chave] = (contagem[chave] || 0) + 1;
-        }
-        const proxima = mensagens.find((m) => m.status === 'enviando') || mensagens.find((m) => m.status === 'pendente') || null;
-
-        res.json({ ...base, lote, mensagens, contagem, proxima: proxima ? { nomeAluno: proxima.nomeAluno, status: proxima.status } : null });
     } catch (erro) {
         respostaErro(res, erro);
     }
 }
 
-// POST /whatsapp/lote/:id/parar
-async function pararEnvio(req, res) {
+// PUT /whatsapp/automatico { ligado, turmas: ["codigo", ...] | null }
+// Ligar sem número do sistema torna o número do PRÓPRIO usuário o do sistema —
+// e só chip da escola pode: um bloqueio no número pessoal tira o WhatsApp da
+// pessoa inteiro. Só um número fica ligado por vez.
+async function salvarAutomatico(req, res) {
     try {
         const usuario = await buscarUsuario(req);
         if (!usuario) return res.status(404).json({ status: 'erro', mensagem: 'Usuário não encontrado' });
-        const sessao = await buscarOuCriarSessao(usuario.id);
 
-        const lote = await prisma.loteWhatsapp.findFirst({ where: { id: Number(req.params.id), sessaoId: sessao.id } });
-        if (!lote) return res.status(404).json({ status: 'erro', mensagem: 'Envio não encontrado' });
-        if (lote.status !== 'em_andamento') return res.status(409).json({ status: 'erro', mensagem: 'Este envio já terminou.' });
+        const ligado = req.body.ligado === true;
+        const { turmas, erro } = validarTurmas(req.body.turmas);
+        if (erro) return res.status(400).json({ status: 'erro', mensagem: erro });
 
-        await whatsappEnvio.pararLote(lote, usuario.usuario);
-        res.json({ status: 'ok', mensagem: 'Envio parado. Os alunos que ainda não receberam voltam a aparecer no próximo envio.' });
+        const sistema = await whatsappAutomatico.sessaoDoSistema();
+        if (sistema && !podeAlterarSistema(req, usuario, sistema)) {
+            const dono = sistema.usuario.nome || sistema.usuario.usuario;
+            return res.status(403).json({ status: 'erro', mensagem: `O número do sistema é o de ${dono}. Só essa pessoa ou o administrador podem alterar o envio automático.` });
+        }
+
+        if (!ligado) {
+            if (!sistema) return res.json({ status: 'ok', mensagem: 'O envio automático já estava desligado.' });
+            await prisma.whatsappSessao.update({ where: { id: sistema.id }, data: { envioAutomatico: false } });
+            const lote = await whatsappAutomatico.loteAutomatico(sistema.id);
+            if (lote) await whatsappEnvio.pararLote(lote, usuario.usuario);
+            return res.json({ status: 'ok', mensagem: 'Envio automático desligado. Quem estava na fila não recebe.' });
+        }
+
+        let alvo = sistema;
+        if (!alvo) {
+            const minha = await buscarOuCriarSessao(usuario.id);
+            if (minha.tipo !== 'institucional') {
+                return res.status(400).json({ status: 'erro', mensagem: 'O envio automático só pode usar um chip da escola. Cadastre o número como "Chip da escola" na aba Meu número.' });
+            }
+            if (!minha.sessionId || minha.status !== 'ready') {
+                return res.status(400).json({ status: 'erro', mensagem: 'Conecte o WhatsApp (aba Meu número) antes de ligar o envio automático.' });
+            }
+            if (minha.pausadoMotivo) {
+                return res.status(400).json({ status: 'erro', mensagem: `O envio por este número está pausado: ${minha.pausadoMotivo} Resolva e clique em Retomar.` });
+            }
+            alvo = minha;
+        }
+
+        const atualizada = await prisma.whatsappSessao.update({
+            where: { id: alvo.id },
+            data: { envioAutomatico: true, turmasAutomatico: turmas ? JSON.stringify(turmas) : null },
+            include: { usuario: true }
+        });
+
+        // Abastece já, sem esperar a próxima conferência do worker: quem ligou quer
+        // ver a fila. Mensagem de turma que saiu do piloto é cancelada pelo worker.
+        let entraram = 0;
+        try {
+            entraram = await whatsappAutomatico.abastecer(atualizada);
+        } catch (erroAbastecer) {
+            console.error('[whatsapp] erro ao abastecer ao ligar o envio automático:', erroAbastecer.message);
+        }
+        const fila = entraram ? ` ${entraram} aluno(s) entraram na fila.` : '';
+        res.json({ status: 'ok', mensagem: `${sistema ? 'Envio automático atualizado.' : 'Envio automático ligado.'}${fila}` });
     } catch (erro) {
         respostaErro(res, erro);
     }
@@ -631,9 +589,8 @@ async function historico(req, res) {
 }
 
 module.exports = {
-    iniciarEnvio,
-    loteAtual,
-    pararEnvio,
+    obterAutomatico,
+    salvarAutomatico,
     retomarSessao,
     historico,
     obterMeuNumero,
@@ -641,13 +598,9 @@ module.exports = {
     conectarSessao,
     obterSessao,
     desconectarSessao,
-    listarTurmas,
-    assumirTurma,
-    liberarTurma,
     obterConfig,
     salvarConfig,
     previaMensagem,
-    previaLote,
     normalizarTelefone,
     mesmoTelefone
 };

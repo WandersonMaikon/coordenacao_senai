@@ -83,14 +83,12 @@ async function encerrarTurma(req, res) {
         });
 
         // A turma sai do WhatsApp junto: quem estava na fila por causa dela não
-        // deve receber cobrança de falta de um curso que acabou. Mesmas escritas
-        // de whatsappController.liberarTurma, feitas direto aqui pra não criar
-        // dependência entre os dois controllers.
+        // deve receber cobrança de falta de um curso que acabou. O envio
+        // automático não a coloca de volta, porque turma encerrada sai do risco.
         const canceladas = await prisma.mensagemWhatsapp.updateMany({
             where: { codigoTurma, status: 'pendente' },
             data: { status: 'cancelada', erro: `Turma encerrada por ${req.usuario.usuario}` }
         });
-        await prisma.usuarioTurma.deleteMany({ where: { codigoTurma } });
 
         res.json({
             status: 'ok',

@@ -110,20 +110,24 @@ respeitando os limites contra bloqueio do número
         ↓
 Aluno responde (ou não)
         ↓
- ┌────────────────┬──────────────────────┬────────────────────┐
- "Amanhã eu volto"  Conta um motivo,       Não respondeu em
-                    pede ajuda, pede SAIR  alguns dias
+ ┌────────────────┬──────────────────────┬──────────────────────────┐
+ "Amanhã eu volto"  Conta um motivo,       Não respondeu e continua
+                    pede ajuda, pede SAIR  faltando
                     ou o sistema não
                     entendeu
  ↓                  ↓                      ↓
- Sistema responde   Vai para a coordenação Vai para a coordenação
- "Combinado, te
- esperamos!"
- ↓
- A próxima chamada da turma decide:
- veio   → sai do risco sozinho, caso fechado
+ Sistema responde   Vai para a coordenação 7 dias depois, 2ª (e última)
+ "Combinado, te                            mensagem automática
+ esperamos!"                               ↓
+ ↓                                         Ainda sem resposta →
+ A próxima chamada da turma decide:        vai para a coordenação
+ veio   → sai do risco sozinho, caso fechado      (ligar, falar pessoalmente)
  faltou → "Prometeu e não voltou" → vai para a coordenação
 ```
+
+Ninguém precisa "assumir turma": o envio sai de **um número do sistema** (chip
+institucional) para os alunos em risco da escola inteira, sozinho, e a coordenação só
+liga a chave e acompanha.
 
 O sistema só resolve sozinho **um** tipo de resposta: a promessa de voltar. Todo o resto
 vai para uma pessoa, e principalmente o que for delicado (saúde emocional, família). O
@@ -139,9 +143,23 @@ próxima aula? Responda SIM, ou conte o que aconteceu."*
   de aula lançado, não dia do calendário.
 - **Turma sem chamada não deixa a promessa pendente para sempre.** Se a chamada não for
   lançada em alguns dias, o aluno vai para a coordenação de qualquer jeito.
+- **No máximo 2 mensagens automáticas por sumiço, com uma semana entre elas.** A 1ª vai
+  no 2º dia de falta. Se o aluno não responder e continuar faltando, a 2ª vai 7 dias
+  depois, com outro texto. Depois disso o robô para: mais insistência vira incômodo e
+  aumenta o risco de o número ser denunciado. O caso passa a ser de uma pessoa, por
+  ligação ou contato presencial.
+- **Uma mensagem por aluno por semana**, mesmo que ele esteja em risco em duas turmas.
 - **Promessa quebrada vai direto para uma pessoa.** Sem segunda mensagem automática:
   repetir o robô justamente quando o aluno sumiu de novo gasta limite e soa frio na hora
   em que mais importa ser gente.
+- **Ao ligar o envio automático, só recebe mensagem quem entrou em risco nos últimos 7
+  dias.** Quem já estava em risco antes vai direto para a coordenação. Sem isso, o
+  primeiro dia teria uma fila de mais de 100 alunos, bem acima do limite de aquecimento
+  do número novo.
+- **O robô preenche o histórico, a pessoa confirma o motivo.** Envio, leitura, resposta
+  do aluno, motivo sugerido e promessa viram registros do aluno sozinhos. Só o motivo
+  precisa de um clique de confirmação para entrar no gráfico de motivos, porque é o
+  indicador levado à diretoria e um erro de classificação ali custa caro.
 - **Os limites de envio continuam valendo.** Se houver mais alunos em risco do que
   mensagens permitidas no dia, a fila começa por quem está há mais dias sem vir, e quem
   esperar demais sem receber vai para a coordenação.
@@ -151,75 +169,103 @@ próxima aula? Responda SIM, ou conte o que aconteceu."*
 
 ### A tela da coordenação: "Precisam de contato"
 
-É a fila de trabalho da coordenação. Cada aluno aparece com o motivo de estar ali, em
-ordem de prioridade:
+É a fila de trabalho da coordenação (rota `/contatar`): só quem o robô **não** resolve
+e precisa de contato humano, por ligação, WhatsApp pessoal ou presencialmente. Cada
+aluno aparece com o motivo de estar ali, em ordem de prioridade:
 
 | Motivo | Prioridade |
 | --- | --- |
 | Pediu para falar com alguém ou trouxe assunto delicado | 1 |
 | Prometeu voltar e não voltou | 2 |
-| Contou um motivo (transporte, trabalho...) | 3 |
-| Não respondeu em alguns dias | 4 |
-| O sistema não entendeu a resposta, ou chegou um áudio | 4 |
-| Pediu SAIR, está sem telefone ou a turma não tem responsável pelo envio | 5 |
+| Contou um motivo (transporte, trabalho...), ou o sistema não entendeu a resposta, ou chegou um áudio | 3 |
+| Recebeu as 2 mensagens automáticas e não respondeu | 4 |
+| Pediu SAIR (não quer WhatsApp, mas continua precisando de contato) | 5 |
+| Não dá para mandar WhatsApp: sem telefone, número sem WhatsApp | 5 |
 
-Cada linha tem o atalho para o WhatsApp do aluno e o histórico completo.
+Cada linha tem o telefone, o atalho para o WhatsApp e o histórico completo do que o robô
+já fez. O aluno sai da lista sozinho quando alguém registra o contato ou quando ele volta
+a ter presença na chamada. Toda a coordenação vê a lista inteira, com filtro por turma.
+
+### A tela de acompanhamento do envio
+
+Substitui o "assumir turma" da tela de WhatsApp. Mostra a cobertura da escola inteira:
+quantos alunos em risco já receberam mensagem (e a porcentagem), quantos responderam,
+prometeram voltar, estão sem resposta, estão na fila do dia, e quantos não podem receber
+(sem telefone, sem WhatsApp, pediram SAIR).
 
 ### Ordem de construção
 
-1. Confirmar que as respostas dos alunos chegam ao sistema. Ainda não foi visto com uma
+0. Confirmar que as respostas dos alunos chegam ao sistema. Ainda não foi visto com uma
    mensagem real, e sem isso o funil não funciona.
-2. Envio automático, sem precisar alguém clicar em "Iniciar envio".
-3. Pergunta fechada na mensagem, reconhecimento do "vou voltar" e resposta automática.
-4. Conferência da promessa pela chamada seguinte.
-5. Tela "Precisam de contato".
+1. Número do sistema e envio automático, sem "assumir turma" nem botão "Iniciar
+   envio", com a tela de acompanhamento. Começa pelo piloto.
+2. Regra da semana (2ª mensagem 7 dias depois) e uma mensagem por aluno.
+3. Tela "Precisam de contato", incluindo quem pediu SAIR.
+4. Pergunta fechada na mensagem, reconhecimento do "vou voltar", resposta automática e
+   conferência da promessa pela chamada seguinte.
+5. Linha do tempo do robô no histórico do aluno, na tela de alunos em risco.
+6. Trava de faltas coletivas.
+
+Cada etapa sobe sozinha e já serve para alguma coisa.
 
 ### Quantos números de WhatsApp são necessários
 
-A estimativa da coordenação é de **10 a 15 alunos entrando em risco por semana, em cada
-turma**. Com 20 turmas, por exemplo, são 200 a 300 por semana. A capacidade de um número
-é bem menor:
+Medido em 20/10/2026 com `scripts/medir-risco-semanal.js`, sobre as chamadas de 31/08 a
+19/10 (14 a 18 turmas com chamada lançada por semana):
 
-| Capacidade de um número | Por semana |
-| --- | --- |
-| Pelo limite diário (40 por dia, segunda a sábado) | 240 |
-| Pelo limite mensal (800 por mês) | **cerca de 185** |
-| Na primeira semana (aquecimento, 10 por dia) | 60 |
+- **Cerca de 90 alunos entram em risco por semana na escola inteira**, nas semanas
+  completas (de 31 a 132). A estimativa inicial, de 10 a 15 por turma, só vale para as
+  duas turmas de maior volume (Segurança do Trabalho 0010 e 0011, cerca de 10 por semana
+  cada). A maioria das turmas fica entre 2 e 5.
+- Quase todos teriam como receber a mensagem (telefone, situação ativa, sem SAIR).
+- **1 em cada 3 volta sozinho na aula seguinte, e 2 em cada 3 continuam faltando.** Por
+  isso a mensagem continua indo no 2º dia de falta: esperar o 3º economizaria um terço
+  das mensagens, mas atrasaria o contato com a maioria, que é quem está sumindo.
 
-O limite mensal é o que aperta primeiro. **Um número só não dá conta: seriam pelo menos
-2, e 3 com folga.** Esses limites foram definidos pelo próprio projeto, de propósito
-abaixo do que se imagina que o WhatsApp tolera, porque ele não divulga o ponto em que
-bloqueia um número. Só vale aumentá-los depois de algumas semanas de uso sem problema.
+| | Necessário | Capacidade de 1 número |
+| --- | --- | --- |
+| Semana típica | cerca de 90 | cerca de 185 (limite do mês) |
+| Pior semana (07/09) | 132 | 240 (limite do dia) |
+| Mês | cerca de 390 | 800 |
+| Pior dia (05/10) | 56 | 40 |
 
-O volume real de mensagens deve ficar abaixo da estimativa, porque:
+**Um número dá conta.** Só o pior dia passa do limite, e quem não couber recebe no dia
+seguinte, começando por quem está há mais dias sem vir. Um segundo número serve de
+**reserva**: se um for bloqueado, o outro assume as turmas no mesmo dia. Os limites (40
+por dia, 800 por mês, 10 por dia na primeira semana) foram definidos pelo próprio
+projeto, de propósito abaixo do que se imagina que o WhatsApp tolera, porque ele não
+divulga o ponto em que bloqueia um número.
 
-- muitos alunos voltam sozinhos antes de chegar a vez deles na fila, e a mensagem de
-  quem saiu do risco é cancelada;
-- cada aluno recebe uma mensagem por sumiço, não uma por semana;
-- quem está sem telefone, não está ativo na planilha ou pediu SAIR não recebe.
+**Chip institucional, não o celular pessoal de ninguém.** Um bloqueio no número pessoal
+faz a pessoa perder o WhatsApp dela inteiro; num chip da escola, vira só um problema
+operacional. Como hoje cada número pertence a um usuário do painel, o chip ganha um
+usuário próprio (por exemplo "whatsapp-1"), e esse número é marcado como o número do
+sistema, que envia para todas as turmas.
 
-**Para trocar a estimativa pelo número real**, o script `scripts/medir-risco-semanal.js`
-conta, a partir das chamadas lançadas, quantos alunos entraram em risco em cada semana e
-em cada turma, quantos receberiam a mensagem e quantos voltaram já na aula seguinte. Ele
-só mostra contagens, sem dado de aluno. Roda no servidor com
-`docker compose exec node_retencao node scripts/medir-risco-semanal.js`. Turmas cujo
-professor ainda não usa o script de captura ficam de fora, então o número da escola é
-maior que o medido.
+Para medir de novo:
+`docker compose exec node_retencao node scripts/medir-risco-semanal.js`. Turma cujo
+professor não usa o script de captura fica de fora da conta.
 
-**Recomendação: chips institucionais, não o celular pessoal de ninguém.** Com esse
-volume, o risco de bloqueio é real, e um bloqueio no número pessoal faz a pessoa perder o
-WhatsApp dela inteiro. Com 2 ou 3 chips da escola em celulares simples, um bloqueio vira
-só um problema operacional. Cada chip assume um grupo de turmas, do jeito que o sistema
-já funciona hoje. Como hoje cada número pertence a um usuário do painel, o caminho mais
-simples é criar um usuário por chip (por exemplo "whatsapp-1", "whatsapp-2"), sem mudar o
-banco.
+### Faltas coletivas
+
+A medição mostrou dias em que muitos alunos entram em risco juntos: 56 no dia 05/10, e
+na semana de 07/09 112 de 132 faltaram de novo. Isso parece evento coletivo (feriado
+emendado, evento da escola, chuva, ônibus), não evasão individual. Mandar "sentimos sua
+falta" para uma turma inteira que faltou junta gasta o limite do número e soa como robô.
+
+Regra: **se mais da metade de uma turma entrar em risco no mesmo dia, o envio daquela
+turma fica parado até a coordenação confirmar** que é para mandar.
+
+### Piloto
+
+Começar pelas turmas **APT-TST-I-0010 e APT-TST-I-0011**: são as de maior volume (cerca
+de 21 alunos por semana, 3 a 4 mensagens por dia), cabem com folga até na semana de
+aquecimento do número, e é onde o resultado vai aparecer mais rápido.
 
 ### Em aberto
 
-- **Quantos chips comprar.** Depende do resultado do script de medição.
-- **Quem trabalha a fila:** toda a coordenação vê tudo, ou cada pessoa vê as suas turmas.
-- **Piloto:** começar com 2 ou 3 turmas, medir quantos respondem e quantos voltam, e
-  depois expandir.
+- **O que aconteceu em 07/09 e 05/10.** Confirmar se foram mesmo faltas coletivas, para
+  calibrar a regra acima.
 
 ## Outros passos
 

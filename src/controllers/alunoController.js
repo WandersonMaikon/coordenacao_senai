@@ -147,7 +147,10 @@ async function calcularAlunosEmRisco() {
             // 2 dias de aula é uma semana na turma diária e quase um mês na
             // semipresencial.
             ultimaPresenca,
-            primeiraFalta
+            primeiraFalta,
+            // Dia em que a sequência atingiu o limite — quando o aluno ENTROU em
+            // risco. O envio automático só manda pra quem entrou há poucos dias.
+            entrouEmRisco: dias[indice + DIAS_AULA_CONSECUTIVOS_RISCO]?.dataAula || null
         });
     }
 

@@ -1,7 +1,8 @@
 // Worker do envio de WhatsApp. Roda dentro do próprio processo do Node (um
 // container só — por isso uma flag em memória basta pra não sobrepor rodadas).
-// A cada TICK_MS, pra cada lote em andamento, decide se já pode mandar a próxima
-// mensagem e manda NO MÁXIMO UMA por número. Tudo o que faz o lote esperar
+// A cada ABASTECER_MS coloca na fila do número do sistema quem entrou em risco
+// (whatsappAutomatico.js). A cada TICK_MS, pra cada lote em andamento, decide se
+// já pode mandar a próxima mensagem e manda NO MÁXIMO UMA por número. Tudo o que faz o lote esperar
 // (fora do horário, limite atingido, número desconectado) vira um texto em
 // `lote.aguardando`, que a tela mostra.
 
@@ -9,9 +10,13 @@ const prisma = require('../config/prisma');
 const openwa = require('./openwa');
 const { mesmoTelefone } = require('./telefone');
 const { limiteDiaEfetivo, STATUS_JA_RECEBEU } = require('./whatsappLote');
-const { calcularAlunosEmRiscoSemRecuperados } = require('../controllers/alunoController');
+const whatsappAutomatico = require('./whatsappAutomatico');
+const { calcularAlunosEmRiscoSemRecuperados, converterDataAula } = require('../controllers/alunoController');
 
 const TICK_MS = 15 * 1000;
+// Recalcular o risco lê todos os lançamentos — não precisa ser a cada rodada. Uma
+// chamada lançada agora vira mensagem em até 5 minutos (dentro do horário).
+const ABASTECER_MS = 5 * 60 * 1000;
 const FALHAS_PARA_PAUSAR = 3;
 const ESPERA_FALHA_TEMPORARIA_MS = 60 * 1000;
 
@@ -20,8 +25,8 @@ const ESPERA_FALHA_TEMPORARIA_MS = 60 * 1000;
 const STATUS_PRECISA_ACAO = ['disconnected', 'action_required', 'failed'];
 const MOTIVO_NUMERO_DIFERENTE = 'O número conectado é diferente do número cadastrado.';
 
-// Contato registrado pela coordenação depois que o lote começou com um destes
-// status tira o aluno da fila: alguém já está conversando com ele.
+// Contato registrado neste período de faltas com um destes status tira o aluno da
+// fila: alguém já está conversando com ele.
 const STATUS_CONTATO_CANCELA = ['respondido', 'acompanhar', 'recuperado'];
 
 // ───────────── Horário da escola ─────────────
@@ -121,24 +126,29 @@ async function contarEnvios(sessaoId, agora) {
 // Motivo pra tirar a mensagem da fila na hora de enviar, ou null. A situação pode
 // ter mudado desde que o lote foi montado (às vezes dias antes, por causa do
 // limite diário).
-async function motivoParaCancelar(mensagem, sessao, lote) {
-    const [aluno, turma, contatoRecente, { emRisco }] = await Promise.all([
+async function motivoParaCancelar(mensagem, sessao) {
+    const [aluno, contatoRecente, { emRisco }] = await Promise.all([
         prisma.aluno.findUnique({ where: { matricula: mensagem.matricula }, select: { whatsappOptOut: true } }),
-        prisma.usuarioTurma.findUnique({ where: { codigoTurma: mensagem.codigoTurma } }),
         prisma.contato.findFirst({
-            where: { matricula: mensagem.matricula, criadoEm: { gte: lote.iniciadoEm }, status: { in: STATUS_CONTATO_CANCELA } },
+            where: {
+                matricula: mensagem.matricula,
+                criadoEm: { gte: new Date(converterDataAula(mensagem.primeiraFalta)) },
+                status: { in: STATUS_CONTATO_CANCELA }
+            },
             select: { id: true }
         }),
         calcularAlunosEmRiscoSemRecuperados()
     ]);
 
     if (aluno?.whatsappOptOut) return 'O aluno pediu para não receber mensagens (SAIR)';
-    if (!turma || turma.usuarioId !== sessao.usuarioId) return 'A turma foi liberada';
+    if (!sessao.envioAutomatico) return 'O envio automático foi desligado';
+    const turmas = whatsappAutomatico.lerTurmas(sessao);
+    if (turmas && !turmas.includes(mensagem.codigoTurma)) return 'A turma saiu do envio automático';
     if (contatoRecente) return 'A coordenação já falou com o aluno';
 
     const risco = emRisco.find((item) => item.matricula === mensagem.matricula && item.codigoTurma === mensagem.codigoTurma);
     if (!risco) return 'O aluno voltou a ter presença (ou está em acompanhamento de recuperado)';
-    if (risco.primeiraFalta !== mensagem.primeiraFalta) return 'O aluno voltou e começou a faltar de novo — inicie um novo envio';
+    if (risco.primeiraFalta !== mensagem.primeiraFalta) return 'O aluno voltou e começou a faltar de novo';
     return null;
 }
 
@@ -148,6 +158,10 @@ async function processarLote(lote, agora = new Date()) {
     const sessao = await prisma.whatsappSessao.findUnique({ where: { id: lote.sessaoId }, include: { usuario: true } });
     if (!sessao) {
         await atualizarLote(lote, { status: 'parado', paradoPor: 'Número removido', finalizadoEm: agora });
+        return;
+    }
+    if (!sessao.envioAutomatico) {
+        await pararLote(lote, 'o sistema (envio automático desligado)');
         return;
     }
 
@@ -202,10 +216,11 @@ async function processarLote(lote, agora = new Date()) {
     await atualizarLote(lote, { aguardando: null });
     const mensagem = await prisma.mensagemWhatsapp.findFirst({ where: { loteId: lote.id, status: 'pendente' }, orderBy: { id: 'asc' } });
     if (!mensagem) {
-        return atualizarLote(lote, { status: 'concluido', aguardando: null, proximoEnvioEm: null, finalizadoEm: agora });
+        // O lote automático não termina: fica esperando o próximo aluno entrar em risco.
+        return atualizarLote(lote, { aguardando: 'Ninguém novo para receber agora. A lista de risco é conferida a cada 5 minutos.' });
     }
 
-    const motivoCancelar = await motivoParaCancelar(mensagem, sessao, lote);
+    const motivoCancelar = await motivoParaCancelar(mensagem, sessao);
     if (motivoCancelar) {
         // Cancelar não consome intervalo: a próxima da fila sai na rodada seguinte.
         await prisma.mensagemWhatsapp.update({ where: { id: mensagem.id }, data: { status: 'cancelada', erro: motivoCancelar } });
@@ -313,11 +328,24 @@ async function tratarFalhaEnvio(erro, mensagem, sessao, lote, etapa) {
 
 let rodando = false;
 let timer = null;
+let ultimoAbastecimento = 0;
+
+async function abastecerSeHora(agora = Date.now()) {
+    if (agora - ultimoAbastecimento < ABASTECER_MS) return;
+    ultimoAbastecimento = agora;
+    const sessao = await whatsappAutomatico.sessaoDoSistema();
+    if (sessao) await whatsappAutomatico.abastecer(sessao);
+}
 
 async function rodada() {
     if (rodando) return;
     rodando = true;
     try {
+        try {
+            await abastecerSeHora();
+        } catch (erro) {
+            console.error('[whatsapp] erro ao abastecer a fila automática:', erro.message);
+        }
         const lotes = await prisma.loteWhatsapp.findMany({ where: { status: 'em_andamento' } });
         for (const lote of lotes) {
             try {
@@ -341,6 +369,11 @@ async function recuperarInterrompidas() {
         where: { status: 'enviando' },
         data: { status: 'falhou', falhaDefinitiva: true, erro: 'Envio interrompido (o servidor reiniciou) — confira no WhatsApp se a mensagem saiu' }
     });
+    // Lote manual (do tempo do "Iniciar envio") que ficou em andamento: o envio
+    // passou a ser só automático. Quem estava na fila volta pelo automático, se
+    // ainda estiver em risco e a turma estiver no envio.
+    const manuais = await prisma.loteWhatsapp.findMany({ where: { status: 'em_andamento', automatico: false } });
+    for (const lote of manuais) await pararLote(lote, 'o sistema (o envio passou a ser automático)');
 }
 
 function iniciarWorker() {
@@ -356,7 +389,7 @@ function iniciarWorker() {
         });
 }
 
-// Parar e cancelar pendentes — usado pelo botão "Parar envio" e ao liberar turma.
+// Parar e cancelar pendentes — usado ao desligar o envio automático.
 async function pararLote(lote, paradoPor) {
     await prisma.mensagemWhatsapp.updateMany({
         where: { loteId: lote.id, status: 'pendente' },
@@ -370,6 +403,7 @@ async function pararLote(lote, paradoPor) {
 
 module.exports = {
     TICK_MS,
+    ABASTECER_MS,
     STATUS_PRECISA_ACAO,
     MOTIVO_NUMERO_DIFERENTE,
     STATUS_JA_RECEBEU,

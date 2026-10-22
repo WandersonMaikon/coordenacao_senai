@@ -5,16 +5,11 @@ const {
     conectarSessao,
     obterSessao,
     desconectarSessao,
-    listarTurmas,
-    assumirTurma,
-    liberarTurma,
     obterConfig,
     salvarConfig,
     previaMensagem,
-    previaLote,
-    iniciarEnvio,
-    loteAtual,
-    pararEnvio,
+    obterAutomatico,
+    salvarAutomatico,
     retomarSessao,
     historico
 } = require('../controllers/whatsappController');
@@ -30,19 +25,14 @@ router.get('/whatsapp/sessao', autenticar, obterSessao);
 router.post('/whatsapp/sessao/conectar', autenticar, conectarSessao);
 router.post('/whatsapp/sessao/desconectar', autenticar, desconectarSessao);
 
-// Turmas: todos veem quem assumiu o quê; liberar a turma de outra pessoa só o admin.
-router.get('/whatsapp/turmas', autenticar, listarTurmas);
-router.post('/whatsapp/turmas/:codigoTurma', autenticar, assumirTurma);
-router.delete('/whatsapp/turmas/:codigoTurma', autenticar, liberarTurma);
-
 router.get('/whatsapp/config', autenticar, obterConfig);
 router.put('/whatsapp/config', autenticar, salvarConfig);
 router.post('/whatsapp/config/previa', autenticar, previaMensagem);
 
-router.get('/whatsapp/lote/previa', autenticar, previaLote);
-router.post('/whatsapp/lote', autenticar, iniciarEnvio);
-router.get('/whatsapp/lote/atual', autenticar, loteAtual);
-router.post('/whatsapp/lote/:id/parar', autenticar, pararEnvio);
+// Envio automático: todos veem a cobertura; só o dono do número do sistema ou o
+// admin ligam, desligam e escolhem as turmas.
+router.get('/whatsapp/automatico', autenticar, obterAutomatico);
+router.put('/whatsapp/automatico', autenticar, salvarAutomatico);
 router.post('/whatsapp/sessao/retomar', autenticar, retomarSessao);
 
 // Histórico de envios: todos os usuários veem todos os envios.
