@@ -15,6 +15,7 @@ const whatsappRoutes = require('./src/routes/whatsappRoutes');
 const whatsappWebhookRoutes = require('./src/routes/whatsappWebhookRoutes');
 const prisma = require('./src/config/prisma');
 const { iniciarWorker: iniciarWorkerWhatsapp } = require('./src/services/whatsappEnvio');
+const { garantirModelo: garantirModeloIa } = require('./src/services/iaLocal');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -73,6 +74,9 @@ app.listen(PORT, () => {
     console.log(`🧩 Userscript dos professores em: http://localhost:${PORT}/sge-captura.user.js`);
     // Envio de WhatsApp em lote (tela /whatsapp) — só liga se o OpenWA estiver configurado.
     iniciarWorkerWhatsapp();
+    // IA local que lê as respostas dos alunos: baixa o modelo na primeira vez
+    // (sem travar a subida; enquanto isso vale o dicionário).
+    garantirModeloIa();
 });
 
 // Encerra a conexão do Prisma corretamente quando o servidor for finalizado

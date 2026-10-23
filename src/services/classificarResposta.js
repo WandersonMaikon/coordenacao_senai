@@ -303,4 +303,10 @@ function removerMensagemCitada(texto, mensagemEnviada) {
     return limpo || texto;
 }
 
-module.exports = { interpretarResposta, normalizar, removerMensagemCitada, TERMOS };
+// Usado como trava sobre a IA local (iaLocal.js): mesmo que o modelo diga
+// "promessa", negação ou dúvida no texto impede o "Combinado!".
+function temNegacaoOuDuvida(texto) {
+    return NEGACAO.test(canonizar(normalizar(texto)));
+}
+
+module.exports = { interpretarResposta, normalizar, removerMensagemCitada, temNegacaoOuDuvida, TERMOS, MOTIVOS_DELICADOS };

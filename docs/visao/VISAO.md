@@ -298,10 +298,12 @@ aquecimento do número, e é onde o resultado vai aparecer mais rápido.
 - **WhatsApp não oficial.** O envio usa um gateway não oficial, com risco aceito de
   bloqueio do número — que pode ser o número pessoal de quem envia. A diretoria precisa
   estar ciente.
-- **Uso de inteligência artificial externa.** Um modelo de linguagem leria as respostas
-  dos alunos muito melhor que o dicionário de palavras atual, mas isso significa enviar
-  frases escritas por menores para uma empresa de fora. Não será adotado sem aprovação.
-  O funil automático foi desenhado para funcionar sem ela.
+- **Inteligência artificial para ler as respostas.** Desde 23/10/2026 o sistema usa uma IA
+  gratuita que roda **no próprio servidor da escola** (Ollama, com o modelo Gemma): a frase do
+  aluno não é enviada a nenhuma empresa. Ela só entende a resposta (promessa, desistência,
+  motivo); quem responde ao aluno continuam sendo textos fixos escritos pela coordenação.
+  Uma IA externa (de empresa, paga) leria ainda melhor, mas significaria enviar frases de
+  menores para fora — isso continua sem ser adotado. Vale a diretoria saber da IA local.
 - **Mensagem automática para alunos menores.** O funil passa a contatar o aluno sem uma
   pessoa revisar a lista antes. Vale a diretoria saber, e decidir se, no caso de menores,
   a mensagem deve ir para o responsável.

@@ -11,7 +11,8 @@
 
 const prisma = require('../config/prisma');
 const openwa = require('./openwa');
-const { interpretarResposta, removerMensagemCitada } = require('./classificarResposta');
+const { removerMensagemCitada } = require('./classificarResposta');
+const { interpretar } = require('./iaLocal');
 const { normalizarTelefone, mesmoTelefone } = require('./telefone');
 const { STATUS_JA_RECEBEU } = require('./whatsappLote');
 
@@ -219,7 +220,11 @@ function dadosDoContato(interpretacao, texto) {
     if (!interpretacao.motivo) return base;
     // Promessa com motivo ("sem ônibus, mas amanhã vou") sugere o motivo como texto
     // livre — `sugeridoPor` só conhece menu e palavras_chave.
-    const sugeridoPor = ['promessa', 'desistencia'].includes(interpretacao.tipo) ? 'palavras_chave' : interpretacao.tipo;
+    // "ia" = deduzido pelo modelo local; a tela mostra igual a palavras_chave
+    // ("deduzido do que o aluno escreveu — confira"), mas fica registrado.
+    const sugeridoPor = interpretacao.fonte === 'ia'
+        ? 'ia'
+        : ['promessa', 'desistencia'].includes(interpretacao.tipo) ? 'palavras_chave' : interpretacao.tipo;
     return { ...base, motivoSugerido: interpretacao.motivo, sugeridoPor };
 }
 
@@ -266,7 +271,8 @@ async function processarMensagemRecebida(corpo) {
     // Sem a nossa mensagem citada: é o texto do aluno que interessa, tanto para
     // interpretar quanto para a coordenação ler.
     const textoAluno = removerMensagemCitada(texto, original.texto);
-    const interpretacao = interpretarResposta(textoAluno);
+    // IA local quando disponível, dicionário como reserva (iaLocal.js).
+    const interpretacao = await interpretar(textoAluno);
     const atualizacao = dadosDoContato(interpretacao, textoAluno);
 
     // Transação: a linha de resposta e o efeito dela (contato, opt-out) entram
@@ -301,7 +307,7 @@ async function processarMensagemRecebida(corpo) {
 
     // Log sem o conteúdo da mensagem: o CLAUDE.md proíbe jogar dado pessoal de
     // aluno em texto plano sem necessidade, e pra depurar basta o id.
-    return { id: linha.id, matricula: original.matricula, interpretacao: interpretacao.tipo, motivo: interpretacao.motivo || null };
+    return { id: linha.id, matricula: original.matricula, interpretacao: interpretacao.tipo, motivo: interpretacao.motivo || null, fonte: interpretacao.fonte };
 }
 
 // Porta de entrada do webhook: decide se o evento é resposta, ack ou nada.
