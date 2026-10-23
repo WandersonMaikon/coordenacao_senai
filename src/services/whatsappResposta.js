@@ -11,7 +11,7 @@
 
 const prisma = require('../config/prisma');
 const openwa = require('./openwa');
-const { interpretarResposta } = require('./classificarResposta');
+const { interpretarResposta, removerMensagemCitada } = require('./classificarResposta');
 const { normalizarTelefone, mesmoTelefone } = require('./telefone');
 const { STATUS_JA_RECEBEU } = require('./whatsappLote');
 
@@ -212,12 +212,14 @@ function dadosDoContato(interpretacao, texto) {
     }
     const observacao = interpretacao.tipo === 'promessa'
         ? `O aluno disse pelo WhatsApp que vem na próxima aula: "${texto}"`
-        : `Resposta do aluno pelo WhatsApp: "${texto}"`;
+        : interpretacao.tipo === 'desistencia'
+            ? `O aluno disse pelo WhatsApp que vai sair do curso: "${texto}"`
+            : `Resposta do aluno pelo WhatsApp: "${texto}"`;
     const base = { status: 'respondido', observacao };
     if (!interpretacao.motivo) return base;
     // Promessa com motivo ("sem ônibus, mas amanhã vou") sugere o motivo como texto
     // livre — `sugeridoPor` só conhece menu e palavras_chave.
-    const sugeridoPor = interpretacao.tipo === 'promessa' ? 'palavras_chave' : interpretacao.tipo;
+    const sugeridoPor = ['promessa', 'desistencia'].includes(interpretacao.tipo) ? 'palavras_chave' : interpretacao.tipo;
     return { ...base, motivoSugerido: interpretacao.motivo, sugeridoPor };
 }
 
@@ -261,8 +263,11 @@ async function processarMensagemRecebida(corpo) {
         return { semVinculo: true, id: linha.id };
     }
 
-    const interpretacao = interpretarResposta(texto);
-    const atualizacao = dadosDoContato(interpretacao, texto);
+    // Sem a nossa mensagem citada: é o texto do aluno que interessa, tanto para
+    // interpretar quanto para a coordenação ler.
+    const textoAluno = removerMensagemCitada(texto, original.texto);
+    const interpretacao = interpretarResposta(textoAluno);
+    const atualizacao = dadosDoContato(interpretacao, textoAluno);
 
     // Transação: a linha de resposta e o efeito dela (contato, opt-out) entram
     // juntos ou não entram. Sem isso, uma falha no meio deixaria o aluno
@@ -282,7 +287,7 @@ async function processarMensagemRecebida(corpo) {
                 matricula: original.matricula,
                 mensagemId: original.id,
                 contatoId: original.contatoId,
-                texto,
+                texto: textoAluno,
                 interpretacao: interpretacao.tipo,
                 motivoSugerido: interpretacao.motivo || null,
                 recebidaEm: entrada.recebidaEm

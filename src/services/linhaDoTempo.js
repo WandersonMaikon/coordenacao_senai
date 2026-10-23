@@ -23,6 +23,7 @@ const ROTULO_MOTIVO = Object.fromEntries(MOTIVOS.map((m) => [m.chave, m.rotulo])
 function descreverResposta(resposta) {
     switch (resposta.interpretacao) {
         case 'promessa': return 'Disse que vem na próxima aula — o robô respondeu "Combinado!"';
+        case 'desistencia': return 'Disse que vai sair do curso — encaminhado para a coordenação';
         case 'sair': return 'Pediu SAIR: não recebe mais mensagens automáticas';
         case 'nao_entendido': return 'O sistema não identificou o motivo';
         default: return resposta.motivoSugerido ? `Motivo sugerido: ${ROTULO_MOTIVO[resposta.motivoSugerido] || resposta.motivoSugerido}` : null;

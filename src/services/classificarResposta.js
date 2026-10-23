@@ -200,7 +200,21 @@ const NEGACAO = /\b(nao|nem|nunca)\b(\s+\S+){0,3}\s+(vou|volto|voltar|irei|consi
 // aula? Responda SIM").
 const SIM_CURTO = /^(sim|s|ss|sim sim|claro|com certeza|certeza|pode deixar|consigo|vou|vou sim|sim vou|sim consigo|ok|okay|beleza|certo|esta bem|esta bom|combinado|pode ser|positivo)( senhora?| professora?| prof)?[ !.]*$/;
 
-const VERBO_VOLTAR = /\b(volto|voltarei|vou voltar|irei|estarei|vou estar|vou ir|vou sim|vou la|vou na aula|apareco|vou aparecer|compareco|vou comparecer|estou indo|pretendo voltar|pretendo ir)\b/;
+// "estarei"/"vou estar" só valem com lugar ("estarei aí", "vou estar na aula"):
+// soltos, casavam com "estarei saindo do curso" — visto em 22/10/2026, o robô
+// respondeu "Combinado! Te esperamos" pra quem avisou que ia desistir.
+const VERBO_VOLTAR = /\b(volto|voltarei|vou voltar|irei|vou ir|vou sim|vou la|vou na aula|apareco|vou aparecer|compareco|vou comparecer|estou indo|pretendo voltar|pretendo ir|(estarei|vou estar) (ai|la|na aula|presente))\b/;
+
+// Desistência ganha de qualquer coisa: é o caso mais urgente para uma pessoa, e
+// a frase pode ter palavras de promessa ("estarei saindo", "vou parar").
+// "não quero sair do curso" é o contrário — por isso o "nao" antes de sair/
+// desistir/parar anula.
+const DESISTENCIA = /\b(saindo do curso|sair do curso|largar o curso|largando o curso|desist\w*|trancar|trancando|tranquei|cancelar (a |minha )?matricula|abandon\w*|parar o curso|parar de estudar|parei o curso|nao vou (mais )?continuar|nao vou mais (vir|voltar|fazer)|nao quero mais (o curso|estudar|fazer o curso|vir))\b/;
+const NAO_DESISTE = /\bnao (quero|vou|pretendo|penso em) (sair|desistir|largar|parar|trancar|abandonar)\b/;
+
+function ehDesistencia(frase) {
+    return DESISTENCIA.test(frase) && !NAO_DESISTE.test(frase);
+}
 const QUANDO = /\b(amanha|hoje|segunda|terca|quarta|quinta|sexta|sabado|proxima aula|semana que vem|depois de amanha)\b/;
 
 // Motivos que, mesmo com promessa, vão para uma pessoa: o robô não responde
@@ -217,6 +231,7 @@ function ehPromessa(frase) {
 // Devolve { tipo, motivo? }:
 //   sair           — pediu para não receber mais mensagens
 //   menu           — digitou o número de uma opção (motivo = a chave dela)
+//   desistencia    — disse que vai sair do curso (motivo, se também contou um)
 //   promessa       — disse que vem na próxima aula (motivo, se também contou um)
 //   palavras_chave — o texto livre bateu com um motivo (motivo = a chave)
 //   nao_entendido  — respondeu, mas não dá pra dizer o motivo
@@ -257,6 +272,10 @@ function interpretarResposta(texto) {
     const empate = placar.length > 1 && placar[0].pontos === placar[1].pontos;
     const motivo = placar.length > 0 && !empate ? placar[0].motivo : null;
 
+    if (ehDesistencia(frase)) {
+        return motivo ? { tipo: 'desistencia', motivo } : { tipo: 'desistencia' };
+    }
+
     // Promessa com assunto delicado (ou com dois assuntos empatados, um deles
     // talvez delicado) segue o caminho normal: uma pessoa lê.
     const delicado = placar.some((item) => MOTIVOS_DELICADOS.includes(item.motivo));
@@ -268,4 +287,20 @@ function interpretarResposta(texto) {
     return { tipo: 'palavras_chave', motivo };
 }
 
-module.exports = { interpretarResposta, normalizar, TERMOS };
+// Tira da resposta o trecho que é a NOSSA mensagem citada. Muito aluno responde
+// com "responder" ou copiando tudo, e a mensagem do robô vem junto — com
+// "Sentimos sua falta nas últimas 5 aulas", "Responda SIM", "SAIR"... Sem isso o
+// classificador lia o nosso texto como se fosse do aluno. Compara linha a linha,
+// sem acento/caixa; se sobrar nada, devolve o texto como veio.
+function removerMensagemCitada(texto, mensagemEnviada) {
+    if (!texto || !mensagemEnviada) return texto;
+    const nossas = new Set(String(mensagemEnviada).split(/\r?\n/).map(normalizar).filter(Boolean));
+    const proprias = String(texto).split(/\r?\n/).filter((linha) => {
+        const n = normalizar(linha.replace(/^\s*>+\s?/, ''));
+        return n && !nossas.has(n);
+    });
+    const limpo = proprias.join('\n').trim();
+    return limpo || texto;
+}
+
+module.exports = { interpretarResposta, normalizar, removerMensagemCitada, TERMOS };

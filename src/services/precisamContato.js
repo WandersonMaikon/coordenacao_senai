@@ -34,6 +34,7 @@ const MOTIVOS_DELICADOS = ['saude_mental', 'problema_familiar'];
 
 // Por que o aluno está na lista, em ordem de prioridade (1 = primeiro).
 const MOTIVOS_LISTA = {
+    desistencia: { prioridade: 1, rotulo: 'Disse que vai sair do curso' },
     delicado: { prioridade: 1, rotulo: 'Assunto delicado na resposta' },
     promessa_quebrada: { prioridade: 2, rotulo: 'Prometeu voltar e faltou de novo' },
     respondeu: { prioridade: 3, rotulo: 'Respondeu e precisa de retorno' },
@@ -61,7 +62,9 @@ function classificar(item, { aluno, mensagem, resposta, falhou }, agora) {
             if (converterDataAula(item.ultimaFalta) <= diaDaPromessa) return null; // aguardando a próxima chamada
             return { motivo: 'promessa_quebrada', desde: resposta.recebidaEm, detalhe: textoCurto(resposta.texto) };
         }
-        const motivo = MOTIVOS_DELICADOS.includes(resposta.motivoSugerido) ? 'delicado' : 'respondeu';
+        const motivo = resposta.interpretacao === 'desistencia'
+            ? 'desistencia'
+            : MOTIVOS_DELICADOS.includes(resposta.motivoSugerido) ? 'delicado' : 'respondeu';
         return { motivo, desde: resposta.recebidaEm, detalhe: textoCurto(resposta.texto), motivoSugerido: resposta.motivoSugerido };
     }
 
