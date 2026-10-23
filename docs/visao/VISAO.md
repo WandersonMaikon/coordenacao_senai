@@ -210,7 +210,7 @@ prometeram voltar, estão sem resposta, estão na fila do dia, e quantos não po
    faltou aparece na tela de envio automático até a tela "Precisam de contato" existir)
 5. ~~Linha do tempo do robô no histórico do aluno, na tela de alunos em risco.~~ (feito em
    23/10/2026)
-6. Trava de faltas coletivas.
+6. ~~Trava de faltas coletivas.~~ (feito em 23/10/2026)
 
 Cada etapa sobe sozinha e já serve para alguma coisa.
 
@@ -261,6 +261,13 @@ falta" para uma turma inteira que faltou junta gasta o limite do número e soa c
 
 Regra: **se mais da metade de uma turma entrar em risco no mesmo dia, o envio daquela
 turma fica parado até a coordenação confirmar** que é para mandar.
+
+Como ficou: conta-se a metade sobre os alunos que tiveram chamada naquele dia, com um mínimo
+de 5 alunos entrando em risco juntos (3 de 5 faltando numa turma pequena não é evento). A tela
+de envio automático mostra o aviso com dois botões, "Enviar mesmo assim" e "Não enviar (foi
+um evento da turma)". Só a 1ª mensagem fica segura, e só enquanto a última falta do aluno é a
+do dia coletivo: quem faltar de novo na aula seguinte recebe normalmente, com ou sem decisão,
+porque aí já não é mais o evento.
 
 ### Piloto
 

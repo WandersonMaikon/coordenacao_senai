@@ -32,6 +32,15 @@ const DIAS_ENTRE_MENSAGENS = 7;
 // "Precisam de contato" (precisamContato.js).
 const DIAS_PARA_SEGUNDA = 7;
 
+// Falta coletiva: mais da metade dos alunos com chamada naquele dia entrou em
+// risco no mesmo dia — feriado emendado, evento, chuva, ônibus. Visto na medição
+// de 20/10/2026 (56 alunos num dia só em 05/10). "Sentimos sua falta" pra turma
+// inteira gasta o limite do número e soa a robô, então a 1ª mensagem desses
+// alunos espera a coordenação decidir (tabela faltas_coletivas). O mínimo de
+// alunos evita marcar turma pequena: 3 de 5 faltando não é evento.
+const COLETIVA_PROPORCAO = 0.5;
+const COLETIVA_MINIMO = 5;
+
 // Contato da coordenação (respondido/acompanhar) nos últimos 7 dias impede o
 // WhatsApp: alguém está falando com o aluno. Passados 7 dias e ele continua
 // faltando, o WhatsApp volta a valer — decidido em 22/10/2026. Também não há
@@ -50,6 +59,8 @@ const SITUACOES = {
     enviada: 'Mensagem enviada',
     fila: 'Na fila de envio',
     receber: 'Entra na fila na próxima conferência',
+    coletiva: 'Possível falta coletiva da turma: aguardando a coordenação decidir',
+    coletiva_dispensada: 'Falta coletiva da turma: a coordenação decidiu não enviar',
     contato_humano: `A coordenação falou com o aluno nos últimos ${DIAS_DESDE_CONTATO} dias`,
     sair: 'Pediu para não receber mensagens (SAIR)',
     sem_whatsapp: 'O envio falhou (número sem WhatsApp ou envio interrompido)',
@@ -75,6 +86,54 @@ async function sessaoDoSistema() {
 
 async function loteAutomatico(sessaoId) {
     return prisma.loteWhatsapp.findFirst({ where: { sessaoId, automatico: true, status: 'em_andamento' } });
+}
+
+// Turma+dia em que a entrada em risco foi coletiva. Devolve Map
+// "codigoTurma|dataAula" → { codigoTurma, nomeTurma, dataAula, entraram, naChamada, decisao }.
+async function detectarColetivas(candidatos) {
+    const entraram = new Map();
+    for (const item of candidatos) {
+        if (!item.entrouEmRisco) continue;
+        const chave = `${item.codigoTurma}|${item.entrouEmRisco}`;
+        if (!entraram.has(chave)) entraram.set(chave, { codigoTurma: item.codigoTurma, nomeTurma: item.nomeTurma, dataAula: item.entrouEmRisco, matriculas: new Set() });
+        entraram.get(chave).matriculas.add(item.matricula);
+    }
+    const suspeitas = [...entraram.values()].filter((g) => g.matriculas.size >= COLETIVA_MINIMO);
+    if (suspeitas.length === 0) return new Map();
+
+    const [lancamentos, decisoes] = await Promise.all([
+        prisma.lancamento.findMany({
+            where: { codigoTurma: { in: suspeitas.map((g) => g.codigoTurma) }, dataAula: { in: suspeitas.map((g) => g.dataAula) } },
+            select: { matricula: true, codigoTurma: true, dataAula: true }
+        }),
+        prisma.faltaColetiva.findMany({
+            where: { codigoTurma: { in: suspeitas.map((g) => g.codigoTurma) } },
+            select: { codigoTurma: true, dataAula: true, decisao: true }
+        })
+    ]);
+    const naChamada = new Map();
+    for (const l of lancamentos) {
+        const chave = `${l.codigoTurma}|${l.dataAula}`;
+        if (!naChamada.has(chave)) naChamada.set(chave, new Set());
+        naChamada.get(chave).add(l.matricula);
+    }
+    const decisaoPor = new Map(decisoes.map((d) => [`${d.codigoTurma}|${d.dataAula}`, d.decisao]));
+
+    const coletivas = new Map();
+    for (const g of suspeitas) {
+        const chave = `${g.codigoTurma}|${g.dataAula}`;
+        const total = naChamada.get(chave)?.size || 0;
+        if (!total || g.matriculas.size / total <= COLETIVA_PROPORCAO) continue;
+        coletivas.set(chave, {
+            codigoTurma: g.codigoTurma,
+            nomeTurma: g.nomeTurma,
+            dataAula: g.dataAula,
+            entraram: g.matriculas.size,
+            naChamada: total,
+            decisao: decisaoPor.get(chave) || null
+        });
+    }
+    return coletivas;
 }
 
 function chaveEpisodio(item) {
@@ -132,6 +191,7 @@ async function avaliar(sessao, agora = new Date()) {
         .map((m) => m.matricula));
 
     const contatoDesdeMs = agora.getTime() - DIAS_DESDE_CONTATO * DIA_MS;
+    const coletivas = await detectarColetivas(candidatos);
 
     // Quem está há mais dias sem vir é avaliado (e entra na fila) primeiro.
     const ordenados = [...candidatos].sort((a, b) => b.diasSemVir - a.diasSemVir);
@@ -170,6 +230,14 @@ async function avaliar(sessao, agora = new Date()) {
             if (situacao === 'receber') tentativa = 2;
         } else if (primeira?.status === 'falhou' && primeira.falhaDefinitiva) situacao = 'sem_whatsapp';
         else situacao = impedimento() || 'receber';
+
+        // Falta coletiva segura só a 1ª mensagem, e só enquanto a última falta do
+        // aluno é a do próprio dia coletivo: faltou de novo numa aula seguinte, não
+        // é mais o evento — recebe normalmente, decidido ou não.
+        const coletiva = coletivas.get(`${item.codigoTurma}|${item.entrouEmRisco}`) || null;
+        if (situacao === 'receber' && tentativa === 1 && coletiva && coletiva.decisao !== 'enviar' && item.ultimaFalta === item.entrouEmRisco) {
+            situacao = coletiva.decisao === 'nao_enviar' ? 'coletiva_dispensada' : 'coletiva';
+        }
         if (situacao === 'receber') recebeuNaSemana.add(item.matricula);
 
         // Promessa quebrada = ele continua em risco e faltou num dia de aula
@@ -185,6 +253,7 @@ async function avaliar(sessao, agora = new Date()) {
             ...item,
             situacao,
             tentativa,
+            coletiva,
             promessa,
             recebeuSegunda: recebeu(segunda),
             telefone: aluno?.telefone || null,
@@ -278,6 +347,8 @@ async function abastecer(sessao, agora = new Date()) {
 module.exports = {
     DIAS_ENTRE_MENSAGENS,
     DIAS_PARA_SEGUNDA,
+    COLETIVA_PROPORCAO,
+    COLETIVA_MINIMO,
     DIAS_DESDE_CONTATO,
     SITUACOES,
     lerTurmas,

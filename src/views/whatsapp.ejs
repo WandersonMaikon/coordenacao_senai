@@ -865,6 +865,7 @@
       const pct = (n) => (emRisco ? Math.round((n / emRisco) * 100) : 0);
       const naFila = p.fila + p.receber;
       const naoPodem = p.sair + p.sem_whatsapp + p.sem_telefone + p.situacao;
+      const coletiva = (p.coletiva || 0) + (p.coletiva_dispensada || 0);
       const coordenacao = p.contato_humano;
 
       const linha = (cor, rotulo, valor, detalhe = '') => `
@@ -876,6 +877,18 @@
       const partes = (lista) => lista.filter(([, n]) => n > 0).map(([rotulo, n]) => `${rotulo}: ${n}`).join(' · ');
 
       let detalhes = '';
+      if (r.faltasColetivas.length) {
+        detalhes += r.faltasColetivas.map((c) => `
+          <div class="alert alert-info small mt-3 mb-0">
+            <div class="fw-semibold mb-1"><i class="bi bi-people-fill me-1"></i>Possível falta coletiva: ${escaparHtml(nomeTurmaLimpo(c.nomeTurma) || c.codigoTurma)}, ${escaparHtml(c.dataAula)}</div>
+            <div class="mb-2">${c.entraram} de ${c.naChamada} alunos com chamada nesse dia entraram em risco juntos. Pode ter sido feriado, evento, chuva ou ônibus. As mensagens desses alunos estão esperando.</div>
+            <div class="d-flex flex-wrap gap-2">
+              <button type="button" class="btn btn-sm btn-primary" data-coletiva-turma="${escaparHtml(c.codigoTurma)}" data-coletiva-dia="${escaparHtml(c.dataAula)}" data-coletiva-decisao="enviar">Enviar mesmo assim</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-coletiva-turma="${escaparHtml(c.codigoTurma)}" data-coletiva-dia="${escaparHtml(c.dataAula)}" data-coletiva-decisao="nao_enviar">Não enviar (foi um evento da turma)</button>
+            </div>
+            <div class="text-body-secondary mt-2">Nos dois casos, quem faltar de novo na próxima aula recebe a mensagem normalmente.</div>
+          </div>`).join('');
+      }
       if (r.promessasQuebradas.length) {
         detalhes += `
           <div class="alert alert-warning small mt-3 mb-0">
@@ -924,6 +937,7 @@
               ${linha('info', 'Na fila de envio', naFila)}
               ${linha('secondary', 'Com a coordenação', coordenacao, `falou com o aluno nos últimos ${r.diasDesdeContato} dias`)}
               ${linha('warning', 'Não podem receber WhatsApp', naoPodem, partes([['pediu SAIR', p.sair], ['sem WhatsApp / falha', p.sem_whatsapp], ['sem telefone', p.sem_telefone], ['situação não ativa', p.situacao]]))}
+              ${coletiva ? linha('dark', 'Falta coletiva da turma', coletiva, partes([['aguardando decisão', p.coletiva], ['decidido não enviar', p.coletiva_dispensada]])) : ''}
               ${p.semana ? linha('light', 'Já recebeu por outra turma nesta semana', p.semana) : ''}
             </tbody>
           </table>
@@ -1060,6 +1074,24 @@
           cancelButtonText: 'Continuar ligado'
         });
         if (confirmacao.isConfirmed) salvarAutomatico(false, alvo);
+      }
+    });
+
+    document.getElementById('areaCobertura').addEventListener('click', async (evento) => {
+      const botao = evento.target.closest('[data-coletiva-decisao]');
+      if (!botao) return;
+      botao.disabled = true;
+      try {
+        const r = await chamarApi('/whatsapp/falta-coletiva', {
+          method: 'POST',
+          body: JSON.stringify({ codigoTurma: botao.dataset.coletivaTurma, dataAula: botao.dataset.coletivaDia, decisao: botao.dataset.coletivaDecisao })
+        });
+        if (r.status !== 'ok') throw new Error(r.mensagem);
+        notificar.ok(r.mensagem);
+        carregarEnvio();
+      } catch (erro) {
+        botao.disabled = false;
+        if (erro.message !== 'Sessão expirada') Swal.fire({ title: 'Não foi possível salvar', text: erro.message, icon: 'error' });
       }
     });
 

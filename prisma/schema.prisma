@@ -346,3 +346,26 @@ model TurmaEncerrada {
 
   @@map("turmas_encerradas")
 }
+
+// ─────────────────────────────────────────
+// Decisão da coordenação sobre uma possível FALTA COLETIVA: mais da metade de
+// uma turma entrou em risco no mesmo dia de aula (feriado emendado, evento da
+// escola, chuva, ônibus). O envio automático segura a 1ª mensagem desses alunos
+// até alguém decidir (whatsappAutomatico.js):
+//   enviar     — não foi coletivo, as mensagens saem normalmente;
+//   nao_enviar — foi evento da turma: essa falta não gera mensagem.
+// Sem linha = ainda não decidido. Nos dois casos (e também sem decisão), quem
+// faltar de novo numa aula seguinte volta a receber: aí não é mais o evento.
+// ─────────────────────────────────────────
+model FaltaColetiva {
+  id          Int      @id @default(autoincrement())
+  codigoTurma String   @map("codigo_turma") @db.VarChar(50)
+  // dd/mm/aaaa, igual a lancamentos.data_aula — o dia em que entraram em risco.
+  dataAula    String   @map("data_aula") @db.VarChar(20)
+  decisao     String   @db.VarChar(20) // enviar | nao_enviar
+  decididoPor String   @map("decidido_por") @db.VarChar(50)
+  criadoEm    DateTime @default(now()) @map("criado_em")
+
+  @@unique([codigoTurma, dataAula])
+  @@map("faltas_coletivas")
+}

@@ -434,7 +434,7 @@ async function obterAutomatico(req, res) {
         ]);
 
         // Quem não recebe e por quê — é a pergunta "por que a Maria não recebeu?".
-        const SEM_ENVIO = ['contato_humano', 'sair', 'sem_whatsapp', 'sem_telefone', 'situacao'];
+        const SEM_ENVIO = ['contato_humano', 'sair', 'sem_whatsapp', 'sem_telefone', 'situacao', 'coletiva', 'coletiva_dispensada'];
         const naoRecebem = itens
             .filter((item) => SEM_ENVIO.includes(item.situacao))
             .map((item) => ({
@@ -456,6 +456,11 @@ async function obterAutomatico(req, res) {
                 prometeuEm: item.promessa.em
             }));
 
+        // Turma+dia com falta coletiva esperando decisão (um card por turma+dia).
+        const faltasColetivas = [...new Map(itens
+            .filter((item) => item.situacao === 'coletiva')
+            .map((item) => [`${item.coletiva.codigoTurma}|${item.coletiva.dataAula}`, item.coletiva])).values()];
+
         res.json({
             ...base,
             sistema: {
@@ -473,6 +478,7 @@ async function obterAutomatico(req, res) {
             resumo: whatsappAutomatico.resumir(itens),
             naoRecebem,
             promessasQuebradas,
+            faltasColetivas,
             mensagens
         });
     } catch (erro) {
@@ -538,6 +544,38 @@ async function salvarAutomatico(req, res) {
         }
         const fila = entraram ? ` ${entraram} aluno(s) entraram na fila.` : '';
         res.json({ status: 'ok', mensagem: `${sistema ? 'Envio automático atualizado.' : 'Envio automático ligado.'}${fila}` });
+    } catch (erro) {
+        respostaErro(res, erro);
+    }
+}
+
+// POST /whatsapp/falta-coletiva { codigoTurma, dataAula, decisao: enviar|nao_enviar }
+// Decide uma possível falta coletiva (ver whatsappAutomatico.detectarColetivas).
+// Qualquer usuário logado: é decisão da coordenação, como registrar contato.
+async function decidirFaltaColetiva(req, res) {
+    try {
+        const { codigoTurma, dataAula, decisao } = req.body;
+        if (!codigoTurma || !/^\d{2}\/\d{2}\/\d{4}$/.test(dataAula || '') || !['enviar', 'nao_enviar'].includes(decisao)) {
+            return res.status(400).json({ status: 'erro', mensagem: 'Informe a turma, o dia (dd/mm/aaaa) e a decisão (enviar ou nao_enviar).' });
+        }
+        await prisma.faltaColetiva.upsert({
+            where: { codigoTurma_dataAula: { codigoTurma, dataAula } },
+            update: { decisao, decididoPor: req.usuario.usuario },
+            create: { codigoTurma, dataAula, decisao, decididoPor: req.usuario.usuario }
+        });
+
+        // "Enviar" já põe os alunos na fila, sem esperar a próxima conferência.
+        let entraram = 0;
+        if (decisao === 'enviar') {
+            const sistema = await whatsappAutomatico.sessaoDoSistema();
+            if (sistema) entraram = await whatsappAutomatico.abastecer(sistema).catch(() => 0);
+        }
+        res.json({
+            status: 'ok',
+            mensagem: decisao === 'enviar'
+                ? `Combinado: as mensagens dessa turma vão sair.${entraram ? ` ${entraram} aluno(s) entraram na fila.` : ''}`
+                : 'Combinado: essa falta não gera mensagem. Quem faltar de novo na próxima aula recebe normalmente.'
+        });
     } catch (erro) {
         respostaErro(res, erro);
     }
@@ -609,6 +647,7 @@ async function historico(req, res) {
 module.exports = {
     obterAutomatico,
     salvarAutomatico,
+    decidirFaltaColetiva,
     retomarSessao,
     historico,
     obterMeuNumero,
