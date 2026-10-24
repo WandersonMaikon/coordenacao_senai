@@ -42,6 +42,13 @@ app.use(express.json({
 // index: false — GET '/' é o redirecionamento pro login abaixo, não uma index.html
 app.use(express.static(PUBLIC_DIR, { index: false }));
 
+// Versão dos arquivos do painel (/js, /css), trocada a cada subida do servidor —
+// ou seja, a cada deploy. As views usam `?v=<%= versaoArquivos %>`: o Cloudflare
+// manda o navegador guardar .js/.css por 4 horas, e sem isto a tela nova ficava
+// com o script velho (visto em 24/10/2026: o filtro de turma novo não aparecia
+// para ninguém até um Ctrl+F5).
+app.locals.versaoArquivos = Date.now().toString(36);
+
 // A raiz do domínio é a porta de entrada do painel: quem acessa
 // app.coor360-senai.com.br cai direto na tela de login.
 app.get('/', (req, res) => {
