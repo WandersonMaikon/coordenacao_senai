@@ -26,6 +26,9 @@ services:
       OLLAMA_MODELO: ${OLLAMA_MODELO:-gemma3:4b}
     depends_on:
       - mysql_retencao
+      # Sobe junto quando o deploy faz "up -d node_retencao": sem isso o Ollama só
+      # era criado no segundo "up" do atualizar.sh, depois do backend.
+      - ollama_retencao
     networks:
       retencao_net:
         # Apelido sem underscore para o mesmo container. O OpenWA valida a URL do

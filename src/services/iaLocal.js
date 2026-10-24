@@ -144,6 +144,11 @@ async function interpretar(texto) {
     return { tipo: 'nao_entendido', fonte: 'ia' };
 }
 
+// Sem conseguir falar com o Ollama, tenta de novo depois deste tempo. Visto no
+// 1º deploy (23/10/2026): o atualizar.sh sobe o node_retencao ANTES de criar o
+// ollama_retencao, a única tentativa deu "fetch failed" e o modelo nunca foi baixado.
+const TENTAR_DE_NOVO_MS = 5 * 60 * 1000;
+
 // Na subida do servidor: confere se o modelo já está baixado e, se não, manda o
 // Ollama baixar (alguns GB, só na primeira vez). Enquanto baixa, vale o dicionário.
 async function garantirModelo() {
@@ -161,7 +166,8 @@ async function garantirModelo() {
         await chamar('/api/pull', { model: MODELO, stream: false }, 2 * 60 * 60 * 1000);
         console.log(`[ia] modelo ${MODELO} baixado.`);
     } catch (erro) {
-        console.warn('[ia] não foi possível preparar o modelo local — respostas pelo dicionário:', erro.message);
+        console.warn(`[ia] não foi possível preparar o modelo local — respostas pelo dicionário; nova tentativa em ${TENTAR_DE_NOVO_MS / 60000} min:`, erro.message);
+        setTimeout(garantirModelo, TENTAR_DE_NOVO_MS).unref();
     }
 }
 
