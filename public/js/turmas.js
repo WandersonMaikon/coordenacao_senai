@@ -60,6 +60,10 @@ function ativarBuscaDeTurma(select) {
   const pequeno = select.classList.contains('form-select-sm');
   const caixa = document.createElement('div');
   caixa.className = 'position-relative';
+  // Largura fixa: a maioria das telas põe o filtro numa coluna `col-auto`, que
+  // encolhe até o conteúdo — e campo de texto vazio é estreito (o <select> antigo
+  // era largo por causa dos nomes das turmas). No celular, cabe na tela.
+  caixa.style.width = pequeno ? 'min(24rem, calc(100vw - 3rem))' : 'min(36rem, calc(100vw - 3rem))';
   const campo = document.createElement('input');
   campo.type = 'text';
   campo.className = `form-control pe-5${pequeno ? ' form-control-sm' : ''}`;
