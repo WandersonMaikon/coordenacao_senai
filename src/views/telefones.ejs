@@ -165,7 +165,7 @@
           <td>${escaparHtml(aluno.matricula)}</td>
           <td>${escaparHtml(aluno.nome) || '—'}${selo}${seloSemCadastro}</td>
           <td class="small">${(aluno.cursos || []).length
-            ? aluno.cursos.map((c) => `<div>${escaparHtml(c.nome)}${c.encerrada ? ' <span class="badge bg-secondary-subtle text-secondary-emphasis">encerrada</span>' : ''}</div>`).join('')
+            ? aluno.cursos.map((c) => `<div>${escaparHtml(c.nome)} <span class="text-body-secondary">(${escaparHtml(c.codigoTurma)})</span>${c.encerrada ? ' <span class="badge bg-secondary-subtle text-secondary-emphasis">encerrada</span>' : ''}</div>`).join('')
             : '<span class="text-body-secondary">sem chamada lançada</span>'}</td>
           <td>${escaparHtml(aluno.situacao) || '—'}</td>
           <td>
