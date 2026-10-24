@@ -270,7 +270,9 @@ let totalEmCache = null;
 async function totalPendentes(req, res) {
     try {
         if (!totalEmCache || Date.now() - totalEmCache.em > TOTAL_CACHE_MS) {
-            const dados = await listarPrecisamContato({ analisar: false });
+            // Quem o robô ainda está cuidando não é trabalho pendente: fora do contador.
+            // Quando virar caso de pessoa, aparece como novo.
+            const dados = (await listarPrecisamContato({ analisar: false })).filter((d) => d.motivo !== 'robo_cuidando');
             totalEmCache = {
                 em: Date.now(),
                 matriculas: dados.map((d) => d.matricula),

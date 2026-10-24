@@ -70,7 +70,24 @@
       sem_resposta: 'Sem resposta',
       nunca_contato: 'Não foi possível contatar'
     };
-    const COR_PRIORIDADE = { 1: 'danger', 2: 'danger', 3: 'warning', 4: 'primary', 5: 'secondary' };
+    const COR_PRIORIDADE = { 1: 'danger', 2: 'danger', 3: 'warning', 4: 'primary', 5: 'secondary', 6: 'secondary' };
+    const ENTREGA = { enviada: 'enviada', entregue: 'entregue', lida: 'lida' };
+
+    function dia(dataIso) {
+      return new Date(dataIso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    }
+
+    // "O robô ainda está cuidando": em que ponto está e quando vira caso de pessoa.
+    function etapaDoRobo(robo) {
+      if (robo.etapa === 'promessa') {
+        return `Prometeu voltar em ${dia(robo.em)} — a próxima chamada confere. Se faltar, entra em "Prometeu voltar e faltou de novo".`;
+      }
+      const qual = robo.tentativa === 2 ? '2ª mensagem' : '1ª mensagem';
+      const partes = [`${qual} enviada em ${dia(robo.enviadaEm)}${ENTREGA[robo.entrega] ? ` (${ENTREGA[robo.entrega]})` : ''}`];
+      if (robo.segundaPrevistaEm) partes.push(`2ª mensagem prevista para ${dia(robo.segundaPrevistaEm)}`);
+      partes.push(`se não responder, entra em "Não respondeu" em ${dia(robo.entraNaListaEm)}`);
+      return partes.join(' · ');
+    }
 
     const token = localStorage.getItem('coor360_token');
     if (!token) {
@@ -171,7 +188,7 @@
 
     // Em quantos dias cada prioridade deveria ser atendida. Passou disso, o
     // tempo de espera aparece em vermelho.
-    const PRAZO_DIAS = { 1: 1, 2: 2, 3: 3, 4: 7, 5: 7 };
+    const PRAZO_DIAS = { 1: 1, 2: 2, 3: 3, 4: 7, 5: 7, 6: Infinity };
 
     function diasEsperando(dataIso) {
       return Math.floor((Date.now() - new Date(dataIso).getTime()) / 86400000);
@@ -231,6 +248,9 @@
       const resumo = aluno.resumoIa
         ? `<div class="small mt-2" style="max-width: 40rem;"><i class="bi bi-robot me-1 text-info"></i><strong>O que a IA entendeu da conversa:</strong> ${escaparHtml(aluno.resumoIa)}</div>`
         : '';
+      const etapaRobo = aluno.robo
+        ? `<div class="small mt-2 text-body-secondary"><i class="bi bi-robot me-1"></i>${escaparHtml(etapaDoRobo(aluno.robo))}</div>`
+        : '';
       const arquivo = aluno.enviouArquivo
         ? `<div class="small mt-2 text-success-emphasis"><i class="bi bi-paperclip me-1"></i>Mandou foto ou documento pelo WhatsApp (pode ser o atestado) — veja no WhatsApp do número do sistema.</div>`
         : '';
@@ -268,7 +288,7 @@
         : '';
 
       return `
-        <div class="card mb-3 border-start border-4 border-${cor}">
+        <div class="card mb-3 border-start border-4 border-${cor}" ${aluno.motivo === 'robo_cuidando' ? 'style="opacity: .8;"' : ''}>
           <div class="card-body">
             <div class="d-flex flex-wrap justify-content-between gap-2">
               <div>
@@ -281,6 +301,7 @@
               </div>
             </div>
             ${aluno.detalhe ? `<div class="p-2 rounded-3 small mt-2" style="background: #dcf8c6; color: #111; max-width: 40rem;"><i class="bi bi-chat-left-text me-1"></i>"${escaparHtml(aluno.detalhe)}"</div>` : ''}
+            ${etapaRobo}
             ${resumo}
             ${arquivo}
             ${conversa}
@@ -310,7 +331,7 @@
           ${escaparHtml(rotulo)}: <strong>${quantidade}</strong></button>`;
       };
       const meus = alunos.filter((a) => a.responsavel?.usuario === eu).length;
-      const ninguem = alunos.filter((a) => !a.responsavel).length;
+      const ninguem = alunos.filter((a) => !a.responsavel && a.motivo !== 'robo_cuidando').length;
       const botaoResp = (chave, rotulo, quantidade) => {
         const ativo = filtroResponsavel === chave;
         return `<button type="button" data-filtro-resp="${chave}" aria-pressed="${ativo}"
@@ -327,21 +348,25 @@
     function passaNoFiltro(aluno) {
       if (filtroMotivo && aluno.motivo !== filtroMotivo) return false;
       if (filtroResponsavel === 'meus' && aluno.responsavel?.usuario !== eu) return false;
-      if (filtroResponsavel === 'ninguem' && aluno.responsavel) return false;
+      // "Ninguém cuidando" = casos de pessoa sem responsável; o robô cuida dos outros.
+      if (filtroResponsavel === 'ninguem' && (aluno.responsavel || aluno.motivo === 'robo_cuidando')) return false;
       return true;
     }
 
     function desenharLista() {
       const statusEl = document.getElementById('statusCarregamento');
       const visiveis = alunos.map((aluno, indice) => ({ aluno, indice })).filter(({ aluno }) => passaNoFiltro(aluno));
+      const comRobo = alunos.filter((a) => a.motivo === 'robo_cuidando').length;
+      const dePessoa = alunos.length - comRobo;
       if (alunos.length === 0) {
         statusEl.className = 'alert alert-success';
         statusEl.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Ninguém precisando de contato agora.';
       } else {
         statusEl.className = 'small text-body-secondary mb-2';
+        const robo = comRobo ? ` O robô ainda está cuidando de mais ${comRobo} (no fim da lista, em cinza).` : '';
         statusEl.textContent = filtroMotivo || filtroResponsavel
           ? `Mostrando ${visiveis.length} de ${alunos.length} aluno(s). Quem espera há mais tempo vem primeiro.`
-          : `${alunos.length} aluno(s), do mais urgente para o menos urgente; dentro de cada motivo, quem espera há mais tempo vem primeiro.`;
+          : `${dePessoa} aluno(s) precisam de contato, do mais urgente para o menos urgente; dentro de cada motivo, quem espera há mais tempo vem primeiro.${robo}`;
       }
       document.getElementById('listaAlunos').innerHTML = visiveis.map(({ aluno, indice }) => cartaoAluno(aluno, indice)).join('');
     }

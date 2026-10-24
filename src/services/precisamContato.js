@@ -16,6 +16,7 @@ const {
 const { STATUS_JA_RECEBEU } = require('./whatsappLote');
 const { interpretarResposta } = require('./classificarResposta');
 const { garantirAnalises } = require('./whatsappAnalise');
+const { DIAS_PARA_SEGUNDA } = require('./whatsappAutomatico');
 
 const DIA_MS = 24 * 60 * 60 * 1000;
 
@@ -44,7 +45,9 @@ const MOTIVOS_LISTA = {
     sem_resposta: { prioridade: 4, rotulo: 'Não respondeu às mensagens automáticas' },
     sair: { prioridade: 5, rotulo: 'Pediu para não receber WhatsApp (SAIR)' },
     sem_whatsapp: { prioridade: 5, rotulo: 'O número não tem WhatsApp' },
-    sem_telefone: { prioridade: 5, rotulo: 'Sem telefone cadastrado' }
+    sem_telefone: { prioridade: 5, rotulo: 'Sem telefone cadastrado' },
+    // Não é trabalho pendente: só informação. Fica no fim e fora do contador do menu.
+    robo_cuidando: { prioridade: 6, rotulo: 'O robô ainda está cuidando' }
 };
 
 function textoCurto(texto, limite = 200) {
@@ -84,7 +87,9 @@ function respostaQueDefine(respostas, analise) {
 }
 
 // Classifica um (aluno, turma) em risco. Devolve { motivo, desde, detalhe } ou
-// null (o robô ainda está cuidando, ou não há nada que o sistema saiba dizer).
+// null (não há nada que o sistema saiba dizer). Quem o robô ainda está cuidando
+// vem como `robo_cuidando`, com `robo` dizendo em que ponto está — a tela mostra
+// no fim, em cinza, para ninguém precisar adivinhar onde o aluno foi parar.
 function classificar(item, { aluno, mensagem, respostas, analise, falhou }, agora) {
     if (aluno?.whatsappOptOut) {
         const sair = respostas.find((r) => r.interpretacao === 'sair');
@@ -96,7 +101,10 @@ function classificar(item, { aluno, mensagem, respostas, analise, falhou }, agor
         const { motivo, resposta } = respostaQueDefine(validas, analise);
         if (motivo === 'promessa') {
             const diaDaPromessa = converterDataAula(diaNoFusoDaEscola(resposta.recebidaEm));
-            if (converterDataAula(item.ultimaFalta) <= diaDaPromessa) return null; // aguardando a próxima chamada
+            if (converterDataAula(item.ultimaFalta) <= diaDaPromessa) {
+                // Aguardando a próxima chamada conferir.
+                return { motivo: 'robo_cuidando', desde: resposta.recebidaEm, detalhe: textoCurto(resposta.texto), robo: { etapa: 'promessa', em: resposta.recebidaEm } };
+            }
             return { motivo: 'promessa_quebrada', desde: resposta.recebidaEm, detalhe: textoCurto(resposta.texto) };
         }
         return { motivo, desde: resposta.recebidaEm, detalhe: textoCurto(resposta.texto) };
@@ -104,7 +112,23 @@ function classificar(item, { aluno, mensagem, respostas, analise, falhou }, agor
 
     if (mensagem) {
         const espera = mensagem.tentativa === 2 ? DIAS_SEM_RESPOSTA : DIAS_SEM_SEGUNDA;
-        if (agora - mensagem.enviadaEm.getTime() < espera * DIA_MS) return null; // o robô ainda está cuidando
+        const entraNaListaEm = new Date(mensagem.enviadaEm.getTime() + espera * DIA_MS);
+        if (agora < entraNaListaEm.getTime()) {
+            return {
+                motivo: 'robo_cuidando',
+                desde: mensagem.enviadaEm,
+                robo: {
+                    etapa: 'aguardando_resposta',
+                    tentativa: mensagem.tentativa,
+                    enviadaEm: mensagem.enviadaEm,
+                    entrega: mensagem.status,
+                    // A 2ª sai só se ele continuar faltando e ninguém tiver falado com
+                    // ele (whatsappAutomatico.js) — por isso a tela diz "prevista".
+                    segundaPrevistaEm: mensagem.tentativa === 1 ? new Date(mensagem.enviadaEm.getTime() + DIAS_PARA_SEGUNDA * DIA_MS) : null,
+                    entraNaListaEm
+                }
+            };
+        }
         return { motivo: 'sem_resposta', desde: mensagem.enviadaEm };
     }
 
@@ -216,6 +240,7 @@ async function listarPrecisamContato({ turma, analisar = true } = {}, agora = ne
             rotulo: MOTIVOS_LISTA[caso.motivo].rotulo,
             desde: caso.desde,
             detalhe: caso.detalhe || null,
+            robo: caso.robo || null,
             // Para o formulário já vir preenchido: o resumo da conversa escrito
             // pela IA e o motivo — este só quando há certeza (whatsappAnalise.js).
             resumoIa: analise?.conversaResumo || null,
