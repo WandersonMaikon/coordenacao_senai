@@ -10,6 +10,7 @@ const {
     previaMensagem,
     obterAutomatico,
     salvarAutomatico,
+    turmasParaEnvio,
     decidirFaltaColetiva,
     retomarSessao,
     historico
@@ -34,6 +35,7 @@ router.post('/whatsapp/config/previa', autenticar, previaMensagem);
 // admin ligam, desligam e escolhem as turmas.
 router.get('/whatsapp/automatico', autenticar, obterAutomatico);
 router.put('/whatsapp/automatico', autenticar, salvarAutomatico);
+router.get('/whatsapp/turmas-envio', autenticar, turmasParaEnvio);
 // Falta coletiva: qualquer usuário logado decide (é decisão da coordenação).
 router.post('/whatsapp/falta-coletiva', autenticar, decidirFaltaColetiva);
 router.post('/whatsapp/sessao/retomar', autenticar, retomarSessao);

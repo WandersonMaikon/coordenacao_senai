@@ -356,22 +356,32 @@ async function listarRecuperados(req, res) {
 // matrícula é do aluno, não da turma, então quem também estuda numa turma já
 // importada faria a turma dele parecer importada.
 async function listarTurmasImportadas(codigosTurma) {
+    const cobertura = await coberturaTelefonesPorTurma(codigosTurma);
+    return new Set([...cobertura].filter(([, c]) => c.importada).map(([codigo]) => codigo));
+}
+
+// Por turma: { total, comTelefone, importada } — alunos pelos lançamentos.
+// `importada` é a regra de listarTurmasImportadas acima. Usado também pela
+// escolha das turmas do envio automático (só turma importada pode entrar).
+async function coberturaTelefonesPorTurma(codigosTurma) {
     const alunosPorTurma = await prisma.lancamento.findMany({
-        where: { codigoTurma: { in: codigosTurma } },
+        where: codigosTurma ? { codigoTurma: { in: codigosTurma } } : {},
         select: { codigoTurma: true, matricula: true, aluno: { select: { telefone: true, situacao: true } } },
         distinct: ['codigoTurma', 'matricula']
     });
 
     const contagemPorTurma = new Map();
     for (const { codigoTurma, aluno } of alunosPorTurma) {
-        const contagem = contagemPorTurma.get(codigoTurma) || { total: 0, importados: 0 };
+        const contagem = contagemPorTurma.get(codigoTurma) || { total: 0, importados: 0, comTelefone: 0 };
         contagem.total++;
         if (aluno && (aluno.telefone || aluno.situacao)) contagem.importados++;
+        if (aluno?.telefone) contagem.comTelefone++;
         contagemPorTurma.set(codigoTurma, contagem);
     }
-    return new Set(
-        [...contagemPorTurma].filter(([, c]) => c.importados * 2 >= c.total).map(([codigo]) => codigo)
-    );
+    return new Map([...contagemPorTurma].map(([codigo, c]) => [
+        codigo,
+        { total: c.total, comTelefone: c.comTelefone, importada: c.importados * 2 >= c.total }
+    ]));
 }
 
 // Enriquece a lista de risco com telefone, histórico de contato e a última aula
@@ -1043,5 +1053,6 @@ module.exports = {
     ehSituacaoAtiva,
     converterDataAula,
     diaNoFusoDaEscola,
+    coberturaTelefonesPorTurma,
     FUSO_ESCOLA
 };

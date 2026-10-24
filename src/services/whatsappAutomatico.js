@@ -17,7 +17,8 @@ const {
     calcularAlunosEmRiscoSemRecuperados,
     ehSituacaoAtiva,
     converterDataAula,
-    diaNoFusoDaEscola
+    diaNoFusoDaEscola,
+    coberturaTelefonesPorTurma
 } = require('../controllers/alunoController');
 const { renderizarMensagem, nomeResponsavel, STATUS_JA_RECEBEU, MENSAGEM_SEGUNDA } = require('./whatsappLote');
 
@@ -78,6 +79,19 @@ function lerTurmas(sessao) {
     } catch (erro) {
         return null;
     }
+}
+
+// As turmas que o envio realmente cobre: só as com a planilha da secretaria
+// importada (decisão de 24/10/2026). "Todas as turmas" = todas as importadas —
+// turma nova entra sozinha quando alguém importar a planilha dela. Na lista do
+// piloto, turma não importada também fica de fora (a tela nem deixa marcar).
+// Sem a planilha, quase ninguém da turma tem telefone: o robô não mandaria nada
+// e a cobertura da tela ficaria puxada para baixo por quem ele nunca alcançaria.
+async function turmasDoEnvio(sessao) {
+    const cobertura = await coberturaTelefonesPorTurma();
+    const importadas = [...cobertura].filter(([, c]) => c.importada).map(([codigo]) => codigo);
+    const escolhidas = lerTurmas(sessao);
+    return escolhidas ? escolhidas.filter((codigo) => importadas.includes(codigo)) : importadas;
 }
 
 async function sessaoDoSistema() {
@@ -142,9 +156,8 @@ function chaveEpisodio(item) {
 
 // Uma linha por (aluno, turma) em risco nas turmas do envio, com a `situacao`.
 async function avaliar(sessao, agora = new Date()) {
-    const turmas = lerTurmas(sessao);
-    const { emRisco } = await calcularAlunosEmRiscoSemRecuperados();
-    const candidatos = turmas ? emRisco.filter((item) => turmas.includes(item.codigoTurma)) : emRisco;
+    const [turmas, { emRisco }] = await Promise.all([turmasDoEnvio(sessao), calcularAlunosEmRiscoSemRecuperados()]);
+    const candidatos = emRisco.filter((item) => turmas.includes(item.codigoTurma));
     const matriculas = [...new Set(candidatos.map((item) => item.matricula))];
 
     const [alunos, contatos, mensagens] = await Promise.all([
@@ -352,6 +365,7 @@ module.exports = {
     DIAS_DESDE_CONTATO,
     SITUACOES,
     lerTurmas,
+    turmasDoEnvio,
     sessaoDoSistema,
     loteAutomatico,
     avaliar,

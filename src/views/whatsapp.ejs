@@ -764,31 +764,44 @@
       document.getElementById('envioBarraMes').style.width = pct(r.uso.mes, r.uso.limiteMes);
     }
 
+    // Turmas para a escolha do envio, com a situação dos telefones de cada uma.
+    // As com planilha importada primeiro; dentro de cada grupo, pelo nome.
     async function carregarTurmasDisponiveis() {
       if (turmasDisponiveis) return turmasDisponiveis;
-      const resposta = await chamarApi('/turmas');
+      const resposta = await chamarApi('/whatsapp/turmas-envio');
+      const nome = (t) => nomeTurmaLimpo(t.nomeTurma) || t.codigoTurma;
       turmasDisponiveis = (resposta.dados || [])
-        .sort((a, b) => (nomeTurmaLimpo(a.nomeTurma) || a.codigoTurma).localeCompare(nomeTurmaLimpo(b.nomeTurma) || b.codigoTurma, 'pt-BR'));
+        .sort((a, b) => (b.importada - a.importada) || nome(a).localeCompare(nome(b), 'pt-BR'));
       return turmasDisponiveis;
     }
 
-    // Escolha das turmas: "todas" ou só as marcadas (piloto).
+    function seloTelefones(t) {
+      return t.importada
+        ? `<span class="text-success-emphasis ms-1"><i class="bi bi-check-circle-fill"></i> ${t.comTelefone} de ${t.total} com telefone</span>`
+        : `<span class="text-warning-emphasis ms-1"><i class="bi bi-exclamation-triangle-fill"></i> planilha não importada — <a href="/importar-telefones">importar</a></span>`;
+    }
+
+    // Escolha das turmas: "todas" ou só as marcadas (piloto). Só turma com a
+    // planilha da secretaria importada entra no envio — as outras aparecem
+    // bloqueadas, com o motivo, e "Todas" quer dizer "todas as importadas".
     function blocoTurmas(turmasEscolhidas, editavel) {
       const todas = !turmasEscolhidas;
       const escolhidas = new Set(turmasEscolhidas || []);
       const lista = turmasDisponiveis || [];
+      const importadas = lista.filter((t) => t.importada).length;
       if (!editavel) {
         return todas
-          ? '<div>Envia para <strong>todas as turmas</strong>.</div>'
+          ? `<div>Envia para <strong>todas as turmas com a planilha de telefones importada</strong> (${importadas} hoje). Turma nova entra sozinha quando a planilha dela for importada.</div>`
           : `<div>Envia só para estas turmas:</div><ul class="small mb-0">${(turmasEscolhidas || []).map((codigo) => {
               const turma = lista.find((t) => t.codigoTurma === codigo);
-              return `<li>${escaparHtml(turma ? nomeTurmaLimpo(turma.nomeTurma) || codigo : codigo)} <span class="text-body-secondary">(${escaparHtml(codigo)})</span></li>`;
+              const fora = turma && !turma.importada ? ' <span class="text-warning-emphasis">— sem planilha importada, fora do envio</span>' : '';
+              return `<li>${escaparHtml(turma ? nomeTurmaLimpo(turma.nomeTurma) || codigo : codigo)} <span class="text-body-secondary">(${escaparHtml(codigo)})</span>${fora}</li>`;
             }).join('')}</ul>`;
       }
       return `
         <div class="form-check">
           <input class="form-check-input" type="radio" name="escopoTurmas" id="escopoTodas" value="todas" ${todas ? 'checked' : ''}>
-          <label class="form-check-label" for="escopoTodas">Todas as turmas</label>
+          <label class="form-check-label" for="escopoTodas">Todas as turmas com a planilha de telefones importada <span class="text-body-secondary small">(${importadas} hoje; turma nova entra sozinha quando a planilha dela for importada)</span></label>
         </div>
         <div class="form-check">
           <input class="form-check-input" type="radio" name="escopoTurmas" id="escopoAlgumas" value="algumas" ${todas ? '' : 'checked'}>
@@ -796,9 +809,9 @@
         </div>
         <div id="listaTurmasEscolha" class="border rounded-3 p-2 mt-2 small" style="max-height: 260px; overflow-y: auto;" ${todas ? 'hidden' : ''}>
           ${lista.length === 0 ? '<span class="text-body-secondary">Nenhuma turma encontrada.</span>' : lista.map((t) => `
-            <div class="form-check">
-              <input class="form-check-input caixa-turma" type="checkbox" id="turma_${escaparHtml(t.codigoTurma)}" value="${escaparHtml(t.codigoTurma)}" ${escolhidas.has(t.codigoTurma) ? 'checked' : ''}>
-              <label class="form-check-label" for="turma_${escaparHtml(t.codigoTurma)}">${escaparHtml(nomeTurmaLimpo(t.nomeTurma) || t.codigoTurma)} <span class="text-body-secondary">(${escaparHtml(t.codigoTurma)})</span></label>
+            <div class="form-check ${t.importada ? '' : 'opacity-75'}">
+              <input class="form-check-input caixa-turma" type="checkbox" id="turma_${escaparHtml(t.codigoTurma)}" value="${escaparHtml(t.codigoTurma)}" ${t.importada && escolhidas.has(t.codigoTurma) ? 'checked' : ''} ${t.importada ? '' : 'disabled'}>
+              <label class="form-check-label" for="turma_${escaparHtml(t.codigoTurma)}">${escaparHtml(nomeTurmaLimpo(t.nomeTurma) || t.codigoTurma)} <span class="text-body-secondary">(${escaparHtml(t.codigoTurma)})</span>${seloTelefones(t)}</label>
             </div>`).join('')}
         </div>`;
     }

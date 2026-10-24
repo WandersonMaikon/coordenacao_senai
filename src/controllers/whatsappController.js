@@ -4,6 +4,8 @@ const whatsappLote = require('../services/whatsappLote');
 const whatsappEnvio = require('../services/whatsappEnvio');
 const { normalizarTelefone, mesmoTelefone } = require('../services/telefone');
 const whatsappAutomatico = require('../services/whatsappAutomatico');
+const { coberturaTelefonesPorTurma } = require('./alunoController');
+const { carregarTurmasEncerradas } = require('./turmaController');
 
 const TIPOS_NUMERO = ['pessoal', 'institucional'];
 const { STATUS_PRECISA_ACAO, MOTIVO_NUMERO_DIFERENTE } = whatsappEnvio;
@@ -383,6 +385,25 @@ function validarTurmas(turmas) {
     return { turmas: lista };
 }
 
+// GET /whatsapp/turmas-envio — as turmas para a escolha do envio automático, cada
+// uma com { total, comTelefone, importada }. Turma não importada aparece (para a
+// tela mostrar o que falta), mas não pode ser marcada. Encerrada fica de fora.
+async function turmasParaEnvio(req, res) {
+    try {
+        const [lancadas, encerradas, cobertura] = await Promise.all([
+            prisma.lancamento.findMany({ select: { codigoTurma: true, nomeTurma: true }, distinct: ['codigoTurma'] }),
+            carregarTurmasEncerradas(),
+            coberturaTelefonesPorTurma()
+        ]);
+        const dados = lancadas
+            .filter((t) => !encerradas.has(t.codigoTurma))
+            .map((t) => ({ codigoTurma: t.codigoTurma, nomeTurma: t.nomeTurma, ...(cobertura.get(t.codigoTurma) || { total: 0, comTelefone: 0, importada: false }) }));
+        res.json({ status: 'ok', dados });
+    } catch (erro) {
+        respostaErro(res, erro);
+    }
+}
+
 // GET /whatsapp/automatico — estado do número do sistema e a cobertura: quantos
 // alunos em risco já receberam, estão na fila, ou não podem receber (e por quê).
 // Visível a todos os usuários logados; só o dono e o admin alteram.
@@ -498,6 +519,15 @@ async function salvarAutomatico(req, res) {
         const ligado = req.body.ligado === true;
         const { turmas, erro } = validarTurmas(req.body.turmas);
         if (erro) return res.status(400).json({ status: 'erro', mensagem: erro });
+        // Só turma com a planilha importada entra no envio (a tela já bloqueia;
+        // isto é a garantia do servidor).
+        if (turmas) {
+            const cobertura = await coberturaTelefonesPorTurma(turmas);
+            const semPlanilha = turmas.filter((codigo) => !cobertura.get(codigo)?.importada);
+            if (semPlanilha.length) {
+                return res.status(400).json({ status: 'erro', mensagem: `Estas turmas ainda não têm a planilha de telefones importada: ${semPlanilha.join(', ')}. Importe em "Importar telefones" e tente de novo.` });
+            }
+        }
 
         const sistema = await whatsappAutomatico.sessaoDoSistema();
         if (sistema && !podeAlterarSistema(req, usuario, sistema)) {
@@ -647,6 +677,7 @@ async function historico(req, res) {
 module.exports = {
     obterAutomatico,
     salvarAutomatico,
+    turmasParaEnvio,
     decidirFaltaColetiva,
     retomarSessao,
     historico,
