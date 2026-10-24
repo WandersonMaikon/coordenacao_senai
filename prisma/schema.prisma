@@ -388,3 +388,19 @@ model FaltaColetiva {
   @@unique([codigoTurma, dataAula])
   @@map("faltas_coletivas")
 }
+
+// ─────────────────────────────────────────
+// Quem da coordenação assumiu procurar o aluno na /contatar ("Eu cuido deste
+// aluno"). Um por aluno; assumir de novo troca a pessoa. Não é apagado quando o
+// caso se resolve: vale só se `assumidoEm` for depois do motivo atual do aluno
+// estar na lista (precisamContato.js), então uma volta à lista meses depois não
+// mostra um responsável antigo.
+// ─────────────────────────────────────────
+model ResponsavelContato {
+  id         Int      @id @default(autoincrement())
+  matricula  String   @unique @db.VarChar(20)
+  usuario    String   @db.VarChar(50)
+  assumidoEm DateTime @default(now()) @map("assumido_em")
+
+  @@map("responsaveis_contato")
+}

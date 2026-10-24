@@ -12,6 +12,8 @@ async function registrar(req, res) {
     if (!matricula || !canal || !status) {
         return res.status(400).json({ status: 'erro', mensagem: 'Informe matricula, canal e status' });
     }
+    // Contato novo pode tirar o aluno da /contatar: o contador do menu recalcula.
+    totalEmCache = null;
 
     try {
         await prisma.aluno.upsert({
@@ -259,6 +261,55 @@ async function listarPendentes(req, res) {
     }
 }
 
+// GET /contatos/pendentes/total — só o número, para o contador do menu lateral
+// (carregado em toda página). Guardado por TOTAL_CACHE_MS: calcular o risco da
+// escola inteira a cada clique no menu seria trabalho à toa.
+const TOTAL_CACHE_MS = 2 * 60 * 1000;
+let totalEmCache = null;
+
+async function totalPendentes(req, res) {
+    try {
+        if (!totalEmCache || Date.now() - totalEmCache.em > TOTAL_CACHE_MS) {
+            const dados = await listarPrecisamContato({ analisar: false });
+            totalEmCache = { em: Date.now(), total: dados.length, urgentes: dados.filter((d) => d.prioridade <= 2).length };
+        }
+        res.json({ status: 'ok', total: totalEmCache.total, urgentes: totalEmCache.urgentes });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+// POST /contatos/pendentes/:matricula/responsavel — "Eu cuido deste aluno".
+// Qualquer usuário logado; se outra pessoa já tinha assumido, troca (a tela
+// pergunta antes). DELETE solta — só quem assumiu, ou o admin.
+async function assumirPendente(req, res) {
+    try {
+        const { matricula } = req.params;
+        await prisma.responsavelContato.upsert({
+            where: { matricula },
+            create: { matricula, usuario: req.usuario.usuario },
+            update: { usuario: req.usuario.usuario, assumidoEm: new Date() }
+        });
+        res.json({ status: 'ok' });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
+async function soltarPendente(req, res) {
+    try {
+        const atual = await prisma.responsavelContato.findUnique({ where: { matricula: req.params.matricula } });
+        if (!atual) return res.json({ status: 'ok' });
+        if (atual.usuario !== req.usuario.usuario && !req.usuario.admin) {
+            return res.status(403).json({ status: 'erro', mensagem: 'Só quem assumiu o aluno pode soltá-lo.' });
+        }
+        await prisma.responsavelContato.delete({ where: { matricula: req.params.matricula } });
+        res.json({ status: 'ok' });
+    } catch (erro) {
+        res.status(500).json({ status: 'erro', mensagem: erro.message });
+    }
+}
+
 // GET /contatos/linha-do-tempo?matricula= — WhatsApp, respostas, contatos e
 // chamadas do aluno em ordem (detalhe da /risco). Vazio se ele nunca recebeu
 // mensagem automática (ver src/services/linhaDoTempo.js).
@@ -273,4 +324,7 @@ async function linhaDoTempo(req, res) {
     }
 }
 
-module.exports = { registrar, listarPorAluno, atualizar, confirmarMotivo, remover, resumoMotivos, listarPendentes, linhaDoTempo };
+module.exports = {
+    registrar, listarPorAluno, atualizar, confirmarMotivo, remover, resumoMotivos,
+    listarPendentes, totalPendentes, assumirPendente, soltarPendente, linhaDoTempo
+};

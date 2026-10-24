@@ -114,13 +114,27 @@ function classificar(item, { aluno, mensagem, respostas, analise, falhou }, agor
     return null;
 }
 
-async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
+// A conversa do sumiço para o card, da mais antiga para a mais recente: o que o
+// aluno escreveu e o que o robô respondeu. A mensagem automática em si fica de
+// fora (é o mesmo texto para todos).
+function montarConversa(respostas) {
+    const conversa = [];
+    for (const r of [...respostas].reverse()) {
+        conversa.push({ quem: 'aluno', texto: r.texto, em: r.recebidaEm });
+        if (r.respostaRobo) conversa.push({ quem: 'robo', texto: r.respostaRobo });
+    }
+    return conversa;
+}
+
+// `analisar: false` = não agendar leitura da IA (o contador do menu lateral
+// chama isto em toda página; quem agenda é a tela /contatar).
+async function listarPrecisamContato({ turma, analisar = true } = {}, agora = new Date()) {
     const { emRisco } = await calcularAlunosEmRiscoSemRecuperados();
     const candidatos = turma ? emRisco.filter((item) => item.codigoTurma === turma) : emRisco;
     const matriculas = [...new Set(candidatos.map((item) => item.matricula))];
     if (matriculas.length === 0) return [];
 
-    const [alunos, mensagens, respostas, contatos] = await Promise.all([
+    const [alunos, mensagens, respostas, contatos, responsaveis] = await Promise.all([
         prisma.aluno.findMany({
             where: { matricula: { in: matriculas } },
             select: { matricula: true, telefone: true, whatsappOptOut: true }
@@ -135,15 +149,23 @@ async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
         }),
         prisma.respostaWhatsapp.findMany({
             where: { matricula: { in: matriculas }, interpretacao: { notIn: ['ignorada', 'sem_vinculo'] } },
-            select: { matricula: true, mensagemId: true, texto: true, interpretacao: true, motivoSugerido: true, recebidaEm: true },
+            select: { matricula: true, mensagemId: true, texto: true, interpretacao: true, motivoSugerido: true, recebidaEm: true, respostaRobo: true },
             orderBy: { recebidaEm: 'desc' }
         }),
         prisma.contato.findMany({
             where: { matricula: { in: matriculas } },
             select: { id: true, matricula: true, status: true, canal: true, contatadoPor: true, criadoEm: true },
             orderBy: { criadoEm: 'desc' }
-        })
+        }),
+        prisma.responsavelContato.findMany({ where: { matricula: { in: matriculas } } })
     ]);
+    const responsavelPorMatricula = new Map(responsaveis.map((r) => [r.matricula, r]));
+    const nomes = responsaveis.length
+        ? new Map((await prisma.usuario.findMany({
+            where: { usuario: { in: [...new Set(responsaveis.map((r) => r.usuario))] } },
+            select: { usuario: true, nome: true }
+        })).map((u) => [u.usuario, u.nome || u.usuario]))
+        : new Map();
 
     const alunoPorMatricula = new Map(alunos.map((a) => [a.matricula, a]));
     // Contato criado pelo envio automático não é contato de uma pessoa: ele vira
@@ -199,6 +221,10 @@ async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
             resumoIa: analise?.conversaResumo || null,
             motivoIa: analise?.conversaMotivo || null,
             respondeuRobo: doSumico.length > 0,
+            conversa: montarConversa(doSumico),
+            // Foto ou documento pelo WhatsApp — quase sempre o atestado. O arquivo
+            // não é guardado no sistema: ver no WhatsApp do número do sistema.
+            enviouArquivo: doSumico.some((r) => ['[imagem]', '[documento]'].includes(r.texto)),
             ultimaTentativa: contatoHumano
                 ? { em: contatoHumano.criadoEm, por: contatoHumano.contatadoPor, status: contatoHumano.status, canal: contatoHumano.canal }
                 : null,
@@ -215,7 +241,16 @@ async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
         }
     }
 
-    garantirAnalises([...paraAnalisar.values()]);
+    if (analisar) garantirAnalises([...paraAnalisar.values()]);
+
+    // "Eu cuido deste aluno": só vale se assumido depois que o motivo atual
+    // trouxe o aluno para a lista.
+    for (const linha of porMatricula.values()) {
+        const r = responsavelPorMatricula.get(linha.matricula);
+        linha.responsavel = r && r.assumidoEm >= new Date(linha.desde)
+            ? { usuario: r.usuario, nome: nomes.get(r.usuario) || r.usuario, em: r.assumidoEm }
+            : null;
+    }
 
     // Mais urgente primeiro; dentro da mesma prioridade, quem espera há mais tempo.
     return [...porMatricula.values()].sort((a, b) =>

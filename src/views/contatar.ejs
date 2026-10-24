@@ -159,7 +159,23 @@
     let alunos = [];
     // Situação escolhida nos botões do topo (null = todas).
     let filtroMotivo = null;
+    // "meus" = assumidos por mim; "ninguem" = sem ninguém cuidando; null = todos.
+    let filtroResponsavel = null;
     let motivosLista = {};
+
+    // Usuário logado (para "Eu cuido deste aluno"). O token é só lido aqui; quem
+    // confere de verdade é o servidor.
+    const eu = (() => {
+      try { return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).usuario; } catch (erro) { return null; }
+    })();
+
+    // Em quantos dias cada prioridade deveria ser atendida. Passou disso, o
+    // tempo de espera aparece em vermelho.
+    const PRAZO_DIAS = { 1: 1, 2: 2, 3: 3, 4: 7, 5: 7 };
+
+    function diasEsperando(dataIso) {
+      return Math.floor((Date.now() - new Date(dataIso).getTime()) / 86400000);
+    }
 
     // O formulário já vem preenchido com o que dá para saber sem perguntar a
     // ninguém: com a conversa do robô lida pela IA, canal WhatsApp, resultado
@@ -215,6 +231,38 @@
       const resumo = aluno.resumoIa
         ? `<div class="small mt-2" style="max-width: 40rem;"><i class="bi bi-robot me-1 text-info"></i><strong>O que a IA entendeu da conversa:</strong> ${escaparHtml(aluno.resumoIa)}</div>`
         : '';
+      const arquivo = aluno.enviouArquivo
+        ? `<div class="small mt-2 text-success-emphasis"><i class="bi bi-paperclip me-1"></i>Mandou foto ou documento pelo WhatsApp (pode ser o atestado) — veja no WhatsApp do número do sistema.</div>`
+        : '';
+
+      // A conversa inteira com o robô, fechada até alguém clicar.
+      const conversa = aluno.conversa && aluno.conversa.length > 1
+        ? `<button type="button" class="btn btn-link btn-sm px-0 mt-1" data-conversa="${indice}"><i class="bi bi-chat-dots me-1"></i>Ver a conversa com o robô (${aluno.conversa.length} mensagens)</button>
+           <div class="mt-1" data-conversa-corpo="${indice}" hidden style="max-width: 40rem;">
+             ${aluno.conversa.map((m) => m.quem === 'aluno'
+                ? `<div class="p-2 rounded-3 small mb-1 me-5" style="background: #dcf8c6; color: #111;">${escaparHtml(m.texto)}<div class="text-end" style="font-size: .7rem; opacity: .6;">${formatarDataHora(m.em)}</div></div>`
+                : `<div class="p-2 rounded-3 small mb-1 ms-5 bg-body-secondary"><i class="bi bi-robot me-1"></i>${escaparHtml(m.texto)}</div>`).join('')}
+           </div>`
+        : '';
+
+      // "Eu cuido deste aluno": evita duas pessoas ligando para o mesmo aluno —
+      // ou ninguém ligando, achando que outra pessoa já ligou.
+      let responsavel;
+      if (!aluno.responsavel) {
+        responsavel = `<button type="button" class="btn btn-sm btn-outline-secondary" data-assumir="${indice}"><i class="bi bi-person-check me-1"></i>Eu cuido deste aluno</button>`;
+      } else if (aluno.responsavel.usuario === eu) {
+        responsavel = `<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle"><i class="bi bi-person-check-fill me-1"></i>Você está cuidando</span>
+          <button type="button" class="btn btn-link btn-sm" data-soltar="${indice}">soltar</button>`;
+      } else {
+        responsavel = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"><i class="bi bi-person-fill me-1"></i>${escaparHtml(aluno.responsavel.nome)} está cuidando desde ${formatarDataHora(aluno.responsavel.em)}</span>
+          <button type="button" class="btn btn-link btn-sm" data-assumir="${indice}">assumir no lugar</button>`;
+      }
+
+      const dias = diasEsperando(aluno.desde);
+      const atrasado = dias > (PRAZO_DIAS[aluno.prioridade] || 7);
+      const espera = atrasado
+        ? `<div class="small text-danger fw-semibold mt-1"><i class="bi bi-alarm me-1"></i>esperando ${haQuanto(aluno.desde)} — passou do prazo</div>`
+        : `<div class="small text-body-secondary mt-1">${haQuanto(aluno.desde)} (${formatarDataHora(aluno.desde)})</div>`;
       const tentativa = aluno.ultimaTentativa
         ? `<div class="small text-body-secondary mt-2"><i class="bi bi-arrow-repeat me-1"></i>Última tentativa: ${formatarDataHora(aluno.ultimaTentativa.em)} por ${escaparHtml(aluno.ultimaTentativa.por || '—')} (${escaparHtml(CANAIS[aluno.ultimaTentativa.canal] || aluno.ultimaTentativa.canal || '')}) — ${escaparHtml(STATUS[aluno.ultimaTentativa.status] || aluno.ultimaTentativa.status)}</div>`
         : '';
@@ -229,14 +277,19 @@
               </div>
               <div class="text-end">
                 <span class="badge bg-${cor}-subtle text-${cor}-emphasis border border-${cor}-subtle">${escaparHtml(aluno.rotulo)}</span>${sugestao}
-                <div class="small text-body-secondary mt-1">${haQuanto(aluno.desde)} (${formatarDataHora(aluno.desde)})</div>
+                ${espera}
               </div>
             </div>
             ${aluno.detalhe ? `<div class="p-2 rounded-3 small mt-2" style="background: #dcf8c6; color: #111; max-width: 40rem;"><i class="bi bi-chat-left-text me-1"></i>"${escaparHtml(aluno.detalhe)}"</div>` : ''}
             ${resumo}
+            ${arquivo}
+            ${conversa}
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
               <div class="small">${telefone}</div>
-              <button type="button" class="btn btn-sm btn-outline-primary" data-abrir="${indice}"><i class="bi bi-journal-plus me-1"></i>Registrar contato</button>
+              <div class="d-flex flex-wrap align-items-center gap-2">
+                ${responsavel}
+                <button type="button" class="btn btn-sm btn-outline-primary" data-abrir="${indice}"><i class="bi bi-journal-plus me-1"></i>Registrar contato</button>
+              </div>
             </div>
             ${tentativa}
             ${formularioContato(indice)}
@@ -256,22 +309,38 @@
           class="btn btn-sm rounded-pill px-3 ${ativo ? `btn-${cor}` : `bg-${cor}-subtle text-${cor}-emphasis border border-${cor}-subtle`}">
           ${escaparHtml(rotulo)}: <strong>${quantidade}</strong></button>`;
       };
+      const meus = alunos.filter((a) => a.responsavel?.usuario === eu).length;
+      const ninguem = alunos.filter((a) => !a.responsavel).length;
+      const botaoResp = (chave, rotulo, quantidade) => {
+        const ativo = filtroResponsavel === chave;
+        return `<button type="button" data-filtro-resp="${chave}" aria-pressed="${ativo}"
+          class="btn btn-sm rounded-pill px-3 ${ativo ? 'btn-secondary' : 'btn-outline-secondary'}">
+          <i class="bi bi-person me-1"></i>${rotulo}: <strong>${quantidade}</strong></button>`;
+      };
       document.getElementById('resumoMotivos').innerHTML = (alunos.length ? botao(null, 'Todos', alunos.length, 'dark') : '') + Object.entries(motivosLista)
         .filter(([chave]) => contagem[chave])
         .map(([chave, m]) => botao(chave, m.rotulo, contagem[chave], COR_PRIORIDADE[m.prioridade] || 'secondary'))
-        .join('');
+        .join('')
+        + (alunos.length ? `<span class="vr mx-1"></span>${botaoResp('meus', 'Eu estou cuidando', meus)}${botaoResp('ninguem', 'Ninguém cuidando', ninguem)}` : '');
+    }
+
+    function passaNoFiltro(aluno) {
+      if (filtroMotivo && aluno.motivo !== filtroMotivo) return false;
+      if (filtroResponsavel === 'meus' && aluno.responsavel?.usuario !== eu) return false;
+      if (filtroResponsavel === 'ninguem' && aluno.responsavel) return false;
+      return true;
     }
 
     function desenharLista() {
       const statusEl = document.getElementById('statusCarregamento');
-      const visiveis = alunos.map((aluno, indice) => ({ aluno, indice })).filter(({ aluno }) => !filtroMotivo || aluno.motivo === filtroMotivo);
+      const visiveis = alunos.map((aluno, indice) => ({ aluno, indice })).filter(({ aluno }) => passaNoFiltro(aluno));
       if (alunos.length === 0) {
         statusEl.className = 'alert alert-success';
         statusEl.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Ninguém precisando de contato agora.';
       } else {
         statusEl.className = 'small text-body-secondary mb-2';
-        statusEl.textContent = filtroMotivo
-          ? `${visiveis.length} de ${alunos.length} aluno(s): ${motivosLista[filtroMotivo].rotulo.toLowerCase()}. Quem espera há mais tempo vem primeiro.`
+        statusEl.textContent = filtroMotivo || filtroResponsavel
+          ? `Mostrando ${visiveis.length} de ${alunos.length} aluno(s). Quem espera há mais tempo vem primeiro.`
           : `${alunos.length} aluno(s), do mais urgente para o menos urgente; dentro de cada motivo, quem espera há mais tempo vem primeiro.`;
       }
       document.getElementById('listaAlunos').innerHTML = visiveis.map(({ aluno, indice }) => cartaoAluno(aluno, indice)).join('');
@@ -279,12 +348,42 @@
 
     document.getElementById('resumoMotivos').addEventListener('click', (evento) => {
       const botao = evento.target.closest('[data-filtro]');
-      if (!botao) return;
-      const escolhido = botao.dataset.filtro || null;
-      filtroMotivo = filtroMotivo === escolhido ? null : escolhido;
+      const botaoResp = evento.target.closest('[data-filtro-resp]');
+      if (botao) {
+        const escolhido = botao.dataset.filtro || null;
+        filtroMotivo = filtroMotivo === escolhido ? null : escolhido;
+        if (!escolhido) filtroResponsavel = null; // "Todos" limpa os dois filtros
+      } else if (botaoResp) {
+        filtroResponsavel = filtroResponsavel === botaoResp.dataset.filtroResp ? null : botaoResp.dataset.filtroResp;
+      } else {
+        return;
+      }
       desenharResumo();
       desenharLista();
     });
+
+    async function assumir(aluno) {
+      if (aluno.responsavel && aluno.responsavel.usuario !== eu) {
+        const confirmacao = await Swal.fire({
+          icon: 'question',
+          title: 'Assumir este aluno?',
+          text: `${aluno.responsavel.nome} está cuidando deste aluno. Combine com essa pessoa antes, para os dois não ligarem.`,
+          showCancelButton: true,
+          confirmButtonText: 'Assumir',
+          cancelButtonText: 'Cancelar'
+        });
+        if (!confirmacao.isConfirmed) return;
+      }
+      const r = await chamarApi(`/contatos/pendentes/${encodeURIComponent(aluno.matricula)}/responsavel`, { method: 'POST', body: '{}' });
+      if (r.status !== 'ok') throw new Error(r.mensagem);
+      notificar.ok(`Você está cuidando de ${aluno.nomeAluno || 'este aluno'}.`);
+    }
+
+    async function soltar(aluno) {
+      const r = await chamarApi(`/contatos/pendentes/${encodeURIComponent(aluno.matricula)}/responsavel`, { method: 'DELETE' });
+      if (r.status !== 'ok') throw new Error(r.mensagem);
+      notificar.ok('Aluno solto. Outra pessoa pode assumir.');
+    }
 
     async function carregar() {
       const statusEl = document.getElementById('statusCarregamento');
@@ -306,10 +405,27 @@
       }
     }
 
-    document.getElementById('listaAlunos').addEventListener('click', (evento) => {
+    document.getElementById('listaAlunos').addEventListener('click', async (evento) => {
       const abrir = evento.target.closest('[data-abrir]');
       const cancelar = evento.target.closest('[data-cancelar]');
-      if (abrir) {
+      const verConversa = evento.target.closest('[data-conversa]');
+      const botaoAssumir = evento.target.closest('[data-assumir]');
+      const botaoSoltar = evento.target.closest('[data-soltar]');
+      if (verConversa) {
+        const corpo = document.querySelector(`[data-conversa-corpo="${verConversa.dataset.conversa}"]`);
+        corpo.hidden = !corpo.hidden;
+      } else if (botaoAssumir || botaoSoltar) {
+        const botao = botaoAssumir || botaoSoltar;
+        botao.disabled = true;
+        try {
+          const aluno = alunos[Number(botao.dataset.assumir ?? botao.dataset.soltar)];
+          await (botaoAssumir ? assumir(aluno) : soltar(aluno));
+          await carregar();
+        } catch (erro) {
+          botao.disabled = false;
+          if (erro.message !== 'Sessão expirada') notificar.erro(erro.message || 'Não foi possível concluir.');
+        }
+      } else if (abrir) {
         const form = document.querySelector(`[data-form-contato="${abrir.dataset.abrir}"]`);
         form.hidden = false;
         abrir.hidden = true;

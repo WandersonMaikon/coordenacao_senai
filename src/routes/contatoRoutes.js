@@ -1,5 +1,8 @@
 const express = require('express');
-const { registrar, listarPorAluno, atualizar, confirmarMotivo, remover, resumoMotivos, listarPendentes, linhaDoTempo } = require('../controllers/contatoController');
+const {
+    registrar, listarPorAluno, atualizar, confirmarMotivo, remover, resumoMotivos,
+    listarPendentes, totalPendentes, assumirPendente, soltarPendente, linhaDoTempo
+} = require('../controllers/contatoController');
 const { autenticar } = require('../middlewares/auth');
 
 const router = express.Router();
@@ -8,6 +11,9 @@ router.post('/contatos', autenticar, registrar);
 router.get('/contatos', autenticar, listarPorAluno);
 router.get('/contatos/motivos', autenticar, resumoMotivos);
 router.get('/contatos/pendentes', autenticar, listarPendentes);
+router.get('/contatos/pendentes/total', autenticar, totalPendentes);
+router.post('/contatos/pendentes/:matricula/responsavel', autenticar, assumirPendente);
+router.delete('/contatos/pendentes/:matricula/responsavel', autenticar, soltarPendente);
 router.get('/contatos/linha-do-tempo', autenticar, linhaDoTempo);
 router.put('/contatos/:id', autenticar, atualizar);
 // Confirmar a sugestão de motivo é rotina de qualquer usuário logado — diferente

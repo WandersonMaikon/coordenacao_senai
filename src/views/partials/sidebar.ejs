@@ -56,7 +56,7 @@
       <li class="menu-item">
         <a class="menu-link <%= paginaAtual === 'contatar' ? 'active' : '' %>" href="/contatar">
           <i class="bi bi-telephone-outbound-fill"></i>
-          <span class="menu-label">Precisam de contato</span>
+          <span class="menu-label">Precisam de contato <span id="contadorContatar" class="badge rounded-pill ms-1" hidden></span></span>
         </a>
       </li>
       <li class="menu-item">
@@ -119,6 +119,25 @@
     } catch (erro) {
       // token inválido — as próprias chamadas fetch() da página vão redirecionar pro /login
     }
+  })();
+
+  // Contador do "Precisam de contato": vermelho quando há caso urgente
+  // (desistência, delicado, pediu ajuda, promessa quebrada). Falha aqui fica
+  // calada — é só um aviso, a página funciona sem ele.
+  (function () {
+    const tokenSidebar = localStorage.getItem('coor360_token');
+    const contador = document.getElementById('contadorContatar');
+    if (!tokenSidebar || !contador) return;
+    fetch('/contatos/pendentes/total', { headers: { Authorization: 'Bearer ' + tokenSidebar } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (!r || r.status !== 'ok' || !r.total) return;
+        contador.textContent = r.total;
+        contador.className = `badge rounded-pill ms-1 ${r.urgentes ? 'bg-danger' : 'bg-secondary'}`;
+        contador.title = r.urgentes ? `${r.urgentes} urgente(s)` : '';
+        contador.hidden = false;
+      })
+      .catch(() => {});
   })();
 
   // Abre/fecha os submenus (o CSS do tema já mostra .menu-inner quando o
