@@ -45,7 +45,6 @@ const MOTIVOS_LISTA = {
     sem_resposta: { prioridade: 4, rotulo: 'Não respondeu às mensagens automáticas' },
     sair: { prioridade: 5, rotulo: 'Pediu para não receber WhatsApp (SAIR)' },
     sem_whatsapp: { prioridade: 5, rotulo: 'O número não tem WhatsApp' },
-    sem_telefone: { prioridade: 5, rotulo: 'Sem telefone cadastrado' },
     // Não é trabalho pendente: só informação. Fica no fim e fora do contador do menu.
     robo_cuidando: { prioridade: 6, rotulo: 'O robô ainda está cuidando' }
 };
@@ -134,7 +133,11 @@ function classificar(item, { aluno, mensagem, respostas, analise, falhou }, agor
 
     const inicio = new Date(converterDataAula(item.primeiraFalta));
     if (falhou) return { motivo: 'sem_whatsapp', desde: inicio };
-    if (!aluno?.telefone) return { motivo: 'sem_telefone', desde: inicio };
+    // Sem telefone cadastrado NÃO entra (saiu em 24/10/2026): esta lista é o funil
+    // do que aconteceu com as mensagens, e quem não tem telefone nunca recebeu
+    // nenhuma — eram dezenas de cards sem conversa nenhuma, afogando os casos
+    // reais. Esses alunos continuam visíveis na /risco, no "quem não recebe" da
+    // aba Envio automático, e o telefone se corrige na /telefones.
     return null;
 }
 
