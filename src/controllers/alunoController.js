@@ -1,6 +1,7 @@
 const XLSX = require('xlsx');
 const prisma = require('../config/prisma');
 const { carregarTurmasEncerradas } = require('./turmaController');
+const { nomeTurmaLimpo } = require('../services/whatsappLote');
 
 // Nº de dias de aula seguidos com falta (sem nenhuma presença no meio) que
 // colocam o aluno em risco. Não é soma acumulada do período todo: assim que o
@@ -623,12 +624,35 @@ async function buscarAlunos(req, res) {
             extras.forEach((aluno) => porMatricula.set(aluno.matricula, aluno));
         }
 
+        // O curso: a tabela `alunos` não guarda turma, então sai das chamadas
+        // lançadas (mesma regra do painel). Pode ser mais de uma turma — a mais
+        // recente primeiro; turma encerrada vem marcada.
+        const [turmasLancadas, encerradas] = await Promise.all([
+            prisma.lancamento.findMany({
+                where: { matricula: { in: matriculas } },
+                select: { matricula: true, codigoTurma: true, nomeTurma: true },
+                distinct: ['matricula', 'codigoTurma'],
+                orderBy: { atualizadoEm: 'desc' }
+            }),
+            carregarTurmasEncerradas()
+        ]);
+        const cursosPorMatricula = new Map();
+        for (const t of turmasLancadas) {
+            if (!cursosPorMatricula.has(t.matricula)) cursosPorMatricula.set(t.matricula, []);
+            cursosPorMatricula.get(t.matricula).push({
+                codigoTurma: t.codigoTurma,
+                nome: nomeTurmaLimpo(t.nomeTurma) || t.codigoTurma,
+                encerrada: encerradas.has(t.codigoTurma)
+            });
+        }
+
         const dados = matriculas
             .map((matricula) => {
                 const aluno = porMatricula.get(matricula);
                 return {
                     matricula,
                     nome: (aluno && aluno.nome) || nomeDoLancamento.get(matricula) || null,
+                    cursos: cursosPorMatricula.get(matricula) || [],
                     telefone: aluno ? aluno.telefone : null,
                     situacao: aluno ? aluno.situacao : null,
                     whatsappOptOut: aluno ? aluno.whatsappOptOut : false,

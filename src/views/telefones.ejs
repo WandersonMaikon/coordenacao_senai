@@ -52,6 +52,7 @@
                   <tr>
                     <th>Matrícula</th>
                     <th>Nome</th>
+                    <th>Curso</th>
                     <th>Situação</th>
                     <th>Telefone</th>
                     <th class="text-end">Ações</th>
@@ -163,6 +164,9 @@
         <tr data-matricula="${escaparHtml(aluno.matricula)}">
           <td>${escaparHtml(aluno.matricula)}</td>
           <td>${escaparHtml(aluno.nome) || '—'}${selo}${seloSemCadastro}</td>
+          <td class="small">${(aluno.cursos || []).length
+            ? aluno.cursos.map((c) => `<div>${escaparHtml(c.nome)}${c.encerrada ? ' <span class="badge bg-secondary-subtle text-secondary-emphasis">encerrada</span>' : ''}</div>`).join('')
+            : '<span class="text-body-secondary">sem chamada lançada</span>'}</td>
           <td>${escaparHtml(aluno.situacao) || '—'}</td>
           <td>
             <span class="telefoneTexto">
