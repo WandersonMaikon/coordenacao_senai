@@ -261,7 +261,7 @@ async function listarPendentes(req, res) {
     }
 }
 
-// GET /contatos/pendentes/total — só o número, para o contador do menu lateral
+// GET /contatos/pendentes/total — as matrículas da lista, para o contador do menu lateral
 // (carregado em toda página). Guardado por TOTAL_CACHE_MS: calcular o risco da
 // escola inteira a cada clique no menu seria trabalho à toa.
 const TOTAL_CACHE_MS = 2 * 60 * 1000;
@@ -271,9 +271,15 @@ async function totalPendentes(req, res) {
     try {
         if (!totalEmCache || Date.now() - totalEmCache.em > TOTAL_CACHE_MS) {
             const dados = await listarPrecisamContato({ analisar: false });
-            totalEmCache = { em: Date.now(), total: dados.length, urgentes: dados.filter((d) => d.prioridade <= 2).length };
+            totalEmCache = {
+                em: Date.now(),
+                matriculas: dados.map((d) => d.matricula),
+                urgentes: dados.filter((d) => d.prioridade <= 2).map((d) => d.matricula)
+            };
         }
-        res.json({ status: 'ok', total: totalEmCache.total, urgentes: totalEmCache.urgentes });
+        // As matrículas (sem nome nem telefone) e não só o número: o menu mostra
+        // quantos são NOVOS para cada usuário desde que ele abriu a /contatar.
+        res.json({ status: 'ok', total: totalEmCache.matriculas.length, matriculas: totalEmCache.matriculas, urgentes: totalEmCache.urgentes });
     } catch (erro) {
         res.status(500).json({ status: 'erro', mensagem: erro.message });
     }

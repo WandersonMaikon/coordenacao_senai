@@ -54,9 +54,10 @@
         </a>
       </li>
       <li class="menu-item">
-        <a class="menu-link <%= paginaAtual === 'contatar' ? 'active' : '' %>" href="/contatar">
+        <a class="menu-link <%= paginaAtual === 'contatar' ? 'active' : '' %>" href="/contatar" style="display: flex; align-items: center;">
           <i class="bi bi-telephone-outbound-fill"></i>
-          <span class="menu-label">Precisam de contato <span id="contadorContatar" class="badge rounded-pill ms-1" hidden></span></span>
+          <span class="menu-label text-nowrap" style="flex: 1; min-width: 0;">Precisam de contato</span>
+          <span id="contadorContatar" class="badge rounded-pill flex-shrink-0 ms-2" hidden></span>
         </a>
       </li>
       <li class="menu-item">
@@ -121,20 +122,43 @@
     }
   })();
 
-  // Contador do "Precisam de contato": vermelho quando há caso urgente
-  // (desistência, delicado, pediu ajuda, promessa quebrada). Falha aqui fica
-  // calada — é só um aviso, a página funciona sem ele.
+  // Contador do "Precisam de contato": quantos alunos entraram na lista desde a
+  // última vez que ESTE usuário abriu a /contatar — visto uma vez, some, e volta
+  // quando chega aluno novo. Vermelho se algum dos novos é urgente (desistência,
+  // delicado, pediu ajuda, promessa quebrada). O "já vi" fica no navegador
+  // (localStorage, por usuário). Falha aqui fica calada — é só um aviso.
   (function () {
     const tokenSidebar = localStorage.getItem('coor360_token');
     const contador = document.getElementById('contadorContatar');
     if (!tokenSidebar || !contador) return;
+    let chave;
+    try {
+      const payload = JSON.parse(atob(tokenSidebar.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      chave = `coor360_contatar_vistos_${payload.usuario}`;
+    } catch (erro) {
+      return;
+    }
+    const lerVistos = () => {
+      try { return new Set(JSON.parse(localStorage.getItem(chave) || '[]')); } catch (erro) { return new Set(); }
+    };
+    const naContatar = <%- JSON.stringify(paginaAtual === 'contatar') %>;
+
     fetch('/contatos/pendentes/total', { headers: { Authorization: 'Bearer ' + tokenSidebar } })
       .then((r) => (r.ok ? r.json() : null))
       .then((r) => {
-        if (!r || r.status !== 'ok' || !r.total) return;
-        contador.textContent = r.total;
-        contador.className = `badge rounded-pill ms-1 ${r.urgentes ? 'bg-danger' : 'bg-secondary'}`;
-        contador.title = r.urgentes ? `${r.urgentes} urgente(s)` : '';
+        if (!r || r.status !== 'ok' || !Array.isArray(r.matriculas)) return;
+        if (naContatar) {
+          // Abriu a lista: tudo o que está nela agora conta como visto.
+          try { localStorage.setItem(chave, JSON.stringify(r.matriculas)); } catch (erro) { /* sem armazenamento: o contador só não zera */ }
+          return;
+        }
+        const vistos = lerVistos();
+        const novos = r.matriculas.filter((m) => !vistos.has(m));
+        if (novos.length === 0) return;
+        const urgentes = novos.filter((m) => r.urgentes.includes(m)).length;
+        contador.textContent = novos.length;
+        contador.className = `badge rounded-pill flex-shrink-0 ms-2 ${urgentes ? 'bg-danger' : 'bg-secondary'}`;
+        contador.title = `${novos.length} aluno(s) novo(s) na lista${urgentes ? `, ${urgentes} urgente(s)` : ''}`;
         contador.hidden = false;
       })
       .catch(() => {});
