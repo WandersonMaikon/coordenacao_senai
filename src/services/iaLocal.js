@@ -144,6 +144,65 @@ async function interpretar(texto) {
     return { tipo: 'nao_entendido', fonte: 'ia' };
 }
 
+// ───────────── Leitura da conversa inteira (para a coordenação) ─────────────
+//
+// Diferente de `interpretar` (uma mensagem, decide o próximo passo do robô),
+// aqui a IA lê a conversa toda e escreve um resumo para a OBSERVAÇÃO do contato
+// na /contatar. É o único texto que a IA escreve — e é para a coordenação ler e
+// conferir, nunca para o aluno (whatsappAnalise.js).
+
+const SITUACOES = ['vai_voltar', 'vai_desistir', 'pediu_ajuda', 'explicou_motivo', 'sem_informacao'];
+
+const FORMATO_ANALISE = {
+    type: 'object',
+    properties: {
+        resumo: { type: 'string' },
+        situacao: { type: 'string', enum: SITUACOES },
+        motivo: { type: 'string', enum: [...CHAVES_MOTIVO, 'nenhum'] }
+    },
+    required: ['resumo', 'situacao', 'motivo']
+};
+
+const INSTRUCOES_ANALISE = `Você ajuda a coordenação de um curso técnico do SENAI. Recebe uma conversa de WhatsApp entre o robô da escola ("Robô") e um aluno que está faltando às aulas ("Aluno"). Escreva para a coordenação:
+
+- resumo: no máximo 2 frases curtas contando só o que o ALUNO disse. Comece sem sujeito, com "Disse que" ou "Contou que" (não use "o aluno" nem "a aluna"). Não invente nada que não esteja nas mensagens do aluno, não dê conselhos e não repita o que o robô falou. Se o aluno mandou áudio ou foto, escreva "Mandou um áudio" ou "Mandou uma foto".
+- situacao: "vai_voltar" (disse que vem para a aula), "vai_desistir" (disse que vai sair, desistir, trancar ou que não vai continuar o curso), "pediu_ajuda" (aceitou conversar com a coordenação ou pediu ajuda), "explicou_motivo" (explicou por que está faltando, sem os casos anteriores), "sem_informacao" (não deu para saber).
+- motivo: transporte (ônibus, carona, passagem), trabalho (emprego, horário do serviço), saude_atestado (doente com atestado), saude_sem_atestado (doente sem atestado ou sem dizer), saude_mental (ansiedade, depressão, crise), financeiro (dinheiro em geral), desmotivacao_curso (não gosta do curso, desanimado), problema_familiar (família, luto, cuidar de alguém), ou "nenhum" se o aluno não disse. Falar com a secretaria, com o professor ou com a mãe sobre o curso NÃO é problema familiar.`;
+
+// trechos: [{ quem: 'robo' | 'aluno', texto }]. Devolve { resumo, situacao,
+// motivo } ou null (IA desligada, lenta ou fora do formato). Nunca lança.
+async function analisarConversa(trechos) {
+    if (!configurado()) return null;
+    const conversa = trechos
+        .map((t) => `${t.quem === 'robo' ? 'Robô' : 'Aluno'}: ${String(t.texto).slice(0, 600)}`)
+        .join('\n');
+    try {
+        const dados = await chamar('/api/chat', {
+            model: MODELO,
+            stream: false,
+            format: FORMATO_ANALISE,
+            keep_alive: MANTER_CARREGADO,
+            options: { temperature: 0 },
+            messages: [
+                { role: 'system', content: INSTRUCOES_ANALISE },
+                { role: 'user', content: conversa.slice(0, 4000) }
+            ]
+        }, TIMEOUT_MS);
+        const saida = JSON.parse(dados?.message?.content || '{}');
+        const resumo = String(saida.resumo || '').trim();
+        if (!resumo || !SITUACOES.includes(saida.situacao)) return null;
+        return {
+            resumo: resumo.slice(0, 500),
+            situacao: saida.situacao,
+            motivo: FORMATO_ANALISE.properties.motivo.enum.includes(saida.motivo) ? saida.motivo : 'nenhum'
+        };
+    } catch (erro) {
+        // Sem o texto da conversa no log (dados de menores).
+        console.warn('[ia] não foi possível analisar a conversa:', erro.message);
+        return null;
+    }
+}
+
 // Sem conseguir falar com o Ollama, tenta de novo depois deste tempo. Visto no
 // 1º deploy (23/10/2026): o atualizar.sh sobe o node_retencao ANTES de criar o
 // ollama_retencao, a única tentativa deu "fetch failed" e o modelo nunca foi baixado.
@@ -171,4 +230,4 @@ async function garantirModelo() {
     }
 }
 
-module.exports = { configurado, interpretar, perguntar, garantirModelo, MODELO, INSTRUCOES };
+module.exports = { configurado, interpretar, perguntar, analisarConversa, garantirModelo, MODELO, INSTRUCOES, SITUACOES };

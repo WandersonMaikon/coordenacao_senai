@@ -15,6 +15,7 @@ const openwa = require('./openwa');
 const { removerMensagemCitada, respostaSimNao } = require('./classificarResposta');
 const { interpretar } = require('./iaLocal');
 const { decidir, renderizar, ehTextoDoRobo } = require('./whatsappConversa');
+const { agendarAnalise } = require('./whatsappAnalise');
 const { normalizarTelefone, mesmoTelefone } = require('./telefone');
 const { STATUS_JA_RECEBEU, primeiroNome } = require('./whatsappLote');
 
@@ -334,6 +335,9 @@ async function processarMensagemRecebida(corpo) {
     if (textoRobo && await responderAluno(original.sessaoId, entrada.chatId, textoRobo)) {
         await prisma.respostaWhatsapp.update({ where: { id: linha.id }, data: { respostaRobo: textoRobo } });
     }
+    // Resumo e motivo da conversa inteira para a /contatar, quando o aluno parar
+    // de escrever (whatsappAnalise.js).
+    agendarAnalise(original.id);
 
     // Log sem o conteúdo da mensagem: o CLAUDE.md proíbe jogar dado pessoal de
     // aluno em texto plano sem necessidade, e pra depurar basta o id.

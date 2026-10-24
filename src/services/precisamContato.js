@@ -14,6 +14,8 @@ const {
     diaNoFusoDaEscola
 } = require('../controllers/alunoController');
 const { STATUS_JA_RECEBEU } = require('./whatsappLote');
+const { interpretarResposta } = require('./classificarResposta');
+const { garantirAnalises } = require('./whatsappAnalise');
 
 const DIA_MS = 24 * 60 * 60 * 1000;
 
@@ -36,6 +38,7 @@ const MOTIVOS_DELICADOS = ['saude_mental', 'problema_familiar'];
 const MOTIVOS_LISTA = {
     desistencia: { prioridade: 1, rotulo: 'Disse que vai sair do curso' },
     delicado: { prioridade: 1, rotulo: 'Assunto delicado na resposta' },
+    pediu_ajuda: { prioridade: 2, rotulo: 'Pediu para a coordenação falar com ele' },
     promessa_quebrada: { prioridade: 2, rotulo: 'Prometeu voltar e faltou de novo' },
     respondeu: { prioridade: 3, rotulo: 'Respondeu e precisa de retorno' },
     sem_resposta: { prioridade: 4, rotulo: 'Não respondeu às mensagens automáticas' },
@@ -49,23 +52,54 @@ function textoCurto(texto, limite = 200) {
     return texto.length > limite ? `${texto.slice(0, limite)}…` : texto;
 }
 
-// Classifica um (aluno, turma) em risco. Devolve { motivo, desde, detalhe } ou
-// null (o robô ainda está cuidando, ou não há nada que o sistema saiba dizer).
-function classificar(item, { aluno, mensagem, resposta, falhou }, agora) {
-    if (aluno?.whatsappOptOut) {
-        return { motivo: 'sair', desde: resposta?.interpretacao === 'sair' ? resposta.recebidaEm : new Date(converterDataAula(item.primeiraFalta)) };
+// Qual das respostas do sumiço define o caso. `respostas` vem da mais recente
+// para a mais antiga. O texto é relido com o dicionário de agora (e não só com a
+// interpretação gravada na hora): correção no dicionário vale para as conversas
+// antigas também — foi assim que "eu falei a secretária que iria sair do curso",
+// gravada como problema familiar por um erro já corrigido, virou desistência.
+function respostaQueDefine(respostas, analise) {
+    const lida = respostas.map((r) => ({ r, dic: interpretarResposta(r.texto) }));
+
+    // Desistência dita em qualquer ponto da conversa, por qualquer um dos dois.
+    const desistencia = lida.find(({ r, dic }) => r.interpretacao === 'desistencia' || dic.tipo === 'desistencia');
+    if (desistencia || analise?.conversaSituacao === 'vai_desistir') {
+        return { motivo: 'desistencia', resposta: desistencia?.r || respostas[0] };
     }
 
-    if (resposta && resposta.interpretacao !== 'sair') {
-        if (resposta.interpretacao === 'promessa') {
+    // Delicado só com o dicionário (palavra exata) E a IA de acordo, quando ela
+    // leu a conversa: errar para "delicado" põe no topo quem não contou nada.
+    const delicada = lida.find(({ dic }) => MOTIVOS_DELICADOS.includes(dic.motivo));
+    if (delicada && (!analise || MOTIVOS_DELICADOS.includes(analise.conversaMotivoIa))) {
+        return { motivo: 'delicado', resposta: delicada.r };
+    }
+
+    if (respostas[0].interpretacao === 'promessa') return { motivo: 'promessa', resposta: respostas[0] };
+
+    // Respondeu SIM a "quer que alguém da coordenação converse com você?": é uma
+    // promessa NOSSA, precisa ser cumprida.
+    const pediu = respostas.find((r) => r.interpretacao === 'pediu_ajuda');
+    if (pediu) return { motivo: 'pediu_ajuda', resposta: pediu };
+
+    return { motivo: 'respondeu', resposta: respostas[0] };
+}
+
+// Classifica um (aluno, turma) em risco. Devolve { motivo, desde, detalhe } ou
+// null (o robô ainda está cuidando, ou não há nada que o sistema saiba dizer).
+function classificar(item, { aluno, mensagem, respostas, analise, falhou }, agora) {
+    if (aluno?.whatsappOptOut) {
+        const sair = respostas.find((r) => r.interpretacao === 'sair');
+        return { motivo: 'sair', desde: sair ? sair.recebidaEm : new Date(converterDataAula(item.primeiraFalta)) };
+    }
+
+    const validas = respostas.filter((r) => r.interpretacao !== 'sair');
+    if (validas.length > 0) {
+        const { motivo, resposta } = respostaQueDefine(validas, analise);
+        if (motivo === 'promessa') {
             const diaDaPromessa = converterDataAula(diaNoFusoDaEscola(resposta.recebidaEm));
             if (converterDataAula(item.ultimaFalta) <= diaDaPromessa) return null; // aguardando a próxima chamada
             return { motivo: 'promessa_quebrada', desde: resposta.recebidaEm, detalhe: textoCurto(resposta.texto) };
         }
-        const motivo = resposta.interpretacao === 'desistencia'
-            ? 'desistencia'
-            : MOTIVOS_DELICADOS.includes(resposta.motivoSugerido) ? 'delicado' : 'respondeu';
-        return { motivo, desde: resposta.recebidaEm, detalhe: textoCurto(resposta.texto), motivoSugerido: resposta.motivoSugerido };
+        return { motivo, desde: resposta.recebidaEm, detalhe: textoCurto(resposta.texto) };
     }
 
     if (mensagem) {
@@ -93,12 +127,15 @@ async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
         }),
         prisma.mensagemWhatsapp.findMany({
             where: { matricula: { in: matriculas } },
-            select: { matricula: true, codigoTurma: true, primeiraFalta: true, tentativa: true, status: true, falhaDefinitiva: true, contatoId: true, enviadaEm: true },
+            select: {
+                id: true, matricula: true, codigoTurma: true, primeiraFalta: true, tentativa: true, status: true, falhaDefinitiva: true, contatoId: true, enviadaEm: true,
+                conversaResumo: true, conversaSituacao: true, conversaMotivo: true, conversaMotivoIa: true, conversaAnalisadaEm: true
+            },
             orderBy: { enviadaEm: 'desc' }
         }),
         prisma.respostaWhatsapp.findMany({
             where: { matricula: { in: matriculas }, interpretacao: { notIn: ['ignorada', 'sem_vinculo'] } },
-            select: { matricula: true, texto: true, interpretacao: true, motivoSugerido: true, recebidaEm: true },
+            select: { matricula: true, mensagemId: true, texto: true, interpretacao: true, motivoSugerido: true, recebidaEm: true },
             orderBy: { recebidaEm: 'desc' }
         }),
         prisma.contato.findMany({
@@ -115,6 +152,7 @@ async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
     const agoraMs = agora.getTime();
 
     const porMatricula = new Map();
+    const paraAnalisar = new Map();
     for (const item of candidatos) {
         const inicioEpisodio = converterDataAula(item.primeiraFalta);
         const doAluno = mensagens.filter((m) => m.matricula === item.matricula);
@@ -128,16 +166,19 @@ async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
         const doSumico = primeiraEnviada
             ? respostas.filter((r) => r.matricula === item.matricula && r.recebidaEm.getTime() >= primeiraEnviada.enviadaEm.getTime())
             : [];
-        // Com o roteiro de conversa, o aluno manda várias mensagens: quem disse
-        // que ia desistir (ou contou algo delicado) e depois respondeu outra coisa
-        // à pergunta do robô continua no topo. Fora isso, vale a mais recente.
-        const resposta = doSumico.find((r) => r.interpretacao === 'desistencia')
-            || doSumico.find((r) => MOTIVOS_DELICADOS.includes(r.motivoSugerido))
-            || doSumico[0]
-            || null;
+        // A leitura da conversa pela IA (whatsappAnalise.js), da mensagem mais
+        // recente que já foi analisada.
+        const analise = doEpisodio.find((m) => m.conversaAnalisadaEm) || null;
 
-        const caso = classificar(item, { aluno: alunoPorMatricula.get(item.matricula), mensagem, resposta, falhou }, agoraMs);
+        const caso = classificar(item, { aluno: alunoPorMatricula.get(item.matricula), mensagem, respostas: doSumico, analise, falhou }, agoraMs);
         if (!caso) continue;
+
+        // Conversa sem leitura da IA, ou com mensagem nova depois da última: lê agora,
+        // em segundo plano (a próxima vez que a tela carregar, o resumo já está lá).
+        for (const m of doEpisodio) {
+            const ultima = doSumico.find((r) => r.mensagemId === m.id);
+            if (ultima) paraAnalisar.set(m.id, { id: m.id, conversaAnalisadaEm: m.conversaAnalisadaEm, ultimaRespostaEm: ultima.recebidaEm });
+        }
 
         // Contato de uma pessoa depois do motivo: resolve ou é só uma tentativa.
         const contatoHumano = contatos.find((c) =>
@@ -153,7 +194,11 @@ async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
             rotulo: MOTIVOS_LISTA[caso.motivo].rotulo,
             desde: caso.desde,
             detalhe: caso.detalhe || null,
-            motivoSugerido: caso.motivoSugerido || null,
+            // Para o formulário já vir preenchido: o resumo da conversa escrito
+            // pela IA e o motivo — este só quando há certeza (whatsappAnalise.js).
+            resumoIa: analise?.conversaResumo || null,
+            motivoIa: analise?.conversaMotivo || null,
+            respondeuRobo: doSumico.length > 0,
             ultimaTentativa: contatoHumano
                 ? { em: contatoHumano.criadoEm, por: contatoHumano.contatadoPor, status: contatoHumano.status, canal: contatoHumano.canal }
                 : null,
@@ -169,6 +214,8 @@ async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
             porMatricula.set(item.matricula, { ...(linha.prioridade < atual.prioridade ? linha : atual), turmas });
         }
     }
+
+    garantirAnalises([...paraAnalisar.values()]);
 
     // Mais urgente primeiro; dentro da mesma prioridade, quem espera há mais tempo.
     return [...porMatricula.values()].sort((a, b) =>

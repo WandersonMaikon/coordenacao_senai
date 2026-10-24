@@ -157,32 +157,41 @@
     }
 
     let alunos = [];
+    // Situação escolhida nos botões do topo (null = todas).
+    let filtroMotivo = null;
+    let motivosLista = {};
 
+    // O formulário já vem preenchido com o que dá para saber sem perguntar a
+    // ninguém: com a conversa do robô lida pela IA, canal WhatsApp, resultado
+    // "Acompanhar", o resumo na observação e o motivo — este só quando a IA e o
+    // dicionário concordam (motivoIa). A pessoa confere e salva; se ligou, troca o canal.
     function formularioContato(indice) {
       const opcoes = (mapa, selecionado) => Object.entries(mapa)
         .map(([valor, rotulo]) => `<option value="${valor}" ${valor === selecionado ? 'selected' : ''}>${escaparHtml(rotulo)}</option>`).join('');
       const aluno = alunos[indice];
+      const preenchido = Boolean(aluno.resumoIa);
       return `
         <form class="border-top pt-3 mt-3" data-form-contato="${indice}" hidden>
+          ${preenchido ? `<div class="small text-info-emphasis mb-2"><i class="bi bi-robot me-1"></i>Preenchido pela IA a partir da conversa no WhatsApp — confira antes de salvar. Se você ligou para o aluno, troque o canal e a observação.</div>` : ''}
           <div class="row g-2">
             <div class="col-sm-4 col-lg-2">
               <label class="form-label small">Canal</label>
-              <select class="form-select form-select-sm" name="canal">${opcoes(CANAIS, 'ligacao')}</select>
+              <select class="form-select form-select-sm" name="canal">${opcoes(CANAIS, preenchido ? 'whatsapp' : 'ligacao')}</select>
             </div>
             <div class="col-sm-4 col-lg-3">
               <label class="form-label small">Resultado</label>
-              <select class="form-select form-select-sm" name="status">${opcoes(STATUS, 'respondido')}</select>
+              <select class="form-select form-select-sm" name="status">${opcoes(STATUS, aluno.respondeuRobo ? 'acompanhar' : 'respondido')}</select>
             </div>
             <div class="col-sm-4 col-lg-3">
               <label class="form-label small">Motivo da falta</label>
               <select class="form-select form-select-sm" name="motivo">
                 <option value="">Não informado</option>
-                ${opcoes(MOTIVOS, aluno.motivoSugerido || '')}
+                ${opcoes(MOTIVOS, aluno.motivoIa || '')}
               </select>
             </div>
             <div class="col-lg-4">
               <label class="form-label small">Observação</label>
-              <input type="text" class="form-control form-control-sm" name="observacao" maxlength="1000" placeholder="O que foi conversado">
+              <input type="text" class="form-control form-control-sm" name="observacao" maxlength="1000" placeholder="O que foi conversado" value="${escaparHtml(aluno.resumoIa || '')}">
             </div>
           </div>
           <div class="mt-2 d-flex gap-2">
@@ -200,8 +209,11 @@
         ? `<a href="tel:+55${aluno.telefone}" class="me-2"><i class="bi bi-telephone-fill me-1"></i>${formatarTelefone(aluno.telefone)}</a>
            <a href="https://wa.me/55${aluno.telefone}" target="_blank" rel="noopener" class="text-success" title="Abrir conversa no WhatsApp"><i class="bi bi-whatsapp"></i></a>`
         : '<span class="text-body-secondary">Sem telefone — procurar presencialmente ou atualizar em <a href="/telefones">Telefones</a></span>';
-      const sugestao = aluno.motivoSugerido
-        ? `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" title="Sugerido pelo sistema a partir da resposta">${escaparHtml(MOTIVOS[aluno.motivoSugerido] || aluno.motivoSugerido)}?</span>`
+      const sugestao = aluno.motivoIa
+        ? `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" title="A IA e o dicionário entenderam o mesmo motivo na conversa">${escaparHtml(MOTIVOS[aluno.motivoIa] || aluno.motivoIa)}</span>`
+        : '';
+      const resumo = aluno.resumoIa
+        ? `<div class="small mt-2" style="max-width: 40rem;"><i class="bi bi-robot me-1 text-info"></i><strong>O que a IA entendeu da conversa:</strong> ${escaparHtml(aluno.resumoIa)}</div>`
         : '';
       const tentativa = aluno.ultimaTentativa
         ? `<div class="small text-body-secondary mt-2"><i class="bi bi-arrow-repeat me-1"></i>Última tentativa: ${formatarDataHora(aluno.ultimaTentativa.em)} por ${escaparHtml(aluno.ultimaTentativa.por || '—')} (${escaparHtml(CANAIS[aluno.ultimaTentativa.canal] || aluno.ultimaTentativa.canal || '')}) — ${escaparHtml(STATUS[aluno.ultimaTentativa.status] || aluno.ultimaTentativa.status)}</div>`
@@ -221,6 +233,7 @@
               </div>
             </div>
             ${aluno.detalhe ? `<div class="p-2 rounded-3 small mt-2" style="background: #dcf8c6; color: #111; max-width: 40rem;"><i class="bi bi-chat-left-text me-1"></i>"${escaparHtml(aluno.detalhe)}"</div>` : ''}
+            ${resumo}
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
               <div class="small">${telefone}</div>
               <button type="button" class="btn btn-sm btn-outline-primary" data-abrir="${indice}"><i class="bi bi-journal-plus me-1"></i>Registrar contato</button>
@@ -231,16 +244,47 @@
         </div>`;
     }
 
-    function desenharResumo(motivosLista) {
+    // Os botões de situação do topo também são o filtro: clicou, a lista mostra só
+    // aquela situação; clicou de novo (ou em "Todos"), volta tudo.
+    function desenharResumo() {
       const contagem = {};
       alunos.forEach((a) => { contagem[a.motivo] = (contagem[a.motivo] || 0) + 1; });
-      document.getElementById('resumoMotivos').innerHTML = Object.entries(motivosLista)
+      if (filtroMotivo && !contagem[filtroMotivo]) filtroMotivo = null;
+      const botao = (chave, rotulo, quantidade, cor) => {
+        const ativo = filtroMotivo === chave;
+        return `<button type="button" data-filtro="${chave || ''}" aria-pressed="${ativo}"
+          class="btn btn-sm rounded-pill px-3 ${ativo ? `btn-${cor}` : `bg-${cor}-subtle text-${cor}-emphasis border border-${cor}-subtle`}">
+          ${escaparHtml(rotulo)}: <strong>${quantidade}</strong></button>`;
+      };
+      document.getElementById('resumoMotivos').innerHTML = (alunos.length ? botao(null, 'Todos', alunos.length, 'dark') : '') + Object.entries(motivosLista)
         .filter(([chave]) => contagem[chave])
-        .map(([chave, m]) => {
-          const cor = COR_PRIORIDADE[m.prioridade] || 'secondary';
-          return `<span class="badge rounded-pill bg-${cor}-subtle text-${cor}-emphasis border border-${cor}-subtle px-3 py-2">${escaparHtml(m.rotulo)}: <strong>${contagem[chave]}</strong></span>`;
-        }).join('');
+        .map(([chave, m]) => botao(chave, m.rotulo, contagem[chave], COR_PRIORIDADE[m.prioridade] || 'secondary'))
+        .join('');
     }
+
+    function desenharLista() {
+      const statusEl = document.getElementById('statusCarregamento');
+      const visiveis = alunos.map((aluno, indice) => ({ aluno, indice })).filter(({ aluno }) => !filtroMotivo || aluno.motivo === filtroMotivo);
+      if (alunos.length === 0) {
+        statusEl.className = 'alert alert-success';
+        statusEl.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Ninguém precisando de contato agora.';
+      } else {
+        statusEl.className = 'small text-body-secondary mb-2';
+        statusEl.textContent = filtroMotivo
+          ? `${visiveis.length} de ${alunos.length} aluno(s): ${motivosLista[filtroMotivo].rotulo.toLowerCase()}. Quem espera há mais tempo vem primeiro.`
+          : `${alunos.length} aluno(s), do mais urgente para o menos urgente; dentro de cada motivo, quem espera há mais tempo vem primeiro.`;
+      }
+      document.getElementById('listaAlunos').innerHTML = visiveis.map(({ aluno, indice }) => cartaoAluno(aluno, indice)).join('');
+    }
+
+    document.getElementById('resumoMotivos').addEventListener('click', (evento) => {
+      const botao = evento.target.closest('[data-filtro]');
+      if (!botao) return;
+      const escolhido = botao.dataset.filtro || null;
+      filtroMotivo = filtroMotivo === escolhido ? null : escolhido;
+      desenharResumo();
+      desenharLista();
+    });
 
     async function carregar() {
       const statusEl = document.getElementById('statusCarregamento');
@@ -251,15 +295,9 @@
         const r = await chamarApi(`/contatos/pendentes${turma ? `?turma=${encodeURIComponent(turma)}` : ''}`);
         if (r.status !== 'ok') throw new Error(r.mensagem);
         alunos = r.dados;
-        desenharResumo(r.motivosLista);
-        if (alunos.length === 0) {
-          statusEl.className = 'alert alert-success';
-          statusEl.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Ninguém precisando de contato agora.';
-        } else {
-          statusEl.className = 'small text-body-secondary mb-2';
-          statusEl.textContent = `${alunos.length} aluno(s), do mais urgente para o menos urgente; dentro de cada motivo, quem espera há mais tempo vem primeiro.`;
-        }
-        document.getElementById('listaAlunos').innerHTML = alunos.map(cartaoAluno).join('');
+        motivosLista = r.motivosLista;
+        desenharResumo();
+        desenharLista();
       } catch (erro) {
         if (erro.message !== 'Sessão expirada') {
           statusEl.className = 'alert alert-warning';

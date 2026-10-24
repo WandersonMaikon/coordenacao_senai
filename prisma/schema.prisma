@@ -162,6 +162,16 @@ model MensagemWhatsapp {
   conversaEtapa      String?  @map("conversa_etapa") @db.VarChar(30)
   conversaTurnos     Int      @default(0) @map("conversa_turnos")
   conversaPediuTexto Boolean  @default(false) @map("conversa_pediu_texto")
+  // Leitura da conversa inteira pela IA local (iaLocal.analisarConversa), para a
+  // /contatar: resumo para a observação, a situação e o motivo — este só quando
+  // a IA e o dicionário concordam (null = sem certeza, a pessoa escolhe).
+  conversaResumo      String?   @map("conversa_resumo") @db.Text
+  conversaSituacao    String?   @map("conversa_situacao") @db.VarChar(20)
+  conversaMotivo      String?   @map("conversa_motivo") @db.VarChar(50)
+  // O motivo que a IA leu, com ou sem certeza: só serve de conferência (ex.: o
+  // "assunto delicado" da /contatar exige a IA e o dicionário de acordo).
+  conversaMotivoIa    String?   @map("conversa_motivo_ia") @db.VarChar(50)
+  conversaAnalisadaEm DateTime? @map("conversa_analisada_em")
   criadoEm        DateTime  @default(now()) @map("criado_em")
   atualizadoEm    DateTime  @updatedAt @map("atualizado_em")
 

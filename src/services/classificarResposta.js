@@ -140,7 +140,11 @@ function tolerancia(termo) {
     return 2;
 }
 
-function contarTermos(frase, termos) {
+// `aproximar` = aceitar erro de digitação. Desligado nos motivos delicados: em
+// 23/10/2026 "eu falei a secretária" ficou a uma letra de "falec*" e virou
+// problema familiar — a aluna foi para o topo como "assunto delicado" sem ter
+// contado nada disso. Errar para delicado custa caro; ali só vale a palavra exata.
+function contarTermos(frase, termos, aproximar = true) {
     const palavras = frase.split(' ').filter(Boolean);
 
     return termos.reduce((total, entrada) => {
@@ -166,7 +170,7 @@ function contarTermos(frase, termos) {
         // ressalva — deixar ela casar por semelhança traz de volta exatamente o
         // que o peso queria evitar: "dou conta" (= dou conselho de mim mesmo)
         // chegava a uma letra de "contas" e virava problema financeiro.
-        const limite = peso < 1 ? 0 : tolerancia(termo);
+        const limite = peso < 1 || !aproximar ? 0 : tolerancia(termo);
         if (limite === 0) return total;
 
         // No radical, compara só o pedaço do tamanho dele: "ansiedadi" vira
@@ -265,7 +269,7 @@ function interpretarResposta(texto) {
     // "outro" nunca é deduzido de texto livre: ele significa "nenhum dos
     // anteriores", coisa que só o aluno escolhendo no menu pode dizer.
     const placar = Object.entries(TERMOS)
-        .map(([motivo, termos]) => ({ motivo, pontos: contarTermos(frase, termos) }))
+        .map(([motivo, termos]) => ({ motivo, pontos: contarTermos(frase, termos, !MOTIVOS_DELICADOS.includes(motivo)) }))
         .filter((item) => item.pontos > 0)
         .sort((a, b) => b.pontos - a.pontos);
 
