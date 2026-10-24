@@ -156,6 +156,12 @@ model MensagemWhatsapp {
   messageId       String?   @map("message_id") @db.VarChar(191)
   contatoId       Int?      @map("contato_id")
   enviadaEm       DateTime? @map("enviada_em")
+  // Em que ponto está a conversa do robô com o aluno depois desta mensagem
+  // (whatsappConversa.js): null = ninguém respondeu ainda; "humano" = alguém da
+  // coordenação escreveu à mão e o robô ficou quieto.
+  conversaEtapa      String?  @map("conversa_etapa") @db.VarChar(30)
+  conversaTurnos     Int      @default(0) @map("conversa_turnos")
+  conversaPediuTexto Boolean  @default(false) @map("conversa_pediu_texto")
   criadoEm        DateTime  @default(now()) @map("criado_em")
   atualizadoEm    DateTime  @updatedAt @map("atualizado_em")
 
@@ -191,9 +197,12 @@ model RespostaWhatsapp {
   mensagemId     Int?     @map("mensagem_id")
   contatoId      Int?     @map("contato_id")
   texto          String   @db.Text
-  // menu | palavras_chave | sair | nao_entendido | ignorada | sem_vinculo
+  // menu | palavras_chave | promessa | desistencia | pediu_ajuda | recusou_ajuda |
+  // sair | nao_entendido | ignorada | sem_vinculo
   interpretacao  String   @db.VarChar(20)
   motivoSugerido String?  @map("motivo_sugerido") @db.VarChar(50)
+  // O que o robô respondeu a esta mensagem (whatsappConversa.js); null = ficou quieto.
+  respostaRobo   String?  @map("resposta_robo") @db.Text
   recebidaEm     DateTime @map("recebida_em")
   criadoEm       DateTime @default(now()) @map("criado_em")
 

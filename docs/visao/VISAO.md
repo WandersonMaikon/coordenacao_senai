@@ -211,6 +211,12 @@ prometeram voltar, estão sem resposta, estão na fila do dia, e quantos não po
 5. ~~Linha do tempo do robô no histórico do aluno, na tela de alunos em risco.~~ (feito em
    23/10/2026)
 6. ~~Trava de faltas coletivas.~~ (feito em 23/10/2026)
+7. ~~Roteiro de conversa: o robô conduz algumas trocas curtas antes de passar para a
+   coordenação (pede texto quando chega áudio, pergunta o motivo de quem fala em
+   desistir, pede o atestado de quem está doente, oferece conversa com a coordenação
+   para transporte/trabalho/dinheiro) e fica quieto quando alguém da coordenação
+   escreve à mão.~~ (feito em 24/10/2026, a partir de uma conversa real em que o aluno
+   avisou que ia sair e mandou um áudio)
 
 Cada etapa sobe sozinha e já serve para alguma coisa.
 

@@ -2,38 +2,29 @@
 //
 // O envio (whatsappEnvio.js) cria um `Contato` com status "sem_resposta" e guarda
 // `chatId`/`contatoId` na `MensagemWhatsapp`. Este arquivo fecha o laço: acha de
-// quem é a resposta, interpreta, atualiza aquele mesmo `Contato` e responde uma
-// confirmação curta ao aluno.
+// quem é a resposta, interpreta, atualiza aquele mesmo `Contato` e segue o
+// roteiro de conversa (whatsappConversa.js) para responder ao aluno.
 //
 // Não há corrida com o worker de envio: ele só escreve em mensagem `pendente` ou
-// `enviando`, e aqui só se mexe em mensagem que já está `enviada`. Se alguém
-// mudar o worker, é essa invariante que precisa continuar valendo.
+// `enviando`, e aqui só se mexe em mensagem que já está `enviada` (inclusive nos
+// campos `conversa*`, que o worker nunca toca). Se alguém mudar o worker, é essa
+// invariante que precisa continuar valendo.
 
 const prisma = require('../config/prisma');
 const openwa = require('./openwa');
-const { removerMensagemCitada } = require('./classificarResposta');
+const { removerMensagemCitada, respostaSimNao } = require('./classificarResposta');
 const { interpretar } = require('./iaLocal');
+const { decidir, renderizar, ehTextoDoRobo } = require('./whatsappConversa');
 const { normalizarTelefone, mesmoTelefone } = require('./telefone');
-const { STATUS_JA_RECEBEU } = require('./whatsappLote');
+const { STATUS_JA_RECEBEU, primeiroNome } = require('./whatsappLote');
 
 // Uma resposta que chega muito depois não deve ser colada num episódio de risco
 // antigo — o aluno já voltou, faltou de novo, mudou de turma. Fora da janela a
 // resposta é registrada sem vínculo, pra alguém olhar.
 const DIAS_JANELA_RESPOSTA = 60;
 
-// Uma auto-resposta por aluno a cada 24h: sem isso, aluno que manda três
-// mensagens seguidas recebe três "obrigado" e a conversa vira ping-pong de robô.
-const HORAS_ENTRE_AUTO_RESPOSTAS = 24;
-
-// Texto fixo, nunca gerado. Se o aluno responder algo grave (violência, saúde
-// mental — `saude_mental` está na lista de motivos), um robô improvisando seria
-// pior que o silêncio: a confirmação só diz que chegou e que uma PESSOA vai
-// falar com ele.
-const RESPOSTA_RECEBIDA = 'Obrigado por responder! Recebemos sua mensagem e a coordenação vai falar com você. Se precisar de algo antes disso, é só escrever aqui.';
-const RESPOSTA_SAIR = 'Tudo bem, você não vai mais receber mensagens automáticas. Se precisar de alguma coisa, pode escrever aqui a qualquer momento.';
-// A promessa é o único caso que o robô resolve sozinho: ninguém da coordenação
-// precisa ligar, quem confere é a próxima chamada (ver whatsappAutomatico.js).
-const RESPOSTA_PROMESSA = 'Combinado! Te esperamos na próxima aula. Se acontecer algum imprevisto, é só escrever aqui.';
+// O que o robô responde (e quando fica quieto) está em whatsappConversa.js — o
+// roteiro, com todos os textos fixos. Aqui só se grava e se envia.
 
 // Tipos de mensagem que não são texto. Não são descartados: áudio é justamente o
 // que mais chega, e a coordenação precisa saber que tem algo pra ouvir.
@@ -65,7 +56,8 @@ function nomeDoEvento(corpo) {
 function normalizarEntrada(corpo) {
     const dados = corpoDoEvento(corpo);
     const mensagem = dados.message ?? dados;
-    const chatId = mensagem.chatId ?? mensagem.from ?? mensagem.chat?.id ?? null;
+    // Na mensagem que sai do nosso número, `from` somos nós e o aluno é o `to`.
+    const chatId = mensagem.chatId ?? (mensagem.fromMe ? mensagem.to : null) ?? mensagem.from ?? mensagem.chat?.id ?? null;
     const timestamp = mensagem.timestamp ?? mensagem.t ?? null;
 
     return {
@@ -160,33 +152,7 @@ async function acharMensagemOriginal(chatId, telefone) {
     return candidatas.find((item) => mesmoTelefone(item.telefone, telefone)) || null;
 }
 
-// `idAtual` é a resposta que acabou de ser gravada: sem excluí-la, a consulta a
-// encontrava e concluía "já respondi nas últimas 24h" — a confirmação nunca saía
-// pra ninguém (corrigido em 22/10/2026).
-// A promessa tem a sua própria conta: aluno que escreveu "oi" e depois "amanhã eu
-// vou" precisa ouvir o "combinado", mesmo já tendo recebido o "obrigado".
-async function podeAutoResponder(matricula, idAtual, tipo) {
-    if (!matricula) return false;
-    const desde = new Date(Date.now() - HORAS_ENTRE_AUTO_RESPOSTAS * 60 * 60 * 1000);
-    const recente = await prisma.respostaWhatsapp.findFirst({
-        where: {
-            matricula,
-            id: { not: idAtual },
-            criadoEm: { gte: desde },
-            interpretacao: tipo === 'promessa' ? 'promessa' : { notIn: ['ignorada', 'promessa'] }
-        },
-        select: { id: true }
-    });
-    return !recente;
-}
-
-function textoDaConfirmacao(tipo) {
-    if (tipo === 'sair') return RESPOSTA_SAIR;
-    if (tipo === 'promessa') return RESPOSTA_PROMESSA;
-    return RESPOSTA_RECEBIDA;
-}
-
-// A confirmação sai direto, fora do worker de lote, e NÃO conta contra
+// A resposta do robô sai direto, fora do worker de lote, e NÃO conta contra
 // limiteDia/limiteMes: esses tetos existem contra banimento por disparo frio, e
 // responder quem escreveu pra você é o sinal oposto — o número ficaria pior mudo.
 // Falha aqui nunca desfaz a gravação: o registro do contato é o que importa, a
@@ -203,29 +169,69 @@ async function responderAluno(sessaoId, chatId, texto) {
     }
 }
 
-// O que gravar em cada caso. SAIR é o único que NÃO marca "respondido": quem
-// pediu pra não receber mais mensagem não engajou com a pergunta e continua
+function fraseDaResposta(interpretacao, texto) {
+    switch (interpretacao.tipo) {
+        case 'sair': return 'O aluno pediu para não receber mais mensagens (respondeu "SAIR").';
+        case 'promessa': return `O aluno disse pelo WhatsApp que vem na próxima aula: "${texto}"`;
+        case 'desistencia': return `O aluno disse pelo WhatsApp que vai sair do curso: "${texto}"`;
+        case 'pediu_ajuda': return `O aluno pediu pelo WhatsApp para a coordenação falar com ele: "${texto}"`;
+        case 'recusou_ajuda': return `O aluno disse pelo WhatsApp que não precisa que a coordenação fale com ele: "${texto}"`;
+        default: return `Resposta do aluno pelo WhatsApp: "${texto}"`;
+    }
+}
+
+// O que gravar no `Contato` do envio. SAIR é o único que NÃO marca "respondido":
+// quem pediu pra não receber mais mensagem não engajou com a pergunta e continua
 // precisando de contato humano por outro canal — marcar respondido o tiraria da
 // lista de quem a coordenação precisa procurar, o oposto do que o pedido diz.
-function dadosDoContato(interpretacao, texto) {
-    if (interpretacao.tipo === 'sair') {
-        return { observacao: `O aluno pediu para não receber mais mensagens (respondeu "SAIR").` };
+// `atual` é o contato como está agora: numa conversa de várias mensagens, cada
+// resposta entra embaixo da anterior em vez de apagá-la.
+function dadosDoContato(interpretacao, texto, atual) {
+    const frase = fraseDaResposta(interpretacao, texto);
+    // Na primeira resposta, a observação do envio ("Mensagem automática...") é trocada.
+    const jaRespondeu = /^(O aluno|Resposta do aluno)/.test(atual?.observacao || '');
+    const dados = { observacao: jaRespondeu ? `${atual.observacao}\n${frase}` : frase };
+    if (interpretacao.tipo !== 'sair') dados.status = 'respondido';
+
+    // Sugestão só enquanto ninguém confirmou um motivo; resposta sem motivo
+    // ("sim", um áudio) não apaga a sugestão que veio de uma resposta anterior.
+    if (interpretacao.motivo && !atual?.motivo) {
+        dados.motivoSugerido = interpretacao.motivo;
+        // "ia" = deduzido pelo modelo local; a tela mostra igual a palavras_chave
+        // ("deduzido do que o aluno escreveu — confira"), mas fica registrado.
+        dados.sugeridoPor = interpretacao.fonte === 'ia'
+            ? 'ia'
+            : interpretacao.tipo === 'menu' ? 'menu' : 'palavras_chave';
     }
-    const observacao = interpretacao.tipo === 'promessa'
-        ? `O aluno disse pelo WhatsApp que vem na próxima aula: "${texto}"`
-        : interpretacao.tipo === 'desistencia'
-            ? `O aluno disse pelo WhatsApp que vai sair do curso: "${texto}"`
-            : `Resposta do aluno pelo WhatsApp: "${texto}"`;
-    const base = { status: 'respondido', observacao };
-    if (!interpretacao.motivo) return base;
-    // Promessa com motivo ("sem ônibus, mas amanhã vou") sugere o motivo como texto
-    // livre — `sugeridoPor` só conhece menu e palavras_chave.
-    // "ia" = deduzido pelo modelo local; a tela mostra igual a palavras_chave
-    // ("deduzido do que o aluno escreveu — confira"), mas fica registrado.
-    const sugeridoPor = interpretacao.fonte === 'ia'
-        ? 'ia'
-        : ['promessa', 'desistencia'].includes(interpretacao.tipo) ? 'palavras_chave' : interpretacao.tipo;
-    return { ...base, motivoSugerido: interpretacao.motivo, sugeridoPor };
+    return dados;
+}
+
+// A mesma frase muda de sentido conforme a pergunta que o robô acabou de fazer:
+// "sim" depois de "quer que a coordenação fale com você?" é pedido de ajuda, não
+// promessa de voltar; e "ok" depois de "o que está dificultando?" não diz nada —
+// responder "Combinado! Te esperamos" ali seria o mesmo erro de 22/10/2026.
+async function interpretarNoContexto({ etapa, texto, simNao, midia }) {
+    if (midia) return { tipo: 'nao_entendido', fonte: 'dicionario' };
+    if (etapa === 'ajuda' && simNao) return { tipo: simNao === 'sim' ? 'pediu_ajuda' : 'recusou_ajuda', fonte: 'dicionario' };
+    if (['desistencia', 'detalhe'].includes(etapa) && simNao) return { tipo: 'nao_entendido', fonte: 'dicionario' };
+    // IA local quando disponível, dicionário como reserva (iaLocal.js).
+    return interpretar(texto);
+}
+
+// Alguém da coordenação escreveu à mão pelo número do sistema (no celular ou no
+// WhatsApp Web): o robô sai da conversa, senão os dois falariam ao mesmo tempo
+// com o aluno. Visto em 22/10/2026 — a coordenação perguntou "Aconteceu alguma
+// coisa?" logo depois da resposta automática.
+// Depende de o OpenWA avisar as mensagens que saem do nosso número; ainda não foi
+// confirmado com um evento real. Se não avisar, nada acontece aqui.
+async function marcarSeFoiPessoa(entrada, telefone) {
+    const original = await acharMensagemOriginal(entrada.chatId, telefone);
+    if (!original || original.conversaEtapa === 'humano') return false;
+    // O robô nunca manda áudio, foto ou documento.
+    const midia = !entrada.texto && !['text', 'chat'].includes(entrada.tipo);
+    if (!midia && ehTextoDoRobo(entrada.texto, { mensagemEnviada: original.texto, primeiroNome: primeiroNome(original.nomeAluno) })) return false;
+    await prisma.mensagemWhatsapp.update({ where: { id: original.id }, data: { conversaEtapa: 'humano' } });
+    return true;
 }
 
 // Processa uma mensagem recebida. Devolve um resumo (sem o texto do aluno) pro
@@ -257,7 +263,8 @@ async function processarMensagemRecebida(corpo) {
     // registrada como ignorada pra não parecer que o webhook perdeu evento.
     if (entrada.fromMe || entrada.isGroup || entrada.isStatus) {
         const linha = await registrar({ interpretacao: 'ignorada' });
-        return { ignorada: true, id: linha.id };
+        const pessoaAssumiu = entrada.fromMe && !entrada.isGroup && !entrada.isStatus && await marcarSeFoiPessoa(entrada, telefone);
+        return { ignorada: true, id: linha.id, ...(pessoaAssumiu ? { pessoaAssumiu: true } : {}) };
     }
 
     const original = await acharMensagemOriginal(entrada.chatId, telefone);
@@ -270,21 +277,42 @@ async function processarMensagemRecebida(corpo) {
 
     // Sem a nossa mensagem citada: é o texto do aluno que interessa, tanto para
     // interpretar quanto para a coordenação ler.
-    const textoAluno = removerMensagemCitada(texto, original.texto);
-    // IA local quando disponível, dicionário como reserva (iaLocal.js).
-    const interpretacao = await interpretar(textoAluno);
-    const atualizacao = dadosDoContato(interpretacao, textoAluno);
+    // Áudio, foto, figurinha: sem texto para interpretar (`texto` é o resumo, "[áudio]").
+    const midia = !entrada.texto;
+    const textoAluno = midia ? texto : removerMensagemCitada(texto, original.texto);
+    const simNao = midia ? null : respostaSimNao(textoAluno);
+    const interpretacao = await interpretarNoContexto({ etapa: original.conversaEtapa, texto: textoAluno, simNao, midia });
 
-    // Transação: a linha de resposta e o efeito dela (contato, opt-out) entram
-    // juntos ou não entram. Sem isso, uma falha no meio deixaria o aluno
-    // desinscrito sem registro de por quê.
+    // O próximo passo do roteiro (whatsappConversa.js).
+    const decisao = decidir({
+        conversa: { etapa: original.conversaEtapa, turnos: original.conversaTurnos, pediuTexto: original.conversaPediuTexto },
+        interpretacao,
+        simNao,
+        tipoMensagem: entrada.tipo
+    });
+    const textoRobo = decisao.chave ? renderizar(decisao.chave, primeiroNome(original.nomeAluno)) : null;
+
+    // Transação: a linha de resposta e o efeito dela (contato, opt-out, etapa da
+    // conversa) entram juntos ou não entram. Sem isso, uma falha no meio deixaria
+    // o aluno desinscrito sem registro de por quê.
     const linha = await prisma.$transaction(async (tx) => {
         if (original.contatoId) {
-            await tx.contato.update({ where: { id: original.contatoId }, data: atualizacao });
+            const atual = await tx.contato.findUnique({ where: { id: original.contatoId }, select: { observacao: true, motivo: true } });
+            if (atual) {
+                await tx.contato.update({ where: { id: original.contatoId }, data: dadosDoContato(interpretacao, textoAluno, atual) });
+            }
         }
         if (interpretacao.tipo === 'sair') {
             await tx.aluno.update({ where: { matricula: original.matricula }, data: { whatsappOptOut: true } });
         }
+        await tx.mensagemWhatsapp.update({
+            where: { id: original.id },
+            data: {
+                conversaEtapa: decisao.etapa,
+                conversaPediuTexto: decisao.pediuTexto,
+                ...(textoRobo ? { conversaTurnos: { increment: 1 } } : {})
+            }
+        });
         return tx.respostaWhatsapp.create({
             data: {
                 messageId: entrada.messageId,
@@ -301,13 +329,38 @@ async function processarMensagemRecebida(corpo) {
         });
     });
 
-    if (await podeAutoResponder(original.matricula, linha.id, interpretacao.tipo)) {
-        await responderAluno(original.sessaoId, entrada.chatId, textoDaConfirmacao(interpretacao.tipo));
+    // Guardado só se saiu de fato: é o que a linha do tempo da /risco mostra como
+    // fala do robô.
+    if (textoRobo && await responderAluno(original.sessaoId, entrada.chatId, textoRobo)) {
+        await prisma.respostaWhatsapp.update({ where: { id: linha.id }, data: { respostaRobo: textoRobo } });
     }
 
     // Log sem o conteúdo da mensagem: o CLAUDE.md proíbe jogar dado pessoal de
     // aluno em texto plano sem necessidade, e pra depurar basta o id.
-    return { id: linha.id, matricula: original.matricula, interpretacao: interpretacao.tipo, motivo: interpretacao.motivo || null, fonte: interpretacao.fonte };
+    return {
+        id: linha.id,
+        matricula: original.matricula,
+        interpretacao: interpretacao.tipo,
+        motivo: interpretacao.motivo || null,
+        fonte: interpretacao.fonte,
+        robo: decisao.chave,
+        etapa: decisao.etapa
+    };
+}
+
+// Uma mensagem por vez de cada conversa. O aluno costuma mandar duas ou três
+// seguidas ("oi" / "to doente" / "[áudio]") e a IA leva segundos em cada uma:
+// em paralelo, todas leriam a mesma etapa e o robô responderia duas vezes.
+const filaPorChat = new Map();
+
+function emFilaDoChat(chave, tarefa) {
+    const anterior = filaPorChat.get(chave) || Promise.resolve();
+    const atual = anterior.catch(() => {}).then(tarefa);
+    filaPorChat.set(chave, atual);
+    atual.catch(() => {}).finally(() => {
+        if (filaPorChat.get(chave) === atual) filaPorChat.delete(chave);
+    });
+    return atual;
 }
 
 // Porta de entrada do webhook: decide se o evento é resposta, ack ou nada.
@@ -316,7 +369,9 @@ async function processarEvento(corpo) {
     if (evento === 'message.ack' || evento === 'message.failed') return processarAck(corpo);
     // Sem nome de evento, assumimos mensagem recebida: é o caso que importa, e
     // `processarMensagemRecebida` já descarta sozinho o que não for resposta.
-    if (!evento || evento === 'message.received') return processarMensagemRecebida(corpo);
+    if (!evento || evento === 'message.received') {
+        return emFilaDoChat(normalizarEntrada(corpo).chatId || '-', () => processarMensagemRecebida(corpo));
+    }
     // Os nomes são conferidos inteiros, não por `includes`: `message.sent` e
     // `message.revoked` também casariam com "message" e seriam gravados como se
     // fossem resposta de aluno — inclusive a nossa própria mensagem saindo.
@@ -329,9 +384,5 @@ module.exports = {
     processarMensagemRecebida,
     processarAck,
     normalizarEntrada,
-    DIAS_JANELA_RESPOSTA,
-    HORAS_ENTRE_AUTO_RESPOSTAS,
-    RESPOSTA_RECEBIDA,
-    RESPOSTA_SAIR,
-    RESPOSTA_PROMESSA
+    DIAS_JANELA_RESPOSTA
 };

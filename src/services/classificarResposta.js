@@ -49,7 +49,7 @@ const TERMOS = {
     saude_sem_atestado: ['doen*', 'medic*', 'consulta', 'exame*', 'hospital', 'cirurgia', 'gripe', 'febre', 'dor', 'internad*', 'remedio', 'sem atestado', 'nao peguei atestado', 'nao tenho atestado'],
     saude_mental: [['ansied*', PESO_FORTE], ['ansios*', PESO_FORTE], ['depress*', PESO_FORTE], ['deprimid*', PESO_FORTE], ['panico', PESO_FORTE], 'crise', ['psicolog*', PESO_FORTE], ['psiquiatra', PESO_FORTE], ['burnout', PESO_FORTE], ['saude mental', PESO_FORTE], 'esgotad*'],
     financeiro: [['dinheiro', 0.5], ['grana', 0.5], 'financeiro', 'sem condic*', 'desempregad*', ['contas', 0.5], ['caro', 0.5], 'nao tenho como pagar'],
-    desmotivacao_curso: ['desist*', 'nao gost*', 'desanim*', 'nao e o que eu queria', 'nao era o que eu queria', 'perdi o interesse', 'trocar de curso', 'nao quero mais'],
+    desmotivacao_curso: ['desist*', 'nao gost*', 'nao estou gost*', 'nao estava gost*', 'desanim*', 'nao e o que eu queria', 'nao era o que eu queria', 'perdi o interesse', 'trocar de curso', 'nao quero mais'],
     problema_familiar: ['famili*', ['minha mae', PESO_FORTE], ['meu pai', PESO_FORTE], ['meu filho', PESO_FORTE], ['minha filha', PESO_FORTE], 'em casa', 'falec*', 'luto', 'cuidar', ['irmao', PESO_FORTE], ['irma', PESO_FORTE], ['avo', PESO_FORTE]]
 };
 
@@ -209,8 +209,22 @@ const VERBO_VOLTAR = /\b(volto|voltarei|vou voltar|irei|vou ir|vou sim|vou la|vo
 // a frase pode ter palavras de promessa ("estarei saindo", "vou parar").
 // "não quero sair do curso" é o contrário — por isso o "nao" antes de sair/
 // desistir/parar anula.
-const DESISTENCIA = /\b(saindo do curso|sair do curso|largar o curso|largando o curso|desist\w*|trancar|trancando|tranquei|cancelar (a |minha )?matricula|abandon\w*|parar o curso|parar de estudar|parei o curso|nao vou (mais )?continuar|nao vou mais (vir|voltar|fazer)|nao quero mais (o curso|estudar|fazer o curso|vir))\b/;
+// "quero sair" solto também é desistência (visto em 22/10/2026: "Eu não vou
+// conseguir fazer o curso e quero sair okay") — o SAIR das mensagens é só a
+// palavra sozinha (ehPedidoDeSaida), e "sair da lista" fica de fora.
+const DESISTENCIA = /\b(saindo do curso|sair do curso|largar o curso|largando o curso|desist\w*|trancar|trancando|tranquei|cancelar (a |minha )?matricula|abandon\w*|parar o curso|parar de estudar|parei o curso|nao vou (mais )?continuar|nao vou mais (vir|voltar|fazer)|nao quero mais (o curso|estudar|fazer o curso|vir)|nao vou conseguir (fazer|continuar|terminar|acompanhar) o curso|quero sair(?! d[ao]s? (lista|grupo|mensage)))\b/;
 const NAO_DESISTE = /\bnao (quero|vou|pretendo|penso em) (sair|desistir|largar|parar|trancar|abandonar)\b/;
+
+// Resposta curta a uma pergunta de SIM ou NÃO do roteiro (whatsappConversa.js):
+// 'sim', 'nao' ou null quando a frase diz mais que isso.
+const NAO_CURTO = /^(nao|n|nn|nao obrigad[oa]|nao precisa|nao quero|agora nao|nao consigo|nao vou|nao vou conseguir|acho que nao|nao da|negativo)( senhora?| professora?| prof)?[ !.]*$/;
+
+function respostaSimNao(texto) {
+    const frase = canonizar(normalizar(texto));
+    if (NAO_CURTO.test(frase)) return 'nao';
+    if (SIM_CURTO.test(frase)) return 'sim';
+    return null;
+}
 
 function ehDesistencia(frase) {
     return DESISTENCIA.test(frase) && !NAO_DESISTE.test(frase);
@@ -309,4 +323,4 @@ function temNegacaoOuDuvida(texto) {
     return NEGACAO.test(canonizar(normalizar(texto)));
 }
 
-module.exports = { interpretarResposta, normalizar, removerMensagemCitada, temNegacaoOuDuvida, TERMOS, MOTIVOS_DELICADOS };
+module.exports = { interpretarResposta, normalizar, removerMensagemCitada, temNegacaoOuDuvida, respostaSimNao, TERMOS, MOTIVOS_DELICADOS };

@@ -389,7 +389,7 @@
         texto = `${qual} <strong>${ROTULO_ENTREGA[evento.status] || evento.status}</strong>${evento.erro ? ` — ${escaparHtml(evento.erro)}` : ''}`;
       } else if (evento.tipo === 'resposta') {
         icone = evento.interpretacao === 'promessa' ? 'bi-hand-thumbs-up text-primary' : 'bi-chat-left-text text-primary';
-        texto = `Aluno respondeu: <span class="fst-italic">"${escaparHtml(evento.texto)}"</span>${evento.descricao ? `<div class="small text-body-secondary">${escaparHtml(evento.descricao)}</div>` : ''}`;
+        texto = `Aluno respondeu: <span class="fst-italic">"${escaparHtml(evento.texto)}"</span>${evento.descricao ? `<div class="small text-body-secondary">${escaparHtml(evento.descricao)}</div>` : ''}${evento.respostaRobo ? `<div class="small"><i class="bi bi-robot"></i> Robô: <span class="fst-italic">"${escaparHtml(evento.respostaRobo)}"</span></div>` : ''}`;
       } else if (evento.tipo === 'contato') {
         icone = 'bi-person-lines-fill text-warning';
         texto = `${escaparHtml(CANAIS[evento.canal] || evento.canal || 'Contato')} por ${escaparHtml(evento.por || '—')} · ${escaparHtml(STATUS[evento.status] || evento.status || '')}${evento.motivo ? ` · ${escaparHtml(evento.motivo)}` : ''}`;

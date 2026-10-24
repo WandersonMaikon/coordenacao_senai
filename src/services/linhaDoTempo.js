@@ -25,6 +25,8 @@ function descreverResposta(resposta) {
         case 'promessa': return 'Disse que vem na próxima aula — o robô respondeu "Combinado!"';
         case 'desistencia': return 'Disse que vai sair do curso — encaminhado para a coordenação';
         case 'sair': return 'Pediu SAIR: não recebe mais mensagens automáticas';
+        case 'pediu_ajuda': return 'Pediu para a coordenação falar com ele';
+        case 'recusou_ajuda': return 'Disse que não precisa que a coordenação fale com ele';
         case 'nao_entendido': return 'O sistema não identificou o motivo';
         default: return resposta.motivoSugerido ? `Motivo sugerido: ${ROTULO_MOTIVO[resposta.motivoSugerido] || resposta.motivoSugerido}` : null;
     }
@@ -44,7 +46,7 @@ async function montarLinhaDoTempo(matricula, agora = new Date()) {
     const [respostas, contatos, lancamentos, usuarios] = await Promise.all([
         prisma.respostaWhatsapp.findMany({
             where: { matricula, recebidaEm: { gte: inicio }, interpretacao: { notIn: ['ignorada', 'sem_vinculo'] } },
-            select: { id: true, texto: true, interpretacao: true, motivoSugerido: true, recebidaEm: true }
+            select: { id: true, texto: true, interpretacao: true, motivoSugerido: true, recebidaEm: true, respostaRobo: true }
         }),
         prisma.contato.findMany({
             where: { matricula, criadoEm: { gte: inicio } },
@@ -79,7 +81,7 @@ async function montarLinhaDoTempo(matricula, agora = new Date()) {
     }
 
     for (const r of respostas) {
-        eventos.push({ tipo: 'resposta', em: r.recebidaEm, texto: r.texto, interpretacao: r.interpretacao, descricao: descreverResposta(r) });
+        eventos.push({ tipo: 'resposta', em: r.recebidaEm, texto: r.texto, interpretacao: r.interpretacao, descricao: descreverResposta(r), respostaRobo: r.respostaRobo });
     }
 
     for (const c of contatos) {

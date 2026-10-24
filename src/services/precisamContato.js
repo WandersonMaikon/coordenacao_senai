@@ -125,9 +125,16 @@ async function listarPrecisamContato({ turma } = {}, agora = new Date()) {
         const falhou = doAluno.some((m) => m.codigoTurma === item.codigoTurma && m.primeiraFalta === item.primeiraFalta && m.status === 'falhou' && m.falhaDefinitiva);
         // Resposta a qualquer uma das mensagens deste sumiço: conta a partir da 1ª.
         const primeiraEnviada = doEpisodio[doEpisodio.length - 1];
-        const resposta = primeiraEnviada
-            ? respostas.find((r) => r.matricula === item.matricula && r.recebidaEm.getTime() >= primeiraEnviada.enviadaEm.getTime()) || null
-            : null;
+        const doSumico = primeiraEnviada
+            ? respostas.filter((r) => r.matricula === item.matricula && r.recebidaEm.getTime() >= primeiraEnviada.enviadaEm.getTime())
+            : [];
+        // Com o roteiro de conversa, o aluno manda várias mensagens: quem disse
+        // que ia desistir (ou contou algo delicado) e depois respondeu outra coisa
+        // à pergunta do robô continua no topo. Fora isso, vale a mais recente.
+        const resposta = doSumico.find((r) => r.interpretacao === 'desistencia')
+            || doSumico.find((r) => MOTIVOS_DELICADOS.includes(r.motivoSugerido))
+            || doSumico[0]
+            || null;
 
         const caso = classificar(item, { aluno: alunoPorMatricula.get(item.matricula), mensagem, resposta, falhou }, agoraMs);
         if (!caso) continue;

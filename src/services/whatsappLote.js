@@ -145,5 +145,6 @@ module.exports = {
     validarConfig,
     limiteDiaEfetivo,
     nomeResponsavel,
-    nomeTurmaLimpo
+    nomeTurmaLimpo,
+    primeiroNome
 };
