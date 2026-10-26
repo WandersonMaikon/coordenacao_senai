@@ -67,9 +67,10 @@ Regras:
 - Se o aluno fala em sair do curso, é "desistencia", mesmo que use palavras como "estarei" ou "vou".
 - "desistencia" é deixar o curso de vez. Faltar por uns dias ou "não vou conseguir ir essa semana" não é desistência.
 - Respostas curtas de concordância ("ok", "blz", "certo") não têm motivo: use "nenhum".
+- "Não estava na cidade", "estava viajando", "fui para outra cidade" são "viagem", nunca "transporte".
 
 E o motivo da falta, se o aluno disse (mesmo junto de uma promessa ou desistência):
-transporte (ônibus, carona, falta de dinheiro para a passagem), trabalho (emprego, horário do serviço), saude_atestado (doença com atestado), saude_sem_atestado (o próprio aluno doente, sem atestado ou sem dizer), saude_mental (ansiedade, depressão, crise), financeiro (só dinheiro em geral, sem falar de passagem), desmotivacao_curso (não gosta do curso, desanimado), problema_familiar (família, filho doente, luto, cuidar de alguém), ou "nenhum" se não disse.`;
+transporte (dificuldade de CHEGAR à escola: mora longe, distância, passagem ou gasolina cara, sem ônibus, sem carona), viagem (estava viajando ou fora da cidade — isso NÃO é transporte), trabalho (emprego, horário do serviço), saude_atestado (doença com atestado), saude_sem_atestado (o próprio aluno doente, sem atestado ou sem dizer), saude_mental (ansiedade, depressão, crise), financeiro (só dinheiro em geral, sem falar de passagem), desmotivacao_curso (não gosta do curso, desanimado), problema_familiar (família, filho doente, luto, cuidar de alguém), ou "nenhum" se não disse.`;
 
 async function chamar(caminho, corpo, timeoutMs) {
     const resposta = await fetch(url(caminho), {
@@ -167,7 +168,7 @@ const INSTRUCOES_ANALISE = `Você ajuda a coordenação de um curso técnico do 
 
 - resumo: no máximo 2 frases curtas contando só o que o ALUNO disse. Comece sem sujeito, com "Disse que" ou "Contou que" (não use "o aluno" nem "a aluna"). Não invente nada que não esteja nas mensagens do aluno, não dê conselhos e não repita o que o robô falou. Se o aluno mandou áudio ou foto, escreva "Mandou um áudio" ou "Mandou uma foto".
 - situacao: "vai_voltar" (disse que vem para a aula), "vai_desistir" (disse que vai sair, desistir, trancar ou que não vai continuar o curso), "pediu_ajuda" (aceitou conversar com a coordenação ou pediu ajuda), "explicou_motivo" (explicou por que está faltando, sem os casos anteriores), "sem_informacao" (não deu para saber).
-- motivo: transporte (ônibus, carona, passagem), trabalho (emprego, horário do serviço), saude_atestado (doente com atestado), saude_sem_atestado (doente sem atestado ou sem dizer), saude_mental (ansiedade, depressão, crise), financeiro (dinheiro em geral), desmotivacao_curso (não gosta do curso, desanimado), problema_familiar (família, luto, cuidar de alguém), ou "nenhum" se o aluno não disse. Falar com a secretaria, com o professor ou com a mãe sobre o curso NÃO é problema familiar.`;
+- motivo: transporte (dificuldade de CHEGAR à escola: mora longe, distância, passagem ou gasolina cara, sem ônibus, sem carona), viagem (estava viajando ou fora da cidade — isso NÃO é transporte), trabalho (emprego, horário do serviço), saude_atestado (doente com atestado), saude_sem_atestado (doente sem atestado ou sem dizer), saude_mental (ansiedade, depressão, crise), financeiro (dinheiro em geral), desmotivacao_curso (não gosta do curso, desanimado), problema_familiar (família, luto, cuidar de alguém), ou "nenhum" se o aluno não disse. Falar com a secretaria, com o professor ou com a mãe sobre o curso NÃO é problema familiar.`;
 
 // trechos: [{ quem: 'robo' | 'aluno', texto }]. Devolve { resumo, situacao,
 // motivo } ou null (IA desligada, lenta ou fora do formato). Nunca lança.

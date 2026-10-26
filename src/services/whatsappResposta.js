@@ -14,7 +14,7 @@ const prisma = require('../config/prisma');
 const openwa = require('./openwa');
 const { removerMensagemCitada, respostaSimNao } = require('./classificarResposta');
 const { interpretar } = require('./iaLocal');
-const { decidir, renderizar, ehTextoDoRobo } = require('./whatsappConversa');
+const { decidir, renderizar, ehTextoDoRobo, juntarMensagens } = require('./whatsappConversa');
 const { agendarAnalise } = require('./whatsappAnalise');
 const { normalizarTelefone, mesmoTelefone } = require('./telefone');
 const { STATUS_JA_RECEBEU, primeiroNome } = require('./whatsappLote');
@@ -277,33 +277,103 @@ async function processarMensagemRecebida(corpo) {
     }
 
     // Sem a nossa mensagem citada: é o texto do aluno que interessa, tanto para
-    // interpretar quanto para a coordenação ler.
-    // Áudio, foto, figurinha: sem texto para interpretar (`texto` é o resumo, "[áudio]").
-    const midia = !entrada.texto;
-    const textoAluno = midia ? texto : removerMensagemCitada(texto, original.texto);
-    const simNao = midia ? null : respostaSimNao(textoAluno);
-    const interpretacao = await interpretarNoContexto({ etapa: original.conversaEtapa, texto: textoAluno, simNao, midia });
+    // interpretar quanto para a coordenação ler. Áudio, foto, figurinha ficam
+    // com o resumo ("[áudio]").
+    const textoAluno = entrada.texto ? removerMensagemCitada(texto, original.texto) : texto;
 
-    // O próximo passo do roteiro (whatsappConversa.js).
+    // Aqui só se registra. A leitura e a resposta do robô vêm depois de
+    // JANELA_RESPOSTA_MS sem mensagem nova (responderConversa): o aluno costuma
+    // mandar duas ou três seguidas, e o robô responde uma vez, ao conjunto.
+    const linha = await prisma.respostaWhatsapp.create({
+        data: {
+            messageId: entrada.messageId,
+            chatId: entrada.chatId,
+            telefone: telefone || null,
+            matricula: original.matricula,
+            mensagemId: original.id,
+            contatoId: original.contatoId,
+            texto: textoAluno,
+            interpretacao: 'aguardando',
+            recebidaEm: entrada.recebidaEm
+        }
+    });
+    agendarResposta(original.id, entrada.chatId);
+
+    // Log sem o conteúdo da mensagem: o CLAUDE.md proíbe jogar dado pessoal de
+    // aluno em texto plano sem necessidade, e pra depurar basta o id.
+    return { id: linha.id, matricula: original.matricula, aguardando: true };
+}
+
+// Quanto o robô espera, depois da última mensagem do aluno, antes de responder.
+// Curto o bastante para a conversa não parecer parada; longo o bastante para
+// pegar o "não estava na cidade" + "consigo ir sim" mandados em sequência.
+const JANELA_RESPOSTA_MS = 20 * 1000;
+const respostasAgendadas = new Map();
+
+// Tipo da mensagem a partir do texto gravado (mídia é gravada como o resumo).
+const TIPO_POR_RESUMO = Object.fromEntries(Object.entries(RESUMO_POR_TIPO).map(([tipo, resumo]) => [resumo, tipo]));
+
+function agendarResposta(mensagemId, chatId, esperaMs = JANELA_RESPOSTA_MS) {
+    clearTimeout(respostasAgendadas.get(mensagemId));
+    const timer = setTimeout(() => {
+        respostasAgendadas.delete(mensagemId);
+        emFilaDoChat(chatId, () => responderConversa(mensagemId, chatId)).catch((erro) => {
+            console.error('[whatsapp] erro ao responder a conversa', mensagemId, erro.message);
+        });
+    }, esperaMs);
+    timer.unref();
+    respostasAgendadas.set(mensagemId, timer);
+}
+
+// Lê as mensagens do aluno que ainda esperam ("aguardando"), decide a fala do
+// robô para o conjunto, grava tudo e responde. Devolve o resumo para o log.
+async function responderConversa(mensagemId, chatId) {
+    const original = await prisma.mensagemWhatsapp.findUnique({ where: { id: mensagemId } });
+    if (!original) return null;
+    const pendentes = await prisma.respostaWhatsapp.findMany({
+        where: { mensagemId, interpretacao: 'aguardando' },
+        orderBy: [{ recebidaEm: 'asc' }, { id: 'asc' }]
+    });
+    if (pendentes.length === 0) return null;
+
+    // Cada mensagem é lida no contexto da pergunta que o robô tinha feito antes
+    // de o aluno começar a escrever — a mesma para todas as do conjunto.
+    const etapa = original.conversaEtapa;
+    const lidas = [];
+    for (const r of pendentes) {
+        const tipo = TIPO_POR_RESUMO[r.texto] || 'chat';
+        const midia = tipo !== 'chat';
+        const simNao = midia ? null : respostaSimNao(r.texto);
+        const interp = await interpretarNoContexto({ etapa, texto: r.texto, simNao, midia });
+        lidas.push({ r, tipo, simNao, interp });
+    }
+
+    // O próximo passo do roteiro (whatsappConversa.js), uma vez para o conjunto.
     const decisao = decidir({
-        conversa: { etapa: original.conversaEtapa, turnos: original.conversaTurnos, pediuTexto: original.conversaPediuTexto },
-        interpretacao,
-        simNao,
-        tipoMensagem: entrada.tipo
+        conversa: { etapa, turnos: original.conversaTurnos, pediuTexto: original.conversaPediuTexto },
+        ...juntarMensagens(lidas)
     });
     const textoRobo = decisao.chave ? renderizar(decisao.chave, primeiroNome(original.nomeAluno)) : null;
 
-    // Transação: a linha de resposta e o efeito dela (contato, opt-out, etapa da
+    // Transação: as respostas e o efeito delas (contato, opt-out, etapa da
     // conversa) entram juntos ou não entram. Sem isso, uma falha no meio deixaria
     // o aluno desinscrito sem registro de por quê.
-    const linha = await prisma.$transaction(async (tx) => {
-        if (original.contatoId) {
-            const atual = await tx.contato.findUnique({ where: { id: original.contatoId }, select: { observacao: true, motivo: true } });
-            if (atual) {
-                await tx.contato.update({ where: { id: original.contatoId }, data: dadosDoContato(interpretacao, textoAluno, atual) });
+    await prisma.$transaction(async (tx) => {
+        let contato = original.contatoId
+            ? await tx.contato.findUnique({ where: { id: original.contatoId }, select: { observacao: true, motivo: true } })
+            : null;
+        for (const { r, interp } of lidas) {
+            await tx.respostaWhatsapp.update({
+                where: { id: r.id },
+                data: { interpretacao: interp.tipo, motivoSugerido: interp.motivo || null }
+            });
+            if (contato) {
+                const dados = dadosDoContato(interp, r.texto, contato);
+                await tx.contato.update({ where: { id: original.contatoId }, data: dados });
+                contato = { ...contato, observacao: dados.observacao };
             }
         }
-        if (interpretacao.tipo === 'sair') {
+        if (lidas.some(({ interp }) => interp.tipo === 'sair')) {
             await tx.aluno.update({ where: { matricula: original.matricula }, data: { whatsappOptOut: true } });
         }
         await tx.mensagemWhatsapp.update({
@@ -314,43 +384,44 @@ async function processarMensagemRecebida(corpo) {
                 ...(textoRobo ? { conversaTurnos: { increment: 1 } } : {})
             }
         });
-        return tx.respostaWhatsapp.create({
-            data: {
-                messageId: entrada.messageId,
-                chatId: entrada.chatId,
-                telefone: telefone || null,
-                matricula: original.matricula,
-                mensagemId: original.id,
-                contatoId: original.contatoId,
-                texto: textoAluno,
-                interpretacao: interpretacao.tipo,
-                motivoSugerido: interpretacao.motivo || null,
-                recebidaEm: entrada.recebidaEm
-            }
-        });
     });
 
-    // Guardado só se saiu de fato: é o que a linha do tempo da /risco mostra como
-    // fala do robô.
-    if (textoRobo && await responderAluno(original.sessaoId, entrada.chatId, textoRobo)) {
-        await prisma.respostaWhatsapp.update({ where: { id: linha.id }, data: { respostaRobo: textoRobo } });
+    // Guardado só se saiu de fato, na última mensagem do conjunto: é o que a linha
+    // do tempo da /risco mostra como fala do robô.
+    const ultima = pendentes[pendentes.length - 1];
+    if (textoRobo && await responderAluno(original.sessaoId, chatId, textoRobo)) {
+        await prisma.respostaWhatsapp.update({ where: { id: ultima.id }, data: { respostaRobo: textoRobo } });
     }
     // Resumo e motivo da conversa inteira para a /contatar, quando o aluno parar
     // de escrever (whatsappAnalise.js).
     agendarAnalise(original.id);
 
-    // Log sem o conteúdo da mensagem: o CLAUDE.md proíbe jogar dado pessoal de
-    // aluno em texto plano sem necessidade, e pra depurar basta o id.
-    return {
-        id: linha.id,
+    const resumo = {
+        mensagemId,
         matricula: original.matricula,
-        interpretacao: interpretacao.tipo,
-        motivo: interpretacao.motivo || null,
-        fonte: interpretacao.fonte,
+        mensagens: lidas.length,
+        interpretacoes: lidas.map(({ interp }) => interp.tipo),
+        fontes: lidas.map(({ interp }) => interp.fonte),
         robo: decisao.chave,
         etapa: decisao.etapa
     };
+    console.log('[whatsapp] conversa respondida:', JSON.stringify(resumo));
+    return resumo;
 }
+
+// Na subida do servidor: respostas que ficaram "aguardando" porque o servidor
+// reiniciou no meio da janela são respondidas agora (com um tempo, para o resto
+// do sistema subir antes).
+async function retomarConversasPendentes() {
+    const pendentes = await prisma.respostaWhatsapp.findMany({
+        where: { interpretacao: 'aguardando', mensagemId: { not: null } },
+        select: { mensagemId: true, chatId: true },
+        distinct: ['mensagemId']
+    });
+    pendentes.forEach((p, i) => agendarResposta(p.mensagemId, p.chatId, 15000 + i * 2000));
+    if (pendentes.length) console.log(`[whatsapp] ${pendentes.length} conversa(s) com resposta pendente retomada(s).`);
+}
+
 
 // Uma mensagem por vez de cada conversa. O aluno costuma mandar duas ou três
 // seguidas ("oi" / "to doente" / "[áudio]") e a IA leva segundos em cada uma:
@@ -388,5 +459,8 @@ module.exports = {
     processarMensagemRecebida,
     processarAck,
     normalizarEntrada,
-    DIAS_JANELA_RESPOSTA
+    responderConversa,
+    retomarConversasPendentes,
+    DIAS_JANELA_RESPOSTA,
+    JANELA_RESPOSTA_MS
 };

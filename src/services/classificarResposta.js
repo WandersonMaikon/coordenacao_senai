@@ -43,7 +43,15 @@ const { MOTIVOS } = require('../config/motivos');
 // vez de esconder um assunto delicado debaixo de "problema familiar".
 const PESO_FORTE = 1.5;
 const TERMOS = {
-    transporte: ['onibus', 'busao', 'buzu', 'passage*', 'carona', 'transporte', 'conducao', 'bilhete', 'van', ['longe', 0.5], 'sem carona'],
+    // Transporte = dificuldade de CHEGAR: distância, custo, ônibus. Estar fora da
+    // cidade é `viagem` (visto em 26/10/2026: "não estava na cidade" virou transporte).
+    transporte: ['onibus', 'busao', 'buzu', 'passage*', 'carona', 'transporte', 'conducao', 'bilhete', 'van', ['longe', 0.5], 'sem carona',
+        ['distancia', PESO_FORTE], ['muito longe', PESO_FORTE], ['moro longe', PESO_FORTE], ['fica longe', PESO_FORTE], 'gasolina', 'combustivel', 'caro pra ir', 'caro para ir'],
+    viagem: [['viaj*', PESO_FORTE], ['viagem', PESO_FORTE], ['fora da cidade', PESO_FORTE], ['nao estava na cidade', PESO_FORTE], ['nao estou na cidade', PESO_FORTE],
+        ['sai da cidade', PESO_FORTE], 'estava fora', 'estou fora', 'passeio', 'ferias',
+        // Forte para empatar com "minha avó"/"minha mãe" (problema familiar) em "fui
+        // visitar minha avó em Porto Velho": no empate o dicionário não chuta e a IA decide.
+        ['visitar', PESO_FORTE], ['fui visitar', PESO_FORTE]],
     trabalho: ['trabalh*', 'tramp*', 'servico', 'empreg*', 'estagio', 'turno', 'expediente', 'patrao', 'hora extra'],
     saude_atestado: ['atestado', 'atestados'],
     saude_sem_atestado: ['doen*', 'medic*', 'consulta', 'exame*', 'hospital', 'cirurgia', 'gripe', 'febre', 'dor', 'internad*', 'remedio', 'sem atestado', 'nao peguei atestado', 'nao tenho atestado'],
@@ -202,7 +210,9 @@ const NEGACAO = /\b(nao|nem|nunca)\b(\s+\S+){0,3}\s+(vou|volto|voltar|irei|consi
 
 // Resposta curta à pergunta fechada da mensagem ("Você consegue vir na próxima
 // aula? Responda SIM").
-const SIM_CURTO = /^(sim|s|ss|sim sim|claro|com certeza|certeza|pode deixar|consigo|vou|vou sim|sim vou|sim consigo|ok|okay|beleza|certo|esta bem|esta bom|combinado|pode ser|positivo)( senhora?| professora?| prof)?[ !.]*$/;
+// "consigo ir sim" (26/10/2026) não casava e ia para a IA — com "sim" no fim
+// também é resposta curta.
+const SIM_CURTO = /^(sim|s|ss|sim sim|claro|com certeza|certeza|pode deixar|consigo|consigo sim|consigo ir|consigo ir sim|sim consigo ir|vou|vou sim|vou ir|vou ir sim|sim vou|sim consigo|ok|okay|beleza|certo|esta bem|esta bom|combinado|pode ser|positivo)( senhora?| professora?| prof)?[ !.]*$/;
 
 // "estarei"/"vou estar" só valem com lugar ("estarei aí", "vou estar na aula"):
 // soltos, casavam com "estarei saindo do curso" — visto em 22/10/2026, o robô

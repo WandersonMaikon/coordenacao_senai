@@ -21,7 +21,11 @@ const MOTIVOS = [
     { chave: 'financeiro', rotulo: 'Financeiro', rotuloAluno: 'Dificuldade financeira' },
     { chave: 'desmotivacao_curso', rotulo: 'Desmotivação com o curso', rotuloAluno: 'Desânimo com o curso' },
     { chave: 'problema_familiar', rotulo: 'Problema familiar', rotuloAluno: 'Problema familiar' },
-    { chave: 'outro', rotulo: 'Outro / não informado', rotuloAluno: 'Outro motivo' }
+    { chave: 'outro', rotulo: 'Outro / não informado', rotuloAluno: 'Outro motivo' },
+    // Entrou em 26/10/2026 (no fim, pela regra acima): "não estava na cidade" virava
+    // transporte. Transporte é dificuldade de CHEGAR (distância, custo, ônibus);
+    // viagem é estar fora — o aluno costuma voltar sozinho.
+    { chave: 'viagem', rotulo: 'Viagem / fora da cidade', rotuloAluno: 'Estava viajando' }
 ];
 
 module.exports = { MOTIVOS };

@@ -16,6 +16,7 @@ const whatsappWebhookRoutes = require('./src/routes/whatsappWebhookRoutes');
 const prisma = require('./src/config/prisma');
 const { iniciarWorker: iniciarWorkerWhatsapp } = require('./src/services/whatsappEnvio');
 const { garantirModelo: garantirModeloIa } = require('./src/services/iaLocal');
+const { retomarConversasPendentes } = require('./src/services/whatsappResposta');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -84,6 +85,8 @@ app.listen(PORT, () => {
     // IA local que lê as respostas dos alunos: baixa o modelo na primeira vez
     // (sem travar a subida; enquanto isso vale o dicionário).
     garantirModeloIa();
+    // Respostas de aluno que esperavam o robô responder quando o servidor reiniciou.
+    retomarConversasPendentes().catch((erro) => console.error('[whatsapp] não foi possível retomar conversas pendentes:', erro.message));
 });
 
 // Encerra a conexão do Prisma corretamente quando o servidor for finalizado

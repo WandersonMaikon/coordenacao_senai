@@ -36,6 +36,7 @@ const TEXTOS = {
     ajudaSim: 'Certo! Vou pedir para a coordenação falar com você. Se precisar de algo antes disso, é só escrever aqui.',
     ajudaNao: 'Tudo bem! Se mudar de ideia ou precisar de alguma coisa, é só escrever aqui.',
     desmotivacao: 'Obrigado pela sinceridade, {primeiro_nome}! O que está te desanimando: o conteúdo, a turma, o horário ou outra coisa? Pode contar em poucas palavras.',
+    viagem: 'Entendi, obrigado por avisar, {primeiro_nome}! Você já voltou? Consegue vir na próxima aula? Responda SIM ou NÃO.',
     naoVem: 'Entendi. Pode contar o que está acontecendo? Assim a coordenação consegue te ajudar.',
     delicado: 'Sinto muito que você esteja passando por isso, {primeiro_nome}. Alguém da coordenação vai falar com você com calma. Se precisar de alguma coisa antes, é só escrever aqui.',
     naoEntendi: 'Desculpe, não entendi bem. Você consegue vir na próxima aula? Responda SIM ou NÃO, ou conte em poucas palavras o que aconteceu.',
@@ -137,6 +138,9 @@ function escolher({ etapa, interpretacao, simNao }) {
     }
     if (motivo && AJUDA_POR_MOTIVO[motivo]) return { chave: AJUDA_POR_MOTIVO[motivo], etapa: 'ajuda' };
     if (motivo === 'desmotivacao_curso') return { chave: 'desmotivacao', etapa: 'detalhe' };
+    // Quem viajou costuma voltar sozinho: a pergunta é só se já voltou — "sim"
+    // na etapa "volta" vira o "Combinado!", "não" pede para contar mais.
+    if (motivo === 'viagem') return { chave: 'viagem', etapa: 'volta' };
 
     // "Não" à pergunta da mensagem ("Você consegue vir na próxima aula?").
     if (simNao === 'nao' && [null, 'pergunta', 'volta'].includes(etapa)) return { chave: 'naoVem', etapa: 'detalhe' };
@@ -157,4 +161,38 @@ function ehTextoDoRobo(texto, { mensagemEnviada, primeiroNome }) {
     return Object.keys(TEXTOS).some((chave) => normalizar(renderizar(chave, primeiroNome)) === alvo);
 }
 
-module.exports = { decidir, renderizar, ehTextoDoRobo, TEXTOS, MAX_RESPOSTAS_ROBO };
+// Várias mensagens seguidas do aluno viram UMA leitura para o robô responder uma
+// vez só. Visto em 26/10/2026: "não estava na cidade" + "consigo ir sim" — o robô
+// respondeu às duas em separado, perguntou de transporte a quem já tinha dito
+// que vinha, e o "Combinado!" chegou depois.
+//   lidas: [{ tipo ('chat' | 'audio' | 'image'...), simNao, interp: { tipo, motivo? } }],
+//          na ordem em que chegaram.
+// Devolve { interpretacao, simNao, tipoMensagem } no formato que `decidir` espera.
+// Prioridade: SAIR > desistência > resposta à pergunta de ajuda > promessa (com o
+// motivo que veio junto) > motivo (o mais recente) > não entendido. Áudio ou foto
+// junto de texto não mudam a leitura — o texto diz mais.
+function juntarMensagens(lidas) {
+    const textos = lidas.filter((l) => ['chat', 'text'].includes(l.tipo));
+    if (textos.length === 0) {
+        const ultima = lidas[lidas.length - 1];
+        return { interpretacao: { tipo: 'nao_entendido' }, simNao: null, tipoMensagem: ultima.tipo };
+    }
+    if (textos.length === 1) return { interpretacao: textos[0].interp, simNao: textos[0].simNao, tipoMensagem: textos[0].tipo };
+
+    const interps = textos.map((l) => l.interp);
+    const achar = (tipo) => interps.find((i) => i.tipo === tipo);
+    const motivo = [...interps].reverse().find((i) => i.motivo)?.motivo || null;
+    const comMotivo = (tipo) => (motivo ? { tipo, motivo } : { tipo });
+
+    let interpretacao;
+    if (achar('sair')) interpretacao = { tipo: 'sair' };
+    else if (achar('desistencia')) interpretacao = comMotivo('desistencia');
+    else if (achar('pediu_ajuda') || achar('recusou_ajuda')) interpretacao = [...interps].reverse().find((i) => ['pediu_ajuda', 'recusou_ajuda'].includes(i.tipo));
+    else if (achar('promessa') && !MOTIVOS_DELICADOS.includes(motivo)) interpretacao = comMotivo('promessa');
+    else if (motivo) interpretacao = { tipo: 'palavras_chave', motivo };
+    else interpretacao = { tipo: 'nao_entendido' };
+
+    return { interpretacao, simNao: textos[textos.length - 1].simNao, tipoMensagem: 'chat' };
+}
+
+module.exports = { decidir, renderizar, ehTextoDoRobo, juntarMensagens, TEXTOS, MAX_RESPOSTAS_ROBO };
