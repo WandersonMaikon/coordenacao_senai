@@ -1,6 +1,6 @@
 const prisma = require('../config/prisma');
 const { carregarTurmasEncerradas } = require('./turmaController');
-const { registrarInstalacao } = require('../services/professores');
+const { registrarInstalacao, carregarCorrecoesDeNome, nomeCorrigido } = require('../services/professores');
 
 // Recebe os lançamentos capturados pelo userscript Tampermonkey
 async function receberWebhook(req, res) {
@@ -21,7 +21,11 @@ async function receberWebhook(req, res) {
     let corrigidos = 0;
 
     try {
+        // Nome que a coordenação corrigiu na /professores chega já certo: o
+        // navegador do professor continua mandando o nome antigo.
+        const correcoes = await carregarCorrecoesDeNome();
         for (const item of lancamentos) {
+            const professor = nomeCorrigido(item.professor || '', correcoes);
             // A UC faz parte da chave: uma turma pode ter dois professores lançando
             // no mesmo dia, e sem a UC o segundo envio sobrescreveria a falta do
             // primeiro. Com ela, cada UC vira uma linha e as faltas do dia somam.
@@ -43,7 +47,7 @@ async function receberWebhook(req, res) {
                     idAula: item.id_aula || '',
                     nomeTurma: item.nome_turma || '',
                     periodoLetivo: item.periodo_letivo || '',
-                    professor: item.professor || '',
+                    professor,
                     qtdFaltas: item.qtd_faltas ?? 0
                 },
                 create: {
@@ -52,7 +56,7 @@ async function receberWebhook(req, res) {
                     idAula: item.id_aula || '',
                     nomeTurma: item.nome_turma || '',
                     periodoLetivo: item.periodo_letivo || '',
-                    professor: item.professor || '',
+                    professor,
                     qtdFaltas: item.qtd_faltas ?? 1
                 }
             });

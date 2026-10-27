@@ -133,10 +133,6 @@
       // Só quando o nome digitado não é igual ao do título.
       const grafias = p.grafias.length > 1 || (p.grafias[0] && p.grafias[0] !== p.nome)
         ? `<div class="small text-body-secondary">Nome digitado no script: ${p.grafias.map(escaparHtml).join(' / ')}</div>` : '';
-      const juntados = p.juntados.map((chave) => `
-        <span class="badge bg-light text-body border fw-normal me-1">juntado: ${escaparHtml(chave)}
-          <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" data-separar="${escaparHtml(chave)}" title="Separar de novo">separar</button>
-        </span>`).join('');
 
       const numeros = [
         `<span><i class="bi bi-send me-1"></i>Último envio: ${p.ultimoEnvioEm ? `<strong>${formatarDataHora(p.ultimoEnvioEm)}</strong> (${haQuantoTempo(p.ultimoEnvioEm)})` : '<strong>nunca</strong>'}</span>`,
@@ -177,7 +173,6 @@
               <div>
                 <h6 class="mb-0">${nome}</h6>
                 ${grafias}
-                ${juntados ? `<div class="mt-1">${juntados}</div>` : ''}
               </div>
               <span class="badge bg-${s.cor}-subtle text-${s.cor}-emphasis border border-${s.cor}-subtle">
                 <i class="bi ${s.icone} me-1"></i>${s.rotulo}
@@ -192,8 +187,8 @@
               <div class="fw-semibold">Navegadores com o script</div>
               <ul class="mb-0 ps-3">${instalacoes}</ul>
             </details>
-            ${p.chave ? `<button type="button" class="btn btn-link btn-sm px-0 mt-1" data-juntar="${escaparHtml(p.chave)}">
-              <i class="bi bi-people me-1"></i>É a mesma pessoa que outro professor da lista?</button>` : ''}
+            ${p.chave ? `<button type="button" class="btn btn-link btn-sm px-0 mt-1" data-corrigir="${escaparHtml(p.chave)}">
+              <i class="bi bi-pencil me-1"></i>Corrigir nome</button>` : ''}
           </div>
         </div>`;
     }
@@ -228,58 +223,40 @@
       desenhar();
     });
 
-    // "É a mesma pessoa": o nome é digitado em cada Tampermonkey, e quando nem os
-    // dois primeiros nomes batem (ex.: "Talita Regina" e "Talita Magro") só
-    // alguém da coordenação sabe. Não muda nenhum lançamento; dá para separar.
+    // "Corrigir nome": troca o nome em TODOS os lançamentos do card (e as telas
+    // /faltas e /risco passam a mostrar o nome novo). Para juntar com outro
+    // professor ("Talita Regina" que é a "Talita Magro"), é só escolher o nome dele.
+    // O que o navegador antigo mandar depois já chega corrigido.
     document.getElementById('listaProfessores').addEventListener('click', async (evento) => {
-      const botaoJuntar = evento.target.closest('[data-juntar]');
-      const botaoSeparar = evento.target.closest('[data-separar]');
-      if (botaoJuntar) {
-        const de = professores.find((p) => p.chave === botaoJuntar.dataset.juntar);
-        const opcoes = {};
-        professores
-          .filter((p) => p !== de && p.chave)
-          .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
-          .forEach((p) => { opcoes[p.chave] = p.grafias.length ? `${p.nome} (${p.grafias.join(' / ')})` : p.nome; });
-        const { value: para } = await Swal.fire({
-          title: `${de.nome} é a mesma pessoa que...`,
-          input: 'select',
-          inputOptions: opcoes,
-          inputPlaceholder: 'Escolha o professor',
-          showCancelButton: true,
-          confirmButtonText: 'Juntar',
-          cancelButtonText: 'Cancelar',
-          inputValidator: (valor) => (valor ? undefined : 'Escolha um professor.')
-        });
-        if (!para) return;
-        try {
-          const resposta = await chamarApi('/professores/juntar', { method: 'POST', body: JSON.stringify({ de: de.chave, para }) });
-          if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
-          notificar.ok('Professores juntados.');
-          carregar();
-        } catch (erro) {
-          if (erro.message !== 'Sessão expirada') notificar.erro(erro.message || 'Não foi possível juntar agora.');
-        }
-      }
-      if (botaoSeparar) {
-        const chave = botaoSeparar.dataset.separar;
-        const { isConfirmed } = await Swal.fire({
-          title: 'Separar este nome?',
-          text: `"${chave}" volta a ter o próprio card.`,
-          icon: 'question',
-          showCancelButton: true,
-          confirmButtonText: 'Separar',
-          cancelButtonText: 'Cancelar'
-        });
-        if (!isConfirmed) return;
-        try {
-          const resposta = await chamarApi(`/professores/juntar/${encodeURIComponent(chave)}`, { method: 'DELETE' });
-          if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
-          notificar.ok('Nome separado.');
-          carregar();
-        } catch (erro) {
-          if (erro.message !== 'Sessão expirada') notificar.erro(erro.message || 'Não foi possível separar agora.');
-        }
+      const botao = evento.target.closest('[data-corrigir]');
+      if (!botao) return;
+      const professor = professores.find((p) => p.chave === botao.dataset.corrigir);
+      const outrosNomes = [...new Set(professores.filter((p) => p !== professor).flatMap((p) => p.grafias))]
+        .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+      const { value: nomeCorreto } = await Swal.fire({
+        title: 'Corrigir nome',
+        html: `<p class="small text-start mb-2">Hoje este professor aparece como
+          <strong>${professor.grafias.map(escaparHtml).join('</strong> / <strong>') || escaparHtml(professor.nome)}</strong>.</p>
+          <p class="small text-start mb-0">Digite o nome certo. Se for a mesma pessoa que outro professor da lista,
+          escolha o nome dele nas sugestões. <strong>Todos os lançamentos</strong> dele passam a ter esse nome, em todas as telas.</p>
+          <datalist id="sugestoesNome">${outrosNomes.map((n) => `<option value="${escaparHtml(n)}"></option>`).join('')}</datalist>`,
+        input: 'text',
+        inputValue: professor.grafias[0] || professor.nome,
+        inputAttributes: { list: 'sugestoesNome', autocomplete: 'off' },
+        showCancelButton: true,
+        confirmButtonText: 'Corrigir',
+        cancelButtonText: 'Cancelar',
+        inputValidator: (valor) => (valor.trim() ? undefined : 'Digite o nome correto.')
+      });
+      if (!nomeCorreto) return;
+      try {
+        const resposta = await chamarApi('/professores/corrigir-nome', { method: 'POST', body: JSON.stringify({ de: professor.chave, nomeCorreto }) });
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        notificar.ok(`Nome corrigido em ${resposta.lancamentos} lançamento(s).`);
+        carregar();
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') notificar.erro(erro.message || 'Não foi possível corrigir agora.');
       }
     });
 

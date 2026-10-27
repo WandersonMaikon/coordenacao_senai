@@ -47,15 +47,29 @@ function compararVersoes(a, b) {
 // mesma regra do cabeçalho da /faltas (nomesCurtosUnicos), com o mesmo efeito
 // colateral aceito: dois professores com os dois primeiros nomes iguais viram um.
 function chaveProfessor(nome) {
+    return nomeNormalizado(nome).split(' ').slice(0, 2).join(' ');
+}
+
+// Nome inteiro sem acento/caixa/espaços extras/"Prof." — é a chave das
+// correções de nome (correcoes_nome_professor).
+function nomeNormalizado(nome) {
     return (nome || '')
         .normalize('NFD').replace(/[̀-ͯ]/g, '')
         .toLowerCase()
         .replace(/\s+/g, ' ')
         .trim()
-        .replace(/^(prof(essor|essora)?\.?)\s+/, '')
-        .split(' ')
-        .slice(0, 2)
-        .join(' ');
+        .replace(/^(prof(essor|essora)?\.?)\s+/, '');
+}
+
+// Nome errado → nome certo, a partir do "Corrigir nome" da /professores.
+// Lido a cada envio (tabela pequena), para a correção valer na hora.
+async function carregarCorrecoesDeNome() {
+    const correcoes = await prisma.correcaoNomeProfessor.findMany();
+    return new Map(correcoes.map((c) => [c.nomeDigitado, c.nomeCorreto]));
+}
+
+function nomeCorrigido(nome, correcoes) {
+    return correcoes.get(nomeNormalizado(nome)) ?? nome;
 }
 
 function navegadorDe(userAgent) {
@@ -85,8 +99,9 @@ const ID_INSTALACAO = /^[A-Za-z0-9-]{8,64}$/;
 // id não serve — chamada pública, então nada aqui confia no corpo.
 async function registrarInstalacao(dados, userAgent, extras = {}) {
     if (!dados || !ID_INSTALACAO.test(dados.id || '')) return false;
+    const correcoes = await carregarCorrecoesDeNome();
     const campos = {
-        professor: texto(dados.professor, 255),
+        professor: nomeCorrigido(texto(dados.professor, 255), correcoes),
         versao: texto(dados.versao, 20),
         ultimoSinalEm: new Date(),
         ...extras
@@ -154,7 +169,7 @@ async function listarProfessores() {
     const hoje = converterDataAula(diaNoFusoDaEscola(new Date()));
 
     // Uma linha por chamada (professor, turma, UC, dia) — não por aluno.
-    const [chamadas, nomesTurma, encerradas, instalacoes, apelidos] = await Promise.all([
+    const [chamadas, nomesTurma, encerradas, instalacoes] = await Promise.all([
         prisma.lancamento.groupBy({
             by: ['professor', 'codigoTurma', 'uc', 'dataAula'],
             _min: { criadoEm: true },
@@ -166,22 +181,13 @@ async function listarProfessores() {
             select: { codigoTurma: true, nomeTurma: true }
         }),
         carregarTurmasEncerradas(),
-        prisma.instalacaoScript.findMany({ orderBy: { ultimoSinalEm: 'desc' } }),
-        prisma.professorApelido.findMany()
+        prisma.instalacaoScript.findMany({ orderBy: { ultimoSinalEm: 'desc' } })
     ]);
-    // "É a mesma pessoa" (juntarProfessores): a chave juntada conta como a de destino.
-    const destinoDe = new Map(apelidos.map((a) => [a.chave, a.chaveDestino]));
-    const juntadosEm = new Map();
-    for (const a of apelidos) {
-        if (!juntadosEm.has(a.chaveDestino)) juntadosEm.set(a.chaveDestino, []);
-        juntadosEm.get(a.chaveDestino).push(a.chave);
-    }
     const nomeDaTurma = new Map(nomesTurma.map((t) => [t.codigoTurma, t.nomeTurma]));
 
     const professores = new Map();
     const doProfessor = (nome) => {
-        const propria = chaveProfessor(nome);
-        const chave = destinoDe.get(propria) ?? propria;
+        const chave = chaveProfessor(nome);
         if (!professores.has(chave)) {
             professores.set(chave, { chave, grafias: new Map(), turmas: new Map(), chamadas: [], instalacoes: [] });
         }
@@ -278,7 +284,6 @@ async function listarProfessores() {
             nome: (grafias[0] || '').split(' ').slice(0, 2).join(' '),
             grafias,
             chave: p.chave,
-            juntados: juntadosEm.get(p.chave) || [],
             situacao,
             alertas,
             ultimoEnvioEm,
@@ -299,28 +304,49 @@ async function listarProfessores() {
     return { professores: lista, versaoAtual: VERSAO_ATUAL, diasSemEnvioAlerta: DIAS_SEM_ENVIO_ALERTA, diasJanela: DIAS_JANELA };
 }
 
-// Junta o card `de` no card `para` (as chaves que a lista devolve). Quem já
-// estava juntado em `de` passa a apontar direto para `para` — um nível só,
-// sem cadeia para seguir na leitura.
-async function juntarProfessores(de, para, usuario) {
-    if (!de || !para || de === para) throw Object.assign(new Error('Escolha dois professores diferentes.'), { status: 400 });
-    const destinoDoPara = await prisma.professorApelido.findUnique({ where: { chave: para } });
-    const destino = destinoDoPara ? destinoDoPara.chaveDestino : para;
-    if (destino === de) throw Object.assign(new Error('Esses dois já são o mesmo professor.'), { status: 400 });
-    await prisma.$transaction([
-        prisma.professorApelido.updateMany({ where: { chaveDestino: de }, data: { chaveDestino: destino } }),
-        prisma.professorApelido.upsert({
-            where: { chave: de },
-            update: { chaveDestino: destino, criadoPor: usuario },
-            create: { chave: de, chaveDestino: destino, criadoPor: usuario }
-        })
+// "Corrigir nome": todos os nomes que caem no card `de` (a chave da lista)
+// passam a ser `nomeCorreto`, nos lançamentos e nos navegadores — o conserto é
+// no dado, então /faltas, /risco e /professores mostram o mesmo nome. Cada nome
+// trocado vira uma correção, para o próximo envio do navegador antigo já chegar
+// certo. Para juntar com outro professor, basta digitar o nome dele.
+async function corrigirNomeProfessor(de, nomeCorreto, usuario) {
+    const nome = texto(nomeCorreto, 255).replace(/\s+/g, ' ');
+    if (!nome) throw Object.assign(new Error('Digite o nome correto.'), { status: 400 });
+    // "Sem nome" junta lançamentos de professores diferentes: não dá para dizer de quem são.
+    if (!de) throw Object.assign(new Error('Os lançamentos sem nome não podem ser corrigidos por aqui.'), { status: 400 });
+
+    const [doLancamento, doNavegador] = await Promise.all([
+        prisma.lancamento.findMany({ distinct: ['professor'], select: { professor: true } }),
+        prisma.instalacaoScript.findMany({ distinct: ['professor'], select: { professor: true } })
     ]);
+    const nomesAntigos = [...new Set([...doLancamento, ...doNavegador].map((l) => l.professor))]
+        .filter((n) => n && chaveProfessor(n) === de && n !== nome);
+    if (nomesAntigos.length === 0) throw Object.assign(new Error('O nome já está assim.'), { status: 400 });
+
+    const correto = nomeNormalizado(nome);
+    const operacoes = [];
+    for (const antigo of nomesAntigos) {
+        // SQL direto de propósito: o updateMany do Prisma preencheria
+        // atualizado_em, e é ele que diz quando o professor enviou cada chamada.
+        operacoes.push(prisma.$executeRaw`UPDATE lancamentos SET professor = ${nome} WHERE professor = ${antigo}`);
+        operacoes.push(prisma.instalacaoScript.updateMany({ where: { professor: antigo }, data: { professor: nome } }));
+        const digitado = nomeNormalizado(antigo);
+        if (digitado !== correto) {
+            operacoes.push(prisma.correcaoNomeProfessor.upsert({
+                where: { nomeDigitado: digitado },
+                update: { nomeCorreto: nome, corrigidoPor: usuario },
+                create: { nomeDigitado: digitado, nomeCorreto: nome, corrigidoPor: usuario }
+            }));
+        }
+        // Correções antigas que apontavam para este nome passam a apontar para o novo.
+        operacoes.push(prisma.correcaoNomeProfessor.updateMany({ where: { nomeCorreto: antigo }, data: { nomeCorreto: nome } }));
+    }
+    // O nome certo nunca é trocado por outro (evita ida e volta).
+    operacoes.push(prisma.correcaoNomeProfessor.deleteMany({ where: { nomeDigitado: correto } }));
+    const resultados = await prisma.$transaction(operacoes);
+    // Só o $executeRaw devolve número: a soma é quantos lançamentos mudaram.
+    const lancamentos = resultados.filter((r) => typeof r === 'number').reduce((total, n) => total + n, 0);
+    return { nomesAntigos, lancamentos };
 }
 
-// Desfaz: o nome volta a ter o próprio card.
-async function separarProfessor(chave) {
-    const { count } = await prisma.professorApelido.deleteMany({ where: { chave } });
-    return count > 0;
-}
-
-module.exports = { listarProfessores, juntarProfessores, separarProfessor, registrarSinal, registrarInstalacao, chaveProfessor, compararVersoes };
+module.exports = { listarProfessores, corrigirNomeProfessor, carregarCorrecoesDeNome, nomeCorrigido, registrarSinal, registrarInstalacao, chaveProfessor, compararVersoes };
