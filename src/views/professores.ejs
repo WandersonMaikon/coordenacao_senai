@@ -162,6 +162,8 @@
         ? p.instalacoes.map((i) => `<li>
             ${escaparHtml(i.navegador || 'Navegador')} · versão ${escaparHtml(i.versao || '?')}
             ${i.desatualizada ? '<span class="badge bg-warning-subtle text-warning-emphasis ms-1">desatualizada</span>' : ''}
+            ${i.origemNome === 'sge' ? '<span class="badge bg-success-subtle text-success-emphasis ms-1">nome do login do SGE</span>' : ''}
+            ${i.origemNome === 'digitado' ? '<span class="badge bg-warning-subtle text-warning-emphasis ms-1" title="O SGE não mostrou o nome do login; valeu o nome digitado no Tampermonkey">nome digitado</span>' : ''}
             <span class="text-body-secondary">— último sinal ${formatarDataHora(i.ultimoSinalEm)}${i.ultimaCapturaEm ? `, leu a tela de frequência em ${formatarDataHora(i.ultimaCapturaEm)}` : ''}</span>
           </li>`).join('')
         : '<li class="text-body-secondary">Nenhum sinal da versão nova do script.</li>';

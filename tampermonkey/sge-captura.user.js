@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SGE Novo - Captura Frequência SENAI
 // @namespace    http://tampermonkey.net/
-// @version      4.3
+// @version      4.4
 // @description  Captura frequência do novo SGE (Angular/PO-UI) - resposta otimista, envio rápido, suporta correção, envia só o que mudou
 // @author       Wanderson
 // @match        https://sge.fiero.org.br/*
@@ -30,6 +30,8 @@
 //       cada "Salvar"), com a versao, o nome do professor, o tamanho da fila
 //       local e se achou os alunos na tela — nenhum dado de aluno. Cada
 //       navegador ganha um id (sge_id_instalacao). Usado na tela /professores.
+// 4.4 - o nome do professor vem do perfil do SGE (menu do avatar), nao mais
+//       digitado. O nome digitado so vale se o SGE nao mostrar o nome.
 
 (function () {
     'use strict';
@@ -97,12 +99,44 @@
         return nome;
     }
 
+    // Desde a 4.4 o nome vem do próprio SGE: é o do perfil de quem está logado
+    // (menu do avatar, no canto da tela). Digitado à mão, a mesma pessoa chegava
+    // escrita de jeitos diferentes em cada computador, e num computador
+    // compartilhado todo mundo saía com o nome de quem digitou primeiro.
+    // textContent (e não innerText) porque o menu pode estar fechado/escondido.
+    const SELETOR_NOME_SGE = '.po-toolbar-profile-item-header-title';
+    const CHAVE_NOME_SGE_SESSAO = 'sge_nome_professor_sge';
+
+    function lerNomeDoSge() {
+        const elemento = document.querySelector(SELETOR_NOME_SGE);
+        const nome = elemento ? (elemento.textContent || '').replace(/\s+/g, ' ').trim() : '';
+        // Guardado na sessão da aba (e não no GM_setValue, que vale para o
+        // navegador inteiro): se o menu só existir aberto, a captura ainda acha
+        // o nome lido antes — e outro professor que entrar no mesmo computador
+        // não herda esse nome.
+        try {
+            if (nome) sessionStorage.setItem(CHAVE_NOME_SGE_SESSAO, nome);
+            return nome || sessionStorage.getItem(CHAVE_NOME_SGE_SESSAO) || '';
+        } catch (e) {
+            return nome;
+        }
+    }
+
+    // { nome, origem }: 'sge' (lido da tela) ou 'digitado' (o nome antigo deste navegador).
+    function nomeAtualDoProfessor() {
+        const doSge = lerNomeDoSge();
+        if (doSge) return { nome: doSge, origem: 'sge' };
+        const digitado = lerNomeProfessor();
+        return { nome: digitado, origem: digitado ? 'digitado' : '' };
+    }
+
     // Chamado na hora de capturar, não no carregamento da página: assim o
     // professor só é interrompido quando está de fato lançando frequência.
+    // Só pergunta se o SGE não mostrou o nome (ex.: o layout mudou).
     // Se ele cancelar, o lançamento vai mesmo assim com o professor em branco —
     // perder a falta seria pior que perder o nome, e dá pra corrigir depois.
     function obterNomeProfessor() {
-        const nome = lerNomeProfessor();
+        const nome = nomeAtualDoProfessor().nome;
         if (nome) return nome;
         const informado = pedirNomeProfessor('');
         if (!informado) {
@@ -131,10 +165,12 @@
     }
 
     function dadosInstalacao() {
+        const { nome, origem } = nomeAtualDoProfessor();
         return {
             id: idInstalacao(),
             versao: (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '',
-            professor: lerNomeProfessor()
+            professor: nome,
+            origemNome: origem
         };
     }
 
@@ -521,11 +557,19 @@
     setTimeout(() => enviarSinal('carregou'), 2000);
     setTimeout(processarFilaPendente, 3000);
     setTimeout(instalarInterceptador, 1500);
+    // Se o nome do perfil só aparece com o menu do avatar aberto, ele é lido
+    // logo depois de qualquer clique e fica guardado na sessão da aba.
+    document.addEventListener('click', () => setTimeout(lerNomeDoSge, 500), true);
 
     // Menu do Tampermonkey (ícone da extensão) — pra corrigir o nome digitado
     // errado ou configurar numa máquina nova sem mexer no código.
     if (typeof GM_registerMenuCommand === 'function') {
         GM_registerMenuCommand('Alterar nome do professor', function () {
+            const doSge = lerNomeDoSge();
+            if (doSge) {
+                alert('O nome vem do seu login no SGE: ' + doSge + '\n\nNão é preciso configurar nada.');
+                return;
+            }
             const nome = pedirNomeProfessor(lerNomeProfessor());
             alert(nome ? 'Nome salvo: ' + nome : 'Nome não configurado.');
         });
@@ -550,6 +594,10 @@
 
     window.verInfoTurmaSGE = function () {
         console.log('[SGE-v3.4] Info da turma:', extrairInfoTurma());
+    };
+
+    window.verNomeSGE = function () {
+        console.log('[SGE] Nome do professor:', nomeAtualDoProfessor());
     };
 
     window.verFilaSGE = function () {

@@ -103,6 +103,7 @@ async function registrarInstalacao(dados, userAgent, extras = {}) {
     const campos = {
         professor: nomeCorrigido(texto(dados.professor, 255), correcoes),
         versao: texto(dados.versao, 20),
+        origemNome: ['sge', 'digitado'].includes(dados.origemNome) ? dados.origemNome : '',
         ultimoSinalEm: new Date(),
         ...extras
     };
@@ -151,6 +152,7 @@ function resumoInstalacao(inst) {
     return {
         navegador: inst.navegador,
         versao: inst.versao,
+        origemNome: inst.origemNome,
         desatualizada: Boolean(VERSAO_ATUAL && (!inst.versao || compararVersoes(inst.versao, VERSAO_ATUAL) < 0)),
         ultimoSinalEm: inst.ultimoSinalEm,
         ultimoEnvioEm: inst.ultimoEnvioEm,

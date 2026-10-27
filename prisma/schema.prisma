@@ -420,6 +420,9 @@ model InstalacaoScript {
   instalacaoId    String    @unique @map("instalacao_id") @db.VarChar(64)
   professor       String    @default("") @db.VarChar(255)
   versao          String    @default("") @db.VarChar(20)
+  // De onde o script tirou o nome (4.4+): 'sge' (perfil do login) ou
+  // 'digitado' (o SGE não mostrou o nome e valeu o digitado no Tampermonkey).
+  origemNome      String    @default("") @map("origem_nome") @db.VarChar(10)
   navegador       String    @default("") @db.VarChar(30)
   ultimoSinalEm   DateTime  @map("ultimo_sinal_em")
   // Último POST /webhook/frequencia confirmado vindo deste navegador.
