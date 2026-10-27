@@ -41,8 +41,12 @@ function paginaTelefones(req, res) {
     res.render('telefones');
 }
 
+function paginaProfessores(req, res) {
+    res.render('professores');
+}
+
 function paginaUsuarios(req, res) {
     res.render('usuarios');
 }
 
-module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaRecuperado, paginaContatar, paginaWhatsapp, paginaImportarTelefones, paginaTelefones, paginaUsuarios };
+module.exports = { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaRecuperado, paginaContatar, paginaWhatsapp, paginaImportarTelefones, paginaTelefones, paginaProfessores, paginaUsuarios };

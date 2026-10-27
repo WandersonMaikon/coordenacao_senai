@@ -13,6 +13,7 @@ const viewRoutes = require('./src/routes/viewRoutes');
 const userscriptRoutes = require('./src/routes/userscriptRoutes');
 const whatsappRoutes = require('./src/routes/whatsappRoutes');
 const whatsappWebhookRoutes = require('./src/routes/whatsappWebhookRoutes');
+const professorRoutes = require('./src/routes/professorRoutes');
 const prisma = require('./src/config/prisma');
 const { iniciarWorker: iniciarWorkerWhatsapp } = require('./src/services/whatsappEnvio');
 const { garantirModelo: garantirModeloIa } = require('./src/services/iaLocal');
@@ -72,6 +73,7 @@ app.use(alunoRoutes);
 app.use(contatoRoutes);
 app.use(whatsappRoutes);
 app.use(whatsappWebhookRoutes);
+app.use(professorRoutes);
 
 app.listen(PORT, () => {
     console.log(`✅ Servidor rodando em http://localhost:${PORT}`);

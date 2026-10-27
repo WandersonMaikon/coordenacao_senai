@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { carregarTurmasEncerradas } = require('./turmaController');
+const { registrarInstalacao } = require('../services/professores');
 
 // Recebe os lançamentos capturados pelo userscript Tampermonkey
 async function receberWebhook(req, res) {
@@ -66,6 +67,14 @@ async function receberWebhook(req, res) {
         }
 
         console.log(`[Webhook] ${inseridos} novo(s), ${corrigidos} corrigido(s)`);
+
+        // Script 4.3+ manda junto de que navegador veio (tela /professores).
+        // Falhar aqui não pode derrubar o envio: as faltas já estão gravadas, e
+        // um erro faria o script reenviar tudo.
+        if (req.body.instalacao) {
+            registrarInstalacao(req.body.instalacao, req.get('user-agent'), { ultimoEnvioEm: new Date() })
+                .catch((erro) => console.error('[Webhook] Não foi possível gravar a instalação do script:', erro.message));
+        }
 
         return res.json({
             status: 'ok',

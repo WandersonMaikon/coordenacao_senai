@@ -1,5 +1,5 @@
 const express = require('express');
-const { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaRecuperado, paginaContatar, paginaWhatsapp, paginaImportarTelefones, paginaTelefones, paginaUsuarios } = require('../controllers/viewController');
+const { paginaLogin, paginaPainel, paginaFaltas, paginaRisco, paginaRecuperado, paginaContatar, paginaWhatsapp, paginaImportarTelefones, paginaTelefones, paginaProfessores, paginaUsuarios } = require('../controllers/viewController');
 
 const router = express.Router();
 
@@ -12,6 +12,7 @@ router.get('/contatar', paginaContatar);
 router.get('/whatsapp', paginaWhatsapp);
 router.get('/importar-telefones', paginaImportarTelefones);
 router.get('/telefones', paginaTelefones);
+router.get('/professores', paginaProfessores);
 router.get('/usuarios', paginaUsuarios);
 
 module.exports = router;

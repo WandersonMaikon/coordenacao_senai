@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <%- include('partials/head', { titulo: 'Professores' }) %>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+</head>
+<body>
+  <div class="page-layout">
+
+    <%- include('partials/header') %>
+
+    <%- include('partials/sidebar', { paginaAtual: 'professores' }) %>
+
+    <main class="app-wrapper">
+      <div class="container-fluid">
+
+        <div class="app-page-head d-flex flex-wrap gap-3 align-items-center justify-content-between">
+          <div class="clearfix">
+            <h1 class="app-page-title">Professores</h1>
+            <span>Quem está lançando chamada e se o script de captura de cada um está funcionando</span>
+          </div>
+        </div>
+
+        <div class="alert alert-light border small" id="avisoVersao" hidden></div>
+
+        <div id="resumoSituacoes" class="d-flex flex-wrap gap-2 mb-3"></div>
+
+        <div id="statusCarregamento" class="alert alert-info">Carregando dados...</div>
+
+        <div id="listaProfessores"></div>
+
+      </div>
+    </main>
+
+    <%- include('partials/footer') %>
+
+  </div>
+
+  <script src="/js/turmas.js?v=<%= versaoArquivos %>"></script>
+  <script>
+    const token = localStorage.getItem('coor360_token');
+
+    if (!token) {
+      window.location.href = '/login';
+    }
+
+    function sair() {
+      localStorage.removeItem('coor360_token');
+      window.location.href = '/login';
+    }
+    document.getElementById('btnSair').addEventListener('click', sair);
+    document.getElementById('btnSairMenu').addEventListener('click', sair);
+
+    const html = document.documentElement;
+
+    document.getElementById('btnToggleMenu').addEventListener('click', function () {
+      this.classList.toggle('active');
+      if (window.matchMedia('(max-width: 1199.98px)').matches) {
+        document.getElementById('menubar').classList.toggle('open');
+      } else if (html.getAttribute('data-app-sidebar') === 'mini') {
+        html.removeAttribute('data-app-sidebar');
+      } else {
+        html.setAttribute('data-app-sidebar', 'mini');
+      }
+    });
+
+    const btnTema = document.getElementById('btnTema');
+    function aplicarTema(tema) {
+      html.setAttribute('data-bs-theme', tema);
+      btnTema.classList.toggle('active', tema === 'dark');
+    }
+    aplicarTema(localStorage.getItem('coor360_tema') || 'light');
+    btnTema.addEventListener('click', () => {
+      const atual = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+      aplicarTema(atual);
+      localStorage.setItem('coor360_tema', atual);
+    });
+
+    async function chamarApi(caminho) {
+      const resposta = await fetch(caminho, { headers: { Authorization: 'Bearer ' + token } });
+      if (resposta.status === 401) {
+        localStorage.removeItem('coor360_token');
+        window.location.href = '/login';
+        throw new Error('Sessão expirada');
+      }
+      return resposta.json();
+    }
+
+    // O nome do professor e da turma são digitados/vêm do SGE e entram via innerHTML.
+    function escaparHtml(texto) {
+      return String(texto ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+    }
+
+    function formatarDataHora(dataIso) {
+      return new Date(dataIso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function haQuantoTempo(dataIso) {
+      const minutos = Math.floor((Date.now() - new Date(dataIso).getTime()) / 60000);
+      if (minutos < 60) return 'agora há pouco';
+      if (minutos < 24 * 60) return `há ${Math.floor(minutos / 60)} h`;
+      const dias = Math.floor(minutos / (24 * 60));
+      return dias === 1 ? 'há 1 dia' : `há ${dias} dias`;
+    }
+
+    // Da mais grave para a menos grave — é a ordem que o servidor já devolve.
+    const SITUACOES = {
+      problema: { rotulo: 'Script com problema', cor: 'danger', icone: 'bi-exclamation-octagon-fill' },
+      sem_envio: { rotulo: 'Sem envio recente', cor: 'warning', icone: 'bi-hourglass-split' },
+      atencao: { rotulo: 'Atenção', cor: 'info', icone: 'bi-info-circle-fill' },
+      ok: { rotulo: 'Funcionando', cor: 'success', icone: 'bi-check-circle-fill' },
+      inativo: { rotulo: 'Só turmas encerradas', cor: 'secondary', icone: 'bi-moon-fill' }
+    };
+    const COR_ALERTA = { problema: 'danger', sem_envio: 'warning', atencao: 'info' };
+
+    let professores = [];
+    let filtroSituacao = null;
+
+    function cartaoProfessor(p) {
+      const s = SITUACOES[p.situacao];
+      const nome = p.nome ? escaparHtml(p.nome) : '<em>Sem nome</em>';
+      const grafias = p.outrasGrafias.length
+        ? `<div class="small text-body-secondary">Também aparece como: ${p.outrasGrafias.map(escaparHtml).join(', ')}</div>` : '';
+
+      const numeros = [
+        `<span><i class="bi bi-send me-1"></i>Último envio: ${p.ultimoEnvioEm ? `<strong>${formatarDataHora(p.ultimoEnvioEm)}</strong> (${haQuantoTempo(p.ultimoEnvioEm)})` : '<strong>nunca</strong>'}</span>`,
+        p.ultimaAula ? `<span><i class="bi bi-calendar-check me-1"></i>Última aula lançada: <strong>${escaparHtml(p.ultimaAula)}</strong></span>` : '',
+        `<span><i class="bi bi-list-check me-1"></i>Chamadas: <strong>${p.chamadas7}</strong> em 7 dias · <strong>${p.chamadas30}</strong> em ${diasJanela}</span>`,
+        p.atrasoTipicoDias !== null
+          ? `<span title="Mediana de quantos dias depois da aula a chamada chega, nos últimos ${diasJanela} dias"><i class="bi bi-clock-history me-1"></i>Costuma lançar: <strong>${p.atrasoTipicoDias === 0 ? 'no mesmo dia' : `${p.atrasoTipicoDias} dia(s) depois`}</strong></span>` : ''
+      ].filter(Boolean).join('<span class="text-body-secondary mx-2">·</span>');
+
+      const alertas = p.alertas.map((a) => `
+        <div class="small text-${COR_ALERTA[a.tipo] || 'body'}-emphasis">
+          <i class="bi bi-exclamation-triangle me-1"></i>${escaparHtml(a.texto)}${a.desde ? ` <span class="text-body-secondary">(desde ${formatarDataHora(a.desde)})</span>` : ''}
+        </div>`).join('');
+
+      const turmas = p.turmas.map((t) => {
+        const nomeTurma = nomeTurmaLimpo(t.nomeTurma);
+        const parada = !t.encerrada && t.diasSemAula !== null && t.diasSemAula > diasSemEnvioAlerta;
+        return `<li>
+          ${nomeTurma ? `${escaparHtml(nomeTurma)} · ` : ''}${escaparHtml(t.codigoTurma || '(sem código)')}
+          ${t.encerrada ? '<span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">encerrada</span>' : ''}
+          <span class="text-body-secondary">— ${t.ucs.length ? escaparHtml(t.ucs.join(', ')) : 'sem UC'} — última aula
+          <span class="${parada ? 'text-danger fw-semibold' : ''}">${escaparHtml(t.ultimaAula || '—')}</span></span>
+        </li>`;
+      }).join('');
+
+      const instalacoes = p.instalacoes.length
+        ? p.instalacoes.map((i) => `<li>
+            ${escaparHtml(i.navegador || 'Navegador')} · versão ${escaparHtml(i.versao || '?')}
+            ${i.desatualizada ? '<span class="badge bg-warning-subtle text-warning-emphasis ms-1">desatualizada</span>' : ''}
+            <span class="text-body-secondary">— último sinal ${formatarDataHora(i.ultimoSinalEm)}${i.ultimaCapturaEm ? `, leu a tela de frequência em ${formatarDataHora(i.ultimaCapturaEm)}` : ''}</span>
+          </li>`).join('')
+        : '<li class="text-body-secondary">Nenhum sinal da versão nova do script.</li>';
+
+      return `
+        <div class="card mb-3 border-start border-4 border-${s.cor}">
+          <div class="card-body">
+            <div class="d-flex flex-wrap gap-2 align-items-start justify-content-between">
+              <div>
+                <h6 class="mb-0">${nome}</h6>
+                ${grafias}
+              </div>
+              <span class="badge bg-${s.cor}-subtle text-${s.cor}-emphasis border border-${s.cor}-subtle">
+                <i class="bi ${s.icone} me-1"></i>${s.rotulo}
+              </span>
+            </div>
+            <div class="small mt-2 d-flex flex-wrap row-gap-1">${numeros}</div>
+            ${alertas ? `<div class="mt-2">${alertas}</div>` : ''}
+            <details class="mt-2 small">
+              <summary class="text-body-secondary">Turmas (${p.turmas.length}) e navegadores (${p.instalacoes.length})</summary>
+              <div class="mt-2 fw-semibold">Turmas</div>
+              <ul class="mb-2 ps-3">${turmas || '<li class="text-body-secondary">Nenhuma chamada lançada.</li>'}</ul>
+              <div class="fw-semibold">Navegadores com o script</div>
+              <ul class="mb-0 ps-3">${instalacoes}</ul>
+            </details>
+          </div>
+        </div>`;
+    }
+
+    function desenhar() {
+      const contagem = {};
+      professores.forEach((p) => { contagem[p.situacao] = (contagem[p.situacao] || 0) + 1; });
+      if (filtroSituacao && !contagem[filtroSituacao]) filtroSituacao = null;
+
+      document.getElementById('resumoSituacoes').innerHTML = Object.entries(SITUACOES)
+        .filter(([chave]) => contagem[chave])
+        .map(([chave, s]) => {
+          const ativo = filtroSituacao === chave;
+          return `<button type="button" data-filtro="${chave}" aria-pressed="${ativo}"
+            class="btn btn-sm rounded-pill px-3 ${ativo ? `btn-${s.cor}` : `bg-${s.cor}-subtle text-${s.cor}-emphasis border border-${s.cor}-subtle`}">
+            ${s.rotulo}: <strong>${contagem[chave]}</strong></button>`;
+        }).join('');
+
+      const visiveis = professores.filter((p) => !filtroSituacao || p.situacao === filtroSituacao);
+      const statusEl = document.getElementById('statusCarregamento');
+      statusEl.className = 'small text-body-secondary mb-2';
+      statusEl.textContent = filtroSituacao
+        ? `Mostrando ${visiveis.length} de ${professores.length} professor(es).`
+        : `${professores.length} professor(es), dos que precisam de atenção para os que estão em dia.`;
+      document.getElementById('listaProfessores').innerHTML = visiveis.map(cartaoProfessor).join('');
+    }
+
+    document.getElementById('resumoSituacoes').addEventListener('click', (evento) => {
+      const botao = evento.target.closest('[data-filtro]');
+      if (!botao) return;
+      filtroSituacao = filtroSituacao === botao.dataset.filtro ? null : botao.dataset.filtro;
+      desenhar();
+    });
+
+    let diasJanela = 30;
+    let diasSemEnvioAlerta = 7;
+
+    async function carregar() {
+      const statusEl = document.getElementById('statusCarregamento');
+      try {
+        const resposta = await chamarApi('/professores/lista');
+        if (resposta.status !== 'ok') throw new Error(resposta.mensagem);
+        professores = resposta.professores;
+        diasJanela = resposta.diasJanela;
+        diasSemEnvioAlerta = resposta.diasSemEnvioAlerta;
+
+        const aviso = document.getElementById('avisoVersao');
+        aviso.innerHTML = `<i class="bi bi-info-circle me-1"></i>Versão atual do script: <strong>${escaparHtml(resposta.versaoAtual || '?')}</strong>.
+          O sinal de vida (navegador, versão, fila presa, tela não reconhecida) só existe a partir da versão 4.3. O Tampermonkey
+          procura atualização sozinho, normalmente uma vez por dia — até lá, quem ainda está na versão antiga aparece sem sinal.
+          "Sem envio" pode ser só falta de aula; o alerta de script com problema é o que indica falha de verdade.`;
+        aviso.hidden = false;
+
+        if (professores.length === 0) {
+          statusEl.className = 'alert alert-warning';
+          statusEl.textContent = 'Nenhum professor lançou chamada ainda.';
+          return;
+        }
+        desenhar();
+      } catch (erro) {
+        if (erro.message !== 'Sessão expirada') {
+          statusEl.className = 'alert alert-warning';
+          statusEl.textContent = 'Não foi possível carregar os professores agora.';
+        }
+      }
+    }
+
+    carregar();
+  </script>
+</body>
+
+</html>

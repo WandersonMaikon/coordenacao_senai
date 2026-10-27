@@ -1,6 +1,7 @@
 // ==UserScript==
 // @name         SGE Novo - Captura Frequência SENAI
 // @namespace    http://tampermonkey.net/
+// @version      4.3
 // @description  Captura frequência do novo SGE (Angular/PO-UI) - resposta otimista, envio rápido, suporta correção, envia só o que mudou
 // @author       Wanderson
 // @match        https://sge.fiero.org.br/*
@@ -23,6 +24,12 @@
 // 4.2 - conteudo identico ao da 4.0. O numero NAO volta pra 4.0 porque o
 //       Tampermonkey so atualiza quando a @version SOBE: quem ja tinha baixado
 //       a 4.1 ficaria preso nela pra sempre, sem receber correcao nenhuma.
+//       (A linha @version sumiu do cabecalho junto com essa mudanca, em
+//       10/09/2026 — sem ela a 4.2 nao chegou a ninguem.)
+// 4.3 - devolve a @version. Avisa o servidor que esta vivo (ao abrir o SGE e a
+//       cada "Salvar"), com a versao, o nome do professor, o tamanho da fila
+//       local e se achou os alunos na tela — nenhum dado de aluno. Cada
+//       navegador ganha um id (sge_id_instalacao). Usado na tela /professores.
 
 (function () {
     'use strict';
@@ -31,6 +38,7 @@
     // CONFIGURAÇÃO
     // ==========================================
     const WEBHOOK_URL = 'https://app.coor360-senai.com.br/webhook/frequencia';
+    const SINAL_URL = 'https://app.coor360-senai.com.br/webhook/sinal-script';
 
     // O nome do professor NÃO fica escrito aqui. Como o script se atualiza
     // sozinho (@updateURL), um nome fixo no código seria sobrescrito a cada
@@ -45,6 +53,7 @@
     const TIMEOUT_MS = 7000;          // reduzido de 15s para 7s
     const CHAVE_FILA = 'sge_fila_pendente_v3';
     const CHAVE_CACHE_ESTADO = 'sge_cache_estado_v2';
+    const CHAVE_INSTALACAO = 'sge_id_instalacao';
 
     console.log('%c[SGE-v3.4] Script carregado (resposta otimista, com suporte a correção, envia só o que mudou)', 'color: green; font-weight: bold;');
 
@@ -101,6 +110,62 @@
                 'Configure pelo menu do Tampermonkey ("Alterar nome do professor").');
         }
         return informado;
+    }
+
+    // ─────────────────────────────────────────
+    // SINAL DE VIDA (tela /professores do painel)
+    // ─────────────────────────────────────────
+    // Sem isto o servidor só sabe do script quando chega uma chamada — e
+    // professor sem envio pode tanto não ter tido aula quanto estar com o
+    // script quebrado. Nenhum dado de aluno vai aqui.
+
+    function idInstalacao() {
+        let id = GM_getValue(CHAVE_INSTALACAO, '');
+        if (!id) {
+            id = (window.crypto && crypto.randomUUID)
+                ? crypto.randomUUID()
+                : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+            GM_setValue(CHAVE_INSTALACAO, id);
+        }
+        return id;
+    }
+
+    function dadosInstalacao() {
+        return {
+            id: idInstalacao(),
+            versao: (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '',
+            professor: lerNomeProfessor()
+        };
+    }
+
+    // Caminho da tela do SGE com os números trocados, pra comparar telas sem
+    // guardar ids de turma/aula.
+    function telaAtual() {
+        return (location.pathname + location.hash).replace(/\?.*$/, '').replace(/\d+/g, ':n').slice(0, 200);
+    }
+
+    // evento: 'carregou' | 'capturou' | 'sem_captura'. Silencioso: falhar aqui
+    // não atrapalha nada do professor.
+    function enviarSinal(evento) {
+        const fila = lerFila();
+        const corpo = Object.assign(dadosInstalacao(), {
+            evento,
+            tela: telaAtual(),
+            fila: fila.length,
+            filaDesde: fila.length ? fila[0].adicionadoEm : null
+        });
+        try {
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: SINAL_URL,
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify(corpo),
+                timeout: TIMEOUT_MS,
+                onerror: () => console.warn('[SGE] Sinal de vida não chegou ao servidor.')
+            });
+        } catch (e) {
+            console.warn('[SGE] Sinal de vida não enviado:', e);
+        }
     }
 
     // ─────────────────────────────────────────
@@ -283,7 +348,7 @@
             method: 'POST',
             url: WEBHOOK_URL,
             headers: { 'Content-Type': 'application/json' },
-            data: JSON.stringify({ lancamentos }),
+            data: JSON.stringify({ lancamentos, instalacao: dadosInstalacao() }),
             timeout: TIMEOUT_MS,
 
             onload: function (res) {
@@ -351,7 +416,7 @@
             method: 'POST',
             url: WEBHOOK_URL,
             headers: { 'Content-Type': 'application/json' },
-            data: JSON.stringify({ lancamentos }),
+            data: JSON.stringify({ lancamentos, instalacao: dadosInstalacao() }),
             timeout: TIMEOUT_MS,
             onload: function (res) {
                 try {
@@ -429,7 +494,14 @@
             const texto = (alvo.innerText || alvo.textContent || '').trim();
             if (texto !== 'Salvar') return;
 
-            const mudancas = capturarMudancas();
+            const estadoCompleto = capturarEstadoCompleto();
+            // Em outra tela do SGE (sem alunos) também cai aqui; quem separa
+            // "outra tela" de "o SGE mudou" é o servidor, comparando a tela.
+            enviarSinal(estadoCompleto ? 'capturou' : 'sem_captura');
+            if (!estadoCompleto) return;
+
+            const delta = calcularDelta(estadoCompleto);
+            const mudancas = delta.length > 0 ? delta : null;
             if (!mudancas) {
                 console.log('[SGE-v3.4] Nenhuma mudança de frequência detectada (nada a enviar).');
                 return;
@@ -445,6 +517,8 @@
     // INICIALIZAÇÃO
     // ─────────────────────────────────────────
 
+    // Antes de reprocessar a fila, pra contar o que ficou preso desde a última vez.
+    setTimeout(() => enviarSinal('carregou'), 2000);
     setTimeout(processarFilaPendente, 3000);
     setTimeout(instalarInterceptador, 1500);
 

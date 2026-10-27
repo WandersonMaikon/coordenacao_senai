@@ -404,3 +404,39 @@ model ResponsavelContato {
 
   @@map("responsaveis_contato")
 }
+
+// ─────────────────────────────────────────
+// Um navegador com o userscript instalado (tela /professores). Desde a versão
+// 4.3, o script gera um id na primeira vez que roda (guardado no Tampermonkey
+// daquela máquina) e avisa o servidor quando o SGE abre e a cada "Salvar" —
+// sem nenhum dado de aluno. É o que permite saber se o script está vivo, em
+// que versão, e se está falhando, coisa que os lançamentos sozinhos não dizem
+// (professor sem envio pode só não ter tido aula).
+// O professor é o nome digitado naquele navegador: a tela junta as linhas
+// com os lançamentos pelo nome normalizado (src/services/professores.js).
+// ─────────────────────────────────────────
+model InstalacaoScript {
+  id              Int       @id @default(autoincrement())
+  instalacaoId    String    @unique @map("instalacao_id") @db.VarChar(64)
+  professor       String    @default("") @db.VarChar(255)
+  versao          String    @default("") @db.VarChar(20)
+  navegador       String    @default("") @db.VarChar(30)
+  ultimoSinalEm   DateTime  @map("ultimo_sinal_em")
+  // Último POST /webhook/frequencia confirmado vindo deste navegador.
+  ultimoEnvioEm   DateTime? @map("ultimo_envio_em")
+  // Envios que falharam 3 vezes e esperam na fila local do navegador.
+  filaPendente    Int       @default(0) @map("fila_pendente")
+  filaDesde       DateTime? @map("fila_desde")
+  // "Salvar" em que o script leu os alunos da tela, e em qual tela (caminho
+  // do SGE com os números trocados por :n).
+  ultimaCapturaEm DateTime? @map("ultima_captura_em")
+  telaCaptura     String?   @map("tela_captura") @db.VarChar(200)
+  // "Salvar" em que o script não achou aluno nenhum. Em outra tela do SGE é
+  // normal; na mesma tela onde já capturou, é sinal de que o SGE mudou.
+  semCapturaEm    DateTime? @map("sem_captura_em")
+  semCapturaTela  String?   @map("sem_captura_tela") @db.VarChar(200)
+  criadoEm        DateTime  @default(now()) @map("criado_em")
+  atualizadoEm    DateTime  @updatedAt @map("atualizado_em")
+
+  @@map("instalacoes_script")
+}
