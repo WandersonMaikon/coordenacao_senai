@@ -32,6 +32,8 @@
 //       navegador ganha um id (sge_id_instalacao). Usado na tela /professores.
 // 4.4 - o nome do professor vem do perfil do SGE (menu do avatar), nao mais
 //       digitado. O nome digitado so vale se o SGE nao mostrar o nome.
+//       Aviso de versao nova na tela de frequencia ("Atualizar agora"): o
+//       servidor diz a versao atual na resposta do sinal. Sem visitar PC.
 
 (function () {
     'use strict';
@@ -197,11 +199,98 @@
                 headers: { 'Content-Type': 'application/json' },
                 data: JSON.stringify(corpo),
                 timeout: TIMEOUT_MS,
+                onload: function (res) {
+                    try {
+                        guardarVersaoNova(JSON.parse(res.responseText).versaoAtual);
+                        mostrarAvisoAtualizacao();
+                    } catch (e) { /* resposta sem versão: nada a avisar */ }
+                },
                 onerror: () => console.warn('[SGE] Sinal de vida não chegou ao servidor.')
             });
         } catch (e) {
             console.warn('[SGE] Sinal de vida não enviado:', e);
         }
+    }
+
+    // ─────────────────────────────────────────
+    // AVISO DE VERSÃO NOVA
+    // ─────────────────────────────────────────
+    // O script não pode se atualizar sozinho (o Tampermonkey não deixa), e a
+    // atualização automática dele pode levar um dia. Então o servidor diz qual é
+    // a versão atual (resposta do sinal) e, na tela de frequência, o professor
+    // vê um aviso com "Atualizar agora": abre o endereço do script e o próprio
+    // Tampermonkey mostra o botão de atualizar. Nunca bloqueia o "Salvar".
+    const URL_SCRIPT = 'https://app.coor360-senai.com.br/sge-captura.user.js';
+    const CHAVE_VERSAO_NOVA = 'sge_versao_nova';
+    const CHAVE_AVISO_ADIADO = 'sge_aviso_atualizacao_adiado_ate';
+    const ADIAR_AVISO_MS = 4 * 60 * 60 * 1000;
+
+    function versaoDoScript() {
+        return (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '';
+    }
+
+    function compararVersoes(a, b) {
+        const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
+        const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+            const diferenca = (pa[i] || 0) - (pb[i] || 0);
+            if (diferenca !== 0) return diferenca;
+        }
+        return 0;
+    }
+
+    function guardarVersaoNova(versaoAtual) {
+        const nova = versaoAtual && compararVersoes(versaoAtual, versaoDoScript()) > 0;
+        GM_setValue(CHAVE_VERSAO_NOVA, nova ? String(versaoAtual) : '');
+    }
+
+    // Só na tela de frequência (tem a grade de alunos): em outra tela do SGE o
+    // aviso só atrapalharia.
+    function mostrarAvisoAtualizacao() {
+        const versaoNova = GM_getValue(CHAVE_VERSAO_NOVA, '');
+        if (!versaoNova || compararVersoes(versaoNova, versaoDoScript()) <= 0) return;
+        if (Date.now() < Number(GM_getValue(CHAVE_AVISO_ADIADO, 0))) return;
+        if (!document.querySelector('tr.tr-data')) return;
+        if (document.getElementById('sge-aviso-atualizacao')) return;
+
+        const aviso = document.createElement('div');
+        aviso.id = 'sge-aviso-atualizacao';
+        aviso.style.cssText = `
+            position: fixed; bottom: 20px; right: 20px; z-index: 999998;
+            background: #fff; color: #222; border-left: 5px solid #1a73e8;
+            padding: 14px 16px; border-radius: 8px; max-width: 340px;
+            font-size: 14px; font-family: Arial, sans-serif;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+        `;
+        const texto = document.createElement('div');
+        texto.textContent = '🔄 Há uma versão nova da captura de frequência (' + versaoNova + '). ' +
+            'Leva poucos segundos: clique em "Atualizar agora" e depois no botão "Atualizar" do Tampermonkey.';
+        texto.style.marginBottom = '10px';
+
+        const fechar = (adiarMs) => {
+            GM_setValue(CHAVE_AVISO_ADIADO, Date.now() + adiarMs);
+            aviso.remove();
+        };
+        const botao = (rotulo, principal, acao) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = rotulo;
+            b.style.cssText = `
+                margin-right: 8px; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+                font-size: 13px; border: 1px solid #1a73e8;
+                background: ${principal ? '#1a73e8' : '#fff'}; color: ${principal ? '#fff' : '#1a73e8'};
+            `;
+            b.addEventListener('click', (evento) => { evento.stopPropagation(); acao(); });
+            return b;
+        };
+        aviso.appendChild(texto);
+        aviso.appendChild(botao('Atualizar agora', true, () => {
+            window.open(URL_SCRIPT, '_blank');
+            // Some por 10 min: o tempo de atualizar e recarregar o SGE.
+            fechar(10 * 60 * 1000);
+        }));
+        aviso.appendChild(botao('Depois', false, () => fechar(ADIAR_AVISO_MS)));
+        document.body.appendChild(aviso);
     }
 
     // ─────────────────────────────────────────
@@ -560,6 +649,10 @@
     // Se o nome do perfil só aparece com o menu do avatar aberto, ele é lido
     // logo depois de qualquer clique e fica guardado na sessão da aba.
     document.addEventListener('click', () => setTimeout(lerNomeDoSge, 500), true);
+    // O SGE troca de tela sem recarregar a página: depois de um clique, confere
+    // se a grade de frequência apareceu para mostrar o aviso de versão nova. No
+    // "Salvar" ele também aparece, pela resposta do sinal.
+    document.addEventListener('click', () => setTimeout(mostrarAvisoAtualizacao, 1500), true);
 
     // Menu do Tampermonkey (ícone da extensão) — pra corrigir o nome digitado
     // errado ou configurar numa máquina nova sem mexer no código.

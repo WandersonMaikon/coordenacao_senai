@@ -351,4 +351,4 @@ async function corrigirNomeProfessor(de, nomeCorreto, usuario) {
     return { nomesAntigos, lancamentos };
 }
 
-module.exports = { listarProfessores, corrigirNomeProfessor, carregarCorrecoesDeNome, nomeCorrigido, registrarSinal, registrarInstalacao, chaveProfessor, compararVersoes };
+module.exports = { listarProfessores, corrigirNomeProfessor, carregarCorrecoesDeNome, nomeCorrigido, registrarSinal, registrarInstalacao, chaveProfessor, compararVersoes, VERSAO_ATUAL };

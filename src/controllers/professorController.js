@@ -1,4 +1,4 @@
-const { listarProfessores, registrarSinal, corrigirNomeProfessor } = require('../services/professores');
+const { listarProfessores, registrarSinal, corrigirNomeProfessor, VERSAO_ATUAL } = require('../services/professores');
 
 // GET /professores/lista — tela /professores.
 async function listar(req, res) {
@@ -17,7 +17,9 @@ async function receberSinal(req, res) {
     try {
         const gravou = await registrarSinal(req.body, req.get('user-agent'));
         if (!gravou) return res.status(400).json({ status: 'erro', mensagem: 'Instalação inválida' });
-        return res.json({ status: 'ok' });
+        // O script (4.4+) compara com a própria versão e, se estiver velho,
+        // mostra ao professor o aviso "Atualizar agora" na tela de frequência.
+        return res.json({ status: 'ok', versaoAtual: VERSAO_ATUAL });
     } catch (erro) {
         console.error('[Professores] Erro ao gravar sinal do script:', erro.message);
         return res.status(500).json({ status: 'erro', mensagem: 'Erro ao gravar o sinal' });
