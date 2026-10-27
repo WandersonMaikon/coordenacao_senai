@@ -42,13 +42,20 @@ function compararVersoes(a, b) {
     return 0;
 }
 
+// Os dois primeiros nomes, sem acento/caixa/"Prof.": o mesmo professor digita
+// "Wanderson Maikon da Silva" numa máquina e "Wanderson Maikon" na outra. É a
+// mesma regra do cabeçalho da /faltas (nomesCurtosUnicos), com o mesmo efeito
+// colateral aceito: dois professores com os dois primeiros nomes iguais viram um.
 function chaveProfessor(nome) {
     return (nome || '')
         .normalize('NFD').replace(/[̀-ͯ]/g, '')
         .toLowerCase()
         .replace(/\s+/g, ' ')
         .trim()
-        .replace(/^(prof(essor|essora)?\.?)\s+/, '');
+        .replace(/^(prof(essor|essora)?\.?)\s+/, '')
+        .split(' ')
+        .slice(0, 2)
+        .join(' ');
 }
 
 function navegadorDe(userAgent) {
