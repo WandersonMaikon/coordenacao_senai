@@ -440,3 +440,21 @@ model InstalacaoScript {
 
   @@map("instalacoes_script")
 }
+
+// ─────────────────────────────────────────
+// "É a mesma pessoa" na tela /professores. Não há cadastro de professor: o nome
+// é o digitado em cada Tampermonkey, e a tela já junta quem tem os mesmos dois
+// primeiros nomes. Quando nem isso bate ("Talita Regina" e "Talita Magro"),
+// a coordenação junta na mão: `chave` (o card que some) passa a contar como
+// `chaveDestino`. As duas são a chave normalizada de src/services/professores.js.
+// Separar apaga a linha. Os lançamentos não são alterados.
+// ─────────────────────────────────────────
+model ProfessorApelido {
+  id           Int      @id @default(autoincrement())
+  chave        String   @unique @db.VarChar(255)
+  chaveDestino String   @map("chave_destino") @db.VarChar(255)
+  criadoPor    String   @map("criado_por") @db.VarChar(50)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+
+  @@map("professores_apelidos")
+}

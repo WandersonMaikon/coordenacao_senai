@@ -1,5 +1,5 @@
 const express = require('express');
-const { listar, receberSinal } = require('../controllers/professorController');
+const { listar, receberSinal, juntar, separar } = require('../controllers/professorController');
 const { autenticar } = require('../middlewares/auth');
 
 const router = express.Router();
@@ -9,5 +9,7 @@ router.post('/webhook/sinal-script', receberSinal);
 
 // /professores (sem /lista) é a view, em viewRoutes.
 router.get('/professores/lista', autenticar, listar);
+router.post('/professores/juntar', autenticar, juntar);
+router.delete('/professores/juntar/:chave', autenticar, separar);
 
 module.exports = router;

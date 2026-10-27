@@ -154,7 +154,7 @@ async function listarProfessores() {
     const hoje = converterDataAula(diaNoFusoDaEscola(new Date()));
 
     // Uma linha por chamada (professor, turma, UC, dia) — não por aluno.
-    const [chamadas, nomesTurma, encerradas, instalacoes] = await Promise.all([
+    const [chamadas, nomesTurma, encerradas, instalacoes, apelidos] = await Promise.all([
         prisma.lancamento.groupBy({
             by: ['professor', 'codigoTurma', 'uc', 'dataAula'],
             _min: { criadoEm: true },
@@ -166,13 +166,22 @@ async function listarProfessores() {
             select: { codigoTurma: true, nomeTurma: true }
         }),
         carregarTurmasEncerradas(),
-        prisma.instalacaoScript.findMany({ orderBy: { ultimoSinalEm: 'desc' } })
+        prisma.instalacaoScript.findMany({ orderBy: { ultimoSinalEm: 'desc' } }),
+        prisma.professorApelido.findMany()
     ]);
+    // "É a mesma pessoa" (juntarProfessores): a chave juntada conta como a de destino.
+    const destinoDe = new Map(apelidos.map((a) => [a.chave, a.chaveDestino]));
+    const juntadosEm = new Map();
+    for (const a of apelidos) {
+        if (!juntadosEm.has(a.chaveDestino)) juntadosEm.set(a.chaveDestino, []);
+        juntadosEm.get(a.chaveDestino).push(a.chave);
+    }
     const nomeDaTurma = new Map(nomesTurma.map((t) => [t.codigoTurma, t.nomeTurma]));
 
     const professores = new Map();
     const doProfessor = (nome) => {
-        const chave = chaveProfessor(nome);
+        const propria = chaveProfessor(nome);
+        const chave = destinoDe.get(propria) ?? propria;
         if (!professores.has(chave)) {
             professores.set(chave, { chave, grafias: new Map(), turmas: new Map(), chamadas: [], instalacoes: [] });
         }
@@ -268,6 +277,8 @@ async function listarProfessores() {
             // aparece escrito igual nas duas telas. As grafias completas vão junto.
             nome: (grafias[0] || '').split(' ').slice(0, 2).join(' '),
             grafias,
+            chave: p.chave,
+            juntados: juntadosEm.get(p.chave) || [],
             situacao,
             alertas,
             ultimoEnvioEm,
@@ -288,4 +299,28 @@ async function listarProfessores() {
     return { professores: lista, versaoAtual: VERSAO_ATUAL, diasSemEnvioAlerta: DIAS_SEM_ENVIO_ALERTA, diasJanela: DIAS_JANELA };
 }
 
-module.exports = { listarProfessores, registrarSinal, registrarInstalacao, chaveProfessor, compararVersoes };
+// Junta o card `de` no card `para` (as chaves que a lista devolve). Quem já
+// estava juntado em `de` passa a apontar direto para `para` — um nível só,
+// sem cadeia para seguir na leitura.
+async function juntarProfessores(de, para, usuario) {
+    if (!de || !para || de === para) throw Object.assign(new Error('Escolha dois professores diferentes.'), { status: 400 });
+    const destinoDoPara = await prisma.professorApelido.findUnique({ where: { chave: para } });
+    const destino = destinoDoPara ? destinoDoPara.chaveDestino : para;
+    if (destino === de) throw Object.assign(new Error('Esses dois já são o mesmo professor.'), { status: 400 });
+    await prisma.$transaction([
+        prisma.professorApelido.updateMany({ where: { chaveDestino: de }, data: { chaveDestino: destino } }),
+        prisma.professorApelido.upsert({
+            where: { chave: de },
+            update: { chaveDestino: destino, criadoPor: usuario },
+            create: { chave: de, chaveDestino: destino, criadoPor: usuario }
+        })
+    ]);
+}
+
+// Desfaz: o nome volta a ter o próprio card.
+async function separarProfessor(chave) {
+    const { count } = await prisma.professorApelido.deleteMany({ where: { chave } });
+    return count > 0;
+}
+
+module.exports = { listarProfessores, juntarProfessores, separarProfessor, registrarSinal, registrarInstalacao, chaveProfessor, compararVersoes };
