@@ -264,8 +264,10 @@ async function listarProfessores() {
         else if (alertas.length > 0) situacao = 'atencao';
 
         return {
-            nome: grafias[0] || '',
-            outrasGrafias: grafias.slice(1),
+            // Dois primeiros nomes, como no cabeçalho da /faltas: o mesmo professor
+            // aparece escrito igual nas duas telas. As grafias completas vão junto.
+            nome: (grafias[0] || '').split(' ').slice(0, 2).join(' '),
+            grafias,
             situacao,
             alertas,
             ultimoEnvioEm,

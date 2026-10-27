@@ -124,8 +124,9 @@
     function cartaoProfessor(p) {
       const s = SITUACOES[p.situacao];
       const nome = p.nome ? escaparHtml(p.nome) : '<em>Sem nome</em>';
-      const grafias = p.outrasGrafias.length
-        ? `<div class="small text-body-secondary">Também aparece como: ${p.outrasGrafias.map(escaparHtml).join(', ')}</div>` : '';
+      // Só quando o nome digitado não é igual ao do título.
+      const grafias = p.grafias.length > 1 || (p.grafias[0] && p.grafias[0] !== p.nome)
+        ? `<div class="small text-body-secondary">Nome digitado no script: ${p.grafias.map(escaparHtml).join(' / ')}</div>` : '';
 
       const numeros = [
         `<span><i class="bi bi-send me-1"></i>Último envio: ${p.ultimoEnvioEm ? `<strong>${formatarDataHora(p.ultimoEnvioEm)}</strong> (${haQuantoTempo(p.ultimoEnvioEm)})` : '<strong>nunca</strong>'}</span>`,
