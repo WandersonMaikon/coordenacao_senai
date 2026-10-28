@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         SGE Novo - Captura Frequência SENAI
 // @namespace    http://tampermonkey.net/
-// @version      4.4
+// @version      4.5
 // @description  Captura frequência do novo SGE (Angular/PO-UI) - resposta otimista, envio rápido, suporta correção, envia só o que mudou
 // @author       Wanderson
 // @match        https://sge.fiero.org.br/*
@@ -34,6 +34,9 @@
 //       digitado. O nome digitado so vale se o SGE nao mostrar o nome.
 //       Aviso de versao nova na tela de frequencia ("Atualizar agora"): o
 //       servidor diz a versao atual na resposta do sinal. Sem visitar PC.
+// 4.5 - o nome vem do titulo da barra do topo ("Portal Do Professor > Nome"),
+//       que esta sempre na pagina; o menu do avatar so existe aberto e virou
+//       reserva.
 
 (function () {
     'use strict';
@@ -101,17 +104,34 @@
         return nome;
     }
 
-    // Desde a 4.4 o nome vem do próprio SGE: é o do perfil de quem está logado
-    // (menu do avatar, no canto da tela). Digitado à mão, a mesma pessoa chegava
-    // escrita de jeitos diferentes em cada computador, e num computador
-    // compartilhado todo mundo saía com o nome de quem digitou primeiro.
-    // textContent (e não innerText) porque o menu pode estar fechado/escondido.
+    // Desde a 4.4 o nome vem do próprio SGE, de quem está logado. Digitado à
+    // mão, a mesma pessoa chegava escrita de jeitos diferentes em cada
+    // computador, e num computador compartilhado todo mundo saía com o nome de
+    // quem digitou primeiro.
+    // Principal: o título da barra do topo, sempre na página —
+    // "Portal Do Professor > Wanderson Maikon Da Silva".
+    // Reserva: o cabeçalho do menu do avatar, que só existe com o menu aberto.
+    const SELETOR_TITULO_SGE = '.po-toolbar-title';
     const SELETOR_NOME_SGE = '.po-toolbar-profile-item-header-title';
     const CHAVE_NOME_SGE_SESSAO = 'sge_nome_professor_sge';
 
+    function textoDe(seletor) {
+        const elemento = document.querySelector(seletor);
+        return elemento ? (elemento.textContent || '').replace(/\s+/g, ' ').trim() : '';
+    }
+
+    // O nome é o pedaço depois do último ">" do título. Só vale se o título for
+    // o do portal e o pedaço parecer nome de gente (2+ palavras, só letras) —
+    // se o SGE puser o nome da tela ali, não vira nome de professor.
+    function nomeDoTitulo() {
+        const titulo = textoDe(SELETOR_TITULO_SGE);
+        if (!/^portal/i.test(titulo) || !titulo.includes('>')) return '';
+        const nome = titulo.split('>').pop().trim();
+        return /^[A-Za-zÀ-ÿ'.]+( [A-Za-zÀ-ÿ'.]+)+$/.test(nome) ? nome : '';
+    }
+
     function lerNomeDoSge() {
-        const elemento = document.querySelector(SELETOR_NOME_SGE);
-        const nome = elemento ? (elemento.textContent || '').replace(/\s+/g, ' ').trim() : '';
+        const nome = nomeDoTitulo() || textoDe(SELETOR_NOME_SGE);
         // Guardado na sessão da aba (e não no GM_setValue, que vale para o
         // navegador inteiro): se o menu só existir aberto, a captura ainda acha
         // o nome lido antes — e outro professor que entrar no mesmo computador
